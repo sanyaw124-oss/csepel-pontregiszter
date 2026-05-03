@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { 
-  Trophy, Users, Calendar, Settings, LogOut, User, ChevronRight,
-  UserPlus, Edit2, Trash2, Plus, X, Check, AlertCircle, Eye, EyeOff,
-  Shield, Crown, Award, BookOpen, Heart, Star, Save, ArrowLeft,
-  ListOrdered, FileText, BarChart3, Filter, Search, Loader, Wifi, WifiOff
+  Users, Calendar, Settings, LogOut, User,
+  Check, AlertCircle, Eye, EyeOff,
+  Shield, Crown, Award, BookOpen, Heart, Star,
+  BarChart3, Loader, Wifi, WifiOff
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
 
@@ -75,15 +75,8 @@ const ROLE_ICONS = {
   versenyzo: Star
 };
 
-function formatCompetitorName(c) {
-  if (!c) return '';
-  if (!c.nickname) return c.full_name;
-  const parts = c.full_name.trim().split(' ');
-  if (parts.length === 2) {
-    return `${parts[0]} "${c.nickname}" ${parts[1]}`;
-  }
-  return `${c.full_name} "${c.nickname}"`;
-}
+// eslint-disable-next-line no-unused-vars
+// formatCompetitorName helper - a 2. fázisban kerül használatba
 
 // ═══════════════════════════════════════════════════════════════════
 // AUTH HOOK
