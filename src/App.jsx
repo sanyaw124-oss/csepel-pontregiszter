@@ -51,6 +51,7 @@ const COLORS = {
 
 const ROLES = {
   ADMIN: 'admin',
+  SZULO_ADMIN: 'szulo_admin',
   VEZETOEDZO: 'vezetoedzo',
   EDZO: 'edzo',
   SEGEDEDZO: 'segededzo',
@@ -60,6 +61,7 @@ const ROLES = {
 
 const ROLE_LABELS = {
   admin: 'Admin',
+  szulo_admin: 'Szülő-admin',
   vezetoedzo: 'Vezetőedző',
   edzo: 'Edző',
   segededzo: 'Segédedző',
@@ -69,12 +71,23 @@ const ROLE_LABELS = {
 
 const ROLE_ICONS = {
   admin: Shield,
+  szulo_admin: Shield,
   vezetoedzo: Crown,
   edzo: Award,
   segededzo: BookOpen,
   szulo: Heart,
   versenyzo: Star
 };
+
+// Helper: van-e admin jogosultsága a usernek?
+const hasAdminRights = (role) => role === 'admin' || role === 'szulo_admin';
+
+// Helper: van-e edzői jogosultsága? (admin, szulo_admin, vagy bármely edző szerep)
+const hasStaffRights = (role) => 
+  ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(role);
+
+// Helper: szülő-jogosultság (látja a saját gyerekét)
+const hasParentRights = (role) => role === 'szulo' || role === 'szulo_admin';
 
 // eslint-disable-next-line no-unused-vars
 // formatCompetitorName helper - a 2. fázisban kerül használatba
@@ -98,6 +111,7 @@ function useAuth() {
         .single();
       if (error) throw error;
       setProfile(data);
+      setError(null);  // sikeres töltéskor töröljük a régi hibát
     } catch (err) {
       console.error('Profile betöltési hiba:', err);
       setError('Profil betöltése sikertelen: ' + err.message);
@@ -134,10 +148,53 @@ function useAuth() {
       }
     }, 3000);
 
+    // ÚJ: Visibility change figyelés - telefon-lezárás / háttér után
+    // Amikor visszatér az oldal a háttérből, frissítjük a session-t és újra-
+    // töltjük a profilt, hogy ne legyen "ragadt" stale állapot.
+    const handleVisibilityChange = async () => {
+      if (!mounted) return;
+      if (document.visibilityState === 'visible') {
+        try {
+          // Frissítjük a session-t (ha lejárt, a Supabase automatikusan refresh-eli)
+          const { data: { session: currentSession }, error: sessionError } = 
+            await supabase.auth.getSession();
+          
+          if (sessionError) {
+            console.error('Session refresh hiba:', sessionError);
+            return;
+          }
+          
+          if (currentSession?.user) {
+            // Újratöltjük a profilt friss adatokkal
+            await loadProfile(currentSession.user.id);
+            setSession(currentSession);
+          } else {
+            // Session lejárt vagy elveszett
+            setSession(null);
+            setProfile(null);
+          }
+        } catch (err) {
+          console.error('Visibility change reconnect hiba:', err);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    // Online esemény figyelése - ha visszajön az internet
+    const handleOnline = () => {
+      if (mounted && document.visibilityState === 'visible') {
+        handleVisibilityChange();
+      }
+    };
+    window.addEventListener('online', handleOnline);
+
     return () => {
       mounted = false;
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
     };
   }, [loadProfile]);
 
@@ -359,17 +416,34 @@ function LoginScreen() {
 // ═══════════════════════════════════════════════════════════════════
 
 function LoadingScreen({ message = 'Betöltés...' }) {
+  const [showReload, setShowReload] = useState(false);
+  
+  useEffect(() => {
+    // 5 másodperc után megjelenik egy "Frissítés" gomb
+    const t = setTimeout(() => setShowReload(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+  
   return (
     <div 
       className="min-h-screen flex flex-col"
       style={{ backgroundColor: COLORS.blueBg }}
     >
       <ClubBanner />
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex flex-col items-center justify-center gap-4">
         <div className="flex items-center gap-2 font-medium" style={{ color: COLORS.blue }}>
           <Loader className="w-5 h-5 animate-spin" />
           {message}
         </div>
+        {showReload && (
+          <button
+            onClick={() => window.location.reload()}
+            className="text-sm px-4 py-2 rounded-lg border border-gray-300 hover:bg-white"
+            style={{ color: COLORS.blue }}
+          >
+            Frissítés
+          </button>
+        )}
       </div>
     </div>
   );
@@ -381,10 +455,10 @@ function LoadingScreen({ message = 'Betöltés...' }) {
 
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Áttekintés', icon: BarChart3, roles: 'all' },
-  { id: 'profile', label: 'Profil', icon: User, roles: [ROLES.VERSENYZO, ROLES.SZULO] },
-  { id: 'competitors', label: 'Versenyzők', icon: Users, roles: [ROLES.ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
+  { id: 'profile', label: 'Profil', icon: User, roles: [ROLES.VERSENYZO, ROLES.SZULO, ROLES.SZULO_ADMIN] },
+  { id: 'competitors', label: 'Versenyzők', icon: Users, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
-  { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN] }
+  { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN] }
 ];
 
 function AppShell() {
@@ -462,7 +536,7 @@ function AppShell() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {activeView === 'dashboard' && <DashboardView />}
-        {activeView === 'profile' && profile.role === 'szulo' && (
+        {activeView === 'profile' && hasParentRights(profile.role) && (
           <ParentProfileView supabase={supabase} parentUserId={profile.id} />
         )}
         {activeView === 'profile' && profile.role === 'versenyzo' && (
@@ -470,7 +544,7 @@ function AppShell() {
         )}
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} />}
         {activeView === 'competitions' && <PlaceholderView title="Versenyek" message="A 3. fázisban készül el — startlista, pontozás." />}
-        {activeView === 'admin' && <AdminView supabase={supabase} />}
+        {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center text-xs text-gray-500">

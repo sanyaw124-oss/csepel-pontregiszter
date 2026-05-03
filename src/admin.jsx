@@ -58,7 +58,8 @@ const COLORS = {
 const ROLE_LABELS = {
   vezetoedzo: 'Vezetőedző',
   edzo: 'Edző',
-  segededzo: 'Segédedző'
+  segededzo: 'Segédedző',
+  szulo_admin: 'Szülő-admin'
 };
 
 // ═══════════════════════════════════════════════════════════════════
@@ -138,7 +139,7 @@ function ErrorBox({ children }) {
 // MAIN: AdminView - 4 fül
 // ═══════════════════════════════════════════════════════════════════
 
-export function AdminView({ supabase }) {
+export function AdminView({ supabase, userRole }) {
   const [tab, setTab] = useState('competitors');
   
   const tabs = [
@@ -178,7 +179,7 @@ export function AdminView({ supabase }) {
         <div className="p-4">
           {tab === 'competitors' && <AdminCompetitors supabase={supabase} />}
           {tab === 'parents' && <AdminParents supabase={supabase} />}
-          {tab === 'staff' && <AdminStaff supabase={supabase} />}
+          {tab === 'staff' && <AdminStaff supabase={supabase} userRole={userRole} />}
           {tab === 'links' && <AdminLinks supabase={supabase} />}
         </div>
       </div>
@@ -931,7 +932,7 @@ function CredentialsPopup({ creds, onClose }) {
 // EDZŐK
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminStaff({ supabase }) {
+function AdminStaff({ supabase, userRole }) {
   const [staff, setStaff] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -939,10 +940,11 @@ function AdminStaff({ supabase }) {
 
   const load = useCallback(async () => {
     setError(null);
+    // Edzői fiókok + szulo_admin fiókok (nem a sima admin)
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .in('role', ['vezetoedzo', 'edzo', 'segededzo'])
+      .in('role', ['vezetoedzo', 'edzo', 'segededzo', 'szulo_admin'])
       .order('full_name');
     if (error) setError(error.message);
     else setStaff(data);
@@ -955,6 +957,7 @@ function AdminStaff({ supabase }) {
       <StaffForm
         supabase={supabase}
         member={editing === 'new' ? null : editing}
+        userRole={userRole}
         onSaved={(creds) => { setEditing(null); load(); if (creds) setGeneratedCreds(creds); }}
         onCancel={() => setEditing(null)}
       />
@@ -970,14 +973,15 @@ function AdminStaff({ supabase }) {
       {generatedCreds && <CredentialsPopup creds={generatedCreds} onClose={() => setGeneratedCreds(null)} />}
 
       <div className="flex justify-between items-center mb-3">
-        <span className="text-sm text-gray-600">{staff.length} edző</span>
+        <span className="text-sm text-gray-600">{staff.length} edző / admin</span>
         <PrimaryButton onClick={() => setEditing('new')}>
-          <UserPlus className="w-4 h-4" /> Új edző
+          <UserPlus className="w-4 h-4" /> Új edző / admin
         </PrimaryButton>
       </div>
 
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-3 text-xs text-blue-900">
-        <strong>Megjegyzés:</strong> Az edzők automatikusan minden klubversenyzőt látnak.
+        <strong>Megjegyzés:</strong> Az edzők automatikusan minden klubversenyzőt látnak. 
+        A szülő-admin egyszerre admin jogú és saját gyerekeit is látja.
       </div>
 
       <ErrorBox>{error}</ErrorBox>
@@ -991,7 +995,7 @@ function AdminStaff({ supabase }) {
                  style={{ borderColor: COLORS.gray200 }}>
               <div>
                 <div className="font-semibold" style={{ color: COLORS.blueDark }}>{s.full_name}</div>
-                <div className="text-xs text-gray-500">{s.email} · {ROLE_LABELS[s.role]}</div>
+                <div className="text-xs text-gray-500">{s.email} · {ROLE_LABELS[s.role] || s.role}</div>
               </div>
               <button onClick={() => setEditing(s)} className="p-2 text-gray-600 hover:bg-white rounded">
                 <Edit2 className="w-4 h-4" />
@@ -1004,7 +1008,7 @@ function AdminStaff({ supabase }) {
   );
 }
 
-function StaffForm({ supabase, member, onSaved, onCancel }) {
+function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
   const isNew = !member;
   const [form, setForm] = useState({
     full_name: member?.full_name || '',
@@ -1014,6 +1018,9 @@ function StaffForm({ supabase, member, onSaved, onCancel }) {
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // Csak admin (nem szulo_admin) hozhat létre szulo_admin fiókot
+  const canCreateSzuloAdmin = userRole === 'admin';
 
   const save = async () => {
     setError(null);
@@ -1084,14 +1091,14 @@ function StaffForm({ supabase, member, onSaved, onCancel }) {
           <ArrowLeft className="w-4 h-4" />
         </button>
         <h3 className="font-semibold" style={{ color: COLORS.blueDark }}>
-          {isNew ? 'Új edző' : 'Edző szerkesztése'}
+          {isNew ? 'Új edző / admin' : 'Szerkesztés'}
         </h3>
       </div>
 
       {isNew && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
-          <strong>Új edző fiók:</strong> a mentés után megjelenik egy biztonságos generált jelszó, 
-          amit egyszer látsz. Másold ki, és add át az edzőnek.
+          <strong>Új fiók:</strong> a mentés után megjelenik egy biztonságos generált jelszó, 
+          amit egyszer látsz. Másold ki, és add át a felhasználónak.
         </div>
       )}
 
@@ -1103,11 +1110,12 @@ function StaffForm({ supabase, member, onSaved, onCancel }) {
           <Input type="email" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} 
                  disabled={!isNew} />
         </Field>
-        <Field label="Szerepkör">
+        <Field label="Szerepkör" hint={form.role === 'szulo_admin' ? 'Admin jog + saját gyerekek látása. A gyerekeket a Szülők fülön rendelheted hozzá.' : null}>
           <Select value={form.role} onChange={(e) => setForm({...form, role: e.target.value})}>
             <option value="vezetoedzo">Vezetőedző</option>
             <option value="edzo">Edző</option>
             <option value="segededzo">Segédedző</option>
+            {canCreateSzuloAdmin && <option value="szulo_admin">Szülő-admin</option>}
           </Select>
         </Field>
         <Field label="Titulus (opcionális)">
