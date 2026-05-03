@@ -20,11 +20,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false,
-    // Lock mechanizmus felülírás - elkerüli a "lock was not released" 
-    // hibát ami React Strict Mode és gyors visibility change esetén lép fel
-    storageKey: 'sb-rujshnadnolvvrtkfbvd-auth-token',
-    flowType: 'pkce'
+    detectSessionInUrl: false
   }
 });
 
@@ -191,10 +187,19 @@ function useAuth() {
 
   const signIn = async (email, password) => {
     setError(null);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
       return false;
+    }
+    // Manuálisan is meghívjuk a loadProfile-t és a setSession-t,
+    // mert az onAuthStateChange néha nem triggerelődik gyorsan
+    if (data?.session) {
+      setSession(data.session);
+      if (data.user) {
+        await loadProfile(data.user.id);
+      }
+      setLoading(false);
     }
     return true;
   };
