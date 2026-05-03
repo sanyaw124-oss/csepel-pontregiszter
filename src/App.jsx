@@ -7,7 +7,7 @@ import {
   BarChart3, Loader, Wifi, WifiOff
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
-import { AdminView, CompetitorsView as CompetitorsViewComponent } from './admin';
+import { AdminView, CompetitorsView as CompetitorsViewComponent, ParentProfileView } from './admin';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -458,14 +458,19 @@ function AppShell() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {activeView === 'dashboard' && <DashboardView />}
-        {activeView === 'profile' && <PlaceholderView title="Profil" message="A 4. fázisban készül el — eredmények, fejlődési grafikon." />}
+        {activeView === 'profile' && profile.role === 'szulo' && (
+          <ParentProfileView supabase={supabase} parentUserId={profile.id} />
+        )}
+        {activeView === 'profile' && profile.role === 'versenyzo' && (
+          <PlaceholderView title="Profil" message="A 4. fázisban készül el — saját eredmények, fejlődési grafikon." />
+        )}
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} />}
         {activeView === 'competitions' && <PlaceholderView title="Versenyek" message="A 3. fázisban készül el — startlista, pontozás." />}
         {activeView === 'admin' && <AdminView supabase={supabase} />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center text-xs text-gray-500">
-        Pontregiszter v0.8 (2. fázis: admin) · Csepel SC RG · MRGSZ 2025–2028
+        Pontregiszter v0.8 · Csepel SC RG · MRGSZ 2025–2028
       </footer>
     </div>
   );
