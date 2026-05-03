@@ -4,7 +4,7 @@ import {
   Users, Calendar, Settings, LogOut, User,
   Check, AlertCircle, Eye, EyeOff,
   Shield, Crown, Award, BookOpen, Heart, Star,
-  BarChart3, Loader, Wifi, WifiOff
+  BarChart3, Loader, Wifi, WifiOff, RefreshCw
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
 import { AdminView, CompetitorsView as CompetitorsViewComponent, ParentProfileView } from './admin';
@@ -103,21 +103,26 @@ function useAuth() {
   const [error, setError] = useState(null);
 
   const loadProfile = useCallback(async (userId) => {
-    console.log('[loadProfile] start for userId:', userId);
     try {
-      const { data, error } = await supabase
+      // 5 másodperc timeout - ha nem jön válasz, hibára megy
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Profil lekérdezés timeout (5s)')), 5000)
+      );
+      
+      const queryPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
-      console.log('[loadProfile] response:', { hasData: !!data, error: error?.message });
+      
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+      
       if (error) throw error;
       setProfile(data);
       setError(null);
-      console.log('[loadProfile] profile set successfully');
     } catch (err) {
-      console.error('[loadProfile] error:', err);
-      setError('Profil betöltése sikertelen: ' + err.message);
+      console.error('Profil betöltési hiba:', err);
+      setError('Profil betöltése sikertelen: ' + err.message + '. Próbáld a Frissítés gombot vagy töröld a böngésző cache-t.');
     }
   }, []);
 
@@ -189,33 +194,18 @@ function useAuth() {
   }, [loadProfile]);
 
   const signIn = async (email, password) => {
-    console.log('[signIn] start');
     setError(null);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    console.log('[signIn] response:', { 
-      hasData: !!data, 
-      hasSession: !!data?.session, 
-      hasUser: !!data?.user,
-      error: error?.message 
-    });
     if (error) {
       setError(error.message);
       return false;
     }
     if (data?.session) {
-      console.log('[signIn] setting session and loading profile for user:', data.user?.id);
       setSession(data.session);
       if (data.user) {
-        try {
-          await loadProfile(data.user.id);
-          console.log('[signIn] profile loaded successfully');
-        } catch (e) {
-          console.error('[signIn] loadProfile error:', e);
-        }
+        await loadProfile(data.user.id);
       }
       setLoading(false);
-    } else {
-      console.warn('[signIn] no session in response - this should not happen');
     }
     return true;
   };
@@ -234,6 +224,115 @@ function useAuthContext() {
   const ctx = React.useContext(AuthContext);
   if (!ctx) throw new Error('useAuthContext must be inside AuthProvider');
   return ctx;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DATA RELOAD KEY - csendes adat-frissítés tab visszatéréskor
+// ═══════════════════════════════════════════════════════════════════
+
+// Ez a Context biztosítja az egész app számára egy kulcsot, ami akkor 
+// változik, amikor a tab visszatér a háttérből vagy hálózat helyreáll.
+// A komponensek dependency-ként használhatják, hogy újra lekérjék az 
+// ADATAIKAT (de nem az UI-állapotukat - úgyhogy formok nem vesznek el).
+const DataReloadContext = React.createContext({ key: 0, reload: () => {} });
+
+function useDataReload() {
+  return React.useContext(DataReloadContext);
+}
+
+function DataReloadProvider({ children }) {
+  const [key, setKey] = useState(0);
+  
+  const reload = useCallback(() => {
+    setKey(k => k + 1);
+  }, []);
+  
+  useEffect(() => {
+    let lastReload = Date.now();
+    
+    const handleVisibilityChange = () => {
+      // Csak akkor reload, ha a tab visszanyer fókuszt és legalább 10 másodperc telt el
+      if (document.visibilityState === 'visible') {
+        const now = Date.now();
+        if (now - lastReload > 10000) {
+          lastReload = now;
+          setKey(k => k + 1);
+        }
+      }
+    };
+    
+    const handleOnline = () => {
+      // Ha visszajön az internet, frissítünk
+      const now = Date.now();
+      if (now - lastReload > 5000) {
+        lastReload = now;
+        setKey(k => k + 1);
+      }
+    };
+    
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('online', handleOnline);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, []);
+  
+  return (
+    <DataReloadContext.Provider value={{ key, reload }}>
+      {children}
+    </DataReloadContext.Provider>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// AUTO-SAVE HOOK - űrlapok automatikus mentése localStorage-ba
+// ═══════════════════════════════════════════════════════════════════
+
+// Használat:
+//   const [form, setForm] = useAutoSavedState('competitor-form', { name: '', age: 0 });
+// 
+// A form állapota minden változáskor mentődik a localStorage-ba.
+// Ha az oldal újratöltődik, az adat visszajön. 
+// Ha a felhasználó megment, törölni kell: clearAutoSave('competitor-form').
+function useAutoSavedState(key, defaultValue) {
+  const [state, setState] = useState(() => {
+    try {
+      const saved = localStorage.getItem('autosave:' + key);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // Csak akkor használjuk a mentett verziót, ha 24 órán belül van
+        if (parsed._savedAt && Date.now() - parsed._savedAt < 24 * 60 * 60 * 1000) {
+          delete parsed._savedAt;
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error('AutoSave restore hiba:', e);
+    }
+    return defaultValue;
+  });
+  
+  useEffect(() => {
+    try {
+      const toSave = { ...state, _savedAt: Date.now() };
+      localStorage.setItem('autosave:' + key, JSON.stringify(toSave));
+    } catch (e) {
+      console.error('AutoSave write hiba:', e);
+    }
+  }, [key, state]);
+  
+  return [state, setState];
+}
+
+// eslint-disable-next-line no-unused-vars
+function clearAutoSave(key) {
+  try {
+    localStorage.removeItem('autosave:' + key);
+  } catch (e) {
+    console.error('AutoSave clear hiba:', e);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -475,6 +574,7 @@ const NAV_ITEMS = [
 
 function AppShell() {
   const { profile, signOut } = useAuthContext();
+  const { key: dataReloadKey, reload: reloadData } = useDataReload();
   const online = useConnectionStatus();
   const [activeView, setActiveView] = useState('dashboard');
 
@@ -511,14 +611,24 @@ function AppShell() {
               {profile.titulus ? ` · ${profile.titulus}` : ''}
             </span>
           </div>
-          <button
-            onClick={signOut}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex items-center gap-1 text-sm"
-            title="Kijelentkezés"
-          >
-            <LogOut className="w-4 h-4" />
-            <span className="hidden sm:inline">Kijelentkezés</span>
-          </button>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={reloadData}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex items-center gap-1 text-sm"
+              title="Adatok frissítése"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span className="hidden sm:inline">Frissítés</span>
+            </button>
+            <button
+              onClick={signOut}
+              className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex items-center gap-1 text-sm"
+              title="Kijelentkezés"
+            >
+              <LogOut className="w-4 h-4" />
+              <span className="hidden sm:inline">Kijelentkezés</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -549,14 +659,14 @@ function AppShell() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {activeView === 'dashboard' && <DashboardView />}
         {activeView === 'profile' && hasParentRights(profile.role) && (
-          <ParentProfileView supabase={supabase} parentUserId={profile.id} />
+          <ParentProfileView supabase={supabase} parentUserId={profile.id} dataReloadKey={dataReloadKey} />
         )}
         {activeView === 'profile' && profile.role === 'versenyzo' && (
           <PlaceholderView title="Profil" message="A 4. fázisban készül el — saját eredmények, fejlődési grafikon." />
         )}
-        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} />}
+        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} dataReloadKey={dataReloadKey} />}
         {activeView === 'competitions' && <PlaceholderView title="Versenyek" message="A 3. fázisban készül el — startlista, pontozás." />}
-        {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} />}
+        {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center text-xs text-gray-500">
@@ -572,6 +682,7 @@ function AppShell() {
 
 function DashboardView() {
   const { profile } = useAuthContext();
+  const { key: dataReloadKey } = useDataReload();
   const [stats, setStats] = useState({ competitors: null, competitions: null, parents: null });
   const [error, setError] = useState(null);
 
@@ -613,6 +724,7 @@ function DashboardView() {
         if (competitions.error) errors.push('Versenyek: ' + competitions.error.message);
         if (parents.error) errors.push('Szülők: ' + parents.error.message);
         if (errors.length > 0) setError(errors.join(' · '));
+        else setError(null);
       } catch (err) {
         if (mounted) setError('Statisztikák betöltése sikertelen: ' + err.message);
       }
@@ -634,7 +746,7 @@ function DashboardView() {
       mounted = false;
       clearTimeout(safetyTimeout);
     };
-  }, []);
+  }, [dataReloadKey]);  // ← ÚJ: dataReloadKey változására újra fut
 
   return (
     <div>
@@ -751,7 +863,9 @@ export default function App() {
 
   return (
     <AuthContext.Provider value={auth}>
-      {auth.session && auth.profile ? <AppShell /> : <LoginScreen />}
+      <DataReloadProvider>
+        {auth.session && auth.profile ? <AppShell /> : <LoginScreen />}
+      </DataReloadProvider>
     </AuthContext.Provider>
   );
 }

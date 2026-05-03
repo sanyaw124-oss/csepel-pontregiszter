@@ -139,7 +139,7 @@ function ErrorBox({ children }) {
 // MAIN: AdminView - 4 fül
 // ═══════════════════════════════════════════════════════════════════
 
-export function AdminView({ supabase, userRole }) {
+export function AdminView({ supabase, userRole, dataReloadKey }) {
   const [tab, setTab] = useState('competitors');
   
   const tabs = [
@@ -177,10 +177,10 @@ export function AdminView({ supabase, userRole }) {
         </div>
 
         <div className="p-4">
-          {tab === 'competitors' && <AdminCompetitors supabase={supabase} />}
-          {tab === 'parents' && <AdminParents supabase={supabase} />}
-          {tab === 'staff' && <AdminStaff supabase={supabase} userRole={userRole} />}
-          {tab === 'links' && <AdminLinks supabase={supabase} />}
+          {tab === 'competitors' && <AdminCompetitors supabase={supabase} dataReloadKey={dataReloadKey} />}
+          {tab === 'parents' && <AdminParents supabase={supabase} dataReloadKey={dataReloadKey} />}
+          {tab === 'staff' && <AdminStaff supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
+          {tab === 'links' && <AdminLinks supabase={supabase} dataReloadKey={dataReloadKey} />}
         </div>
       </div>
     </div>
@@ -191,7 +191,7 @@ export function AdminView({ supabase, userRole }) {
 // VERSENYZŐK
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminCompetitors({ supabase }) {
+function AdminCompetitors({ supabase, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState({ search: '', kategoria: 'all', showInactive: false });
@@ -207,7 +207,7 @@ function AdminCompetitors({ supabase }) {
     else setCompetitors(data);
   }, [supabase]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, dataReloadKey]);
 
   const filtered = (competitors || []).filter(c => {
     if (!filter.showInactive && !c.is_active) return false;
@@ -375,7 +375,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
 
   const save = async () => {
     setError(null);
-    if (!form.full_name.trim()) {
+    if (!(form.full_name || '').trim()) {
       setError('A név kötelező');
       return;
     }
@@ -388,13 +388,13 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
     try {
       const birthYear = new Date(form.birth_date).getFullYear();
       const payload = {
-        full_name: form.full_name.trim(),
-        nickname: form.nickname.trim() || null,
+        full_name: (form.full_name || '').trim(),
+        nickname: (form.nickname || '').trim() || null,
         birth_date: form.birth_date,
         birth_year: birthYear,
         kategoria: form.kategoria,
         korosztaly: form.korosztaly,
-        email: form.email.trim() || null,
+        email: (form.email || '').trim() || null,
         is_active: form.is_active,
         is_club_member: form.is_club_member
       };
@@ -580,7 +580,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
 // SZÜLŐK
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminParents({ supabase }) {
+function AdminParents({ supabase, dataReloadKey }) {
   const [parents, setParents] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -597,7 +597,7 @@ function AdminParents({ supabase }) {
     else setParents(data);
   }, [supabase]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, dataReloadKey]);
 
   if (editing !== null) {
     return (
@@ -680,16 +680,20 @@ function ParentRow({ parent, supabase, onEdit }) {
   );
 }
 
-function ParentForm({ supabase, parent, onSaved, onCancel }) {
+function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
   const isNew = !parent;
   const [form, setForm] = useState({
     full_name: parent?.full_name || '',
-    email: parent?.email || ''
+    email: parent?.email || '',
+    role: parent?.role || 'szulo'
   });
   const [competitors, setCompetitors] = useState([]);
   const [linkedChildIds, setLinkedChildIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // Csak admin (nem szulo_admin) változtathat szülő-admin szerepkört
+  const canSetSzuloAdmin = userRole === 'admin';
 
   useEffect(() => {
     const loadData = async () => {
@@ -719,11 +723,11 @@ function ParentForm({ supabase, parent, onSaved, onCancel }) {
 
   const save = async () => {
     setError(null);
-    if (!form.full_name.trim()) {
+    if (!(form.full_name || '').trim()) {
       setError('A név kötelező');
       return;
     }
-    if (!form.email.trim()) {
+    if (!(form.email || '').trim()) {
       setError('Az email kötelező');
       return;
     }
@@ -766,8 +770,8 @@ function ParentForm({ supabase, parent, onSaved, onCancel }) {
         const { error } = await supabase
           .from('profiles')
           .update({
-            full_name: form.full_name.trim(),
-            email: form.email.trim()
+            full_name: (form.full_name || '').trim(),
+            email: (form.email || '').trim()
           })
           .eq('id', parent.id);
         if (error) throw error;
@@ -940,7 +944,7 @@ function CredentialsPopup({ creds, onClose }) {
 // EDZŐK
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminStaff({ supabase, userRole }) {
+function AdminStaff({ supabase, userRole, dataReloadKey }) {
   const [staff, setStaff] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -958,7 +962,7 @@ function AdminStaff({ supabase, userRole }) {
     else setStaff(data);
   }, [supabase]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, dataReloadKey]);
 
   if (editing !== null) {
     return (
@@ -1032,7 +1036,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
 
   const save = async () => {
     setError(null);
-    if (!form.full_name.trim() || !form.email.trim()) {
+    if (!(form.full_name || '').trim() || !(form.email || '').trim()) {
       setError('Név és email kötelező');
       return;
     }
@@ -1055,10 +1059,10 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
               'Content-Type': 'application/json'
             },
             body: JSON.stringify({
-              email: form.email.trim(),
-              full_name: form.full_name.trim(),
+              email: (form.email || '').trim(),
+              full_name: (form.full_name || '').trim(),
               role: form.role,
-              titulus: form.titulus.trim() || null
+              titulus: (form.titulus || '').trim() || null
             })
           }
         );
@@ -1073,18 +1077,18 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
         const { error } = await supabase
           .from('profiles')
           .update({
-            full_name: form.full_name.trim(),
+            full_name: (form.full_name || '').trim(),
             role: form.role,
-            titulus: form.titulus.trim() || null
+            titulus: (form.titulus || '').trim() || null
           })
           .eq('id', member.id);
         if (error) throw error;
       }
 
       onSaved(generatedPassword ? { 
-        email: form.email.trim(), 
+        email: (form.email || '').trim(), 
         password: generatedPassword,
-        name: form.full_name.trim()
+        name: (form.full_name || '').trim()
       } : null);
     } catch (err) {
       setError('Mentés sikertelen: ' + err.message);
@@ -1149,7 +1153,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
 // KAPCSOLATOK ÁTTEKINTÉS
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminLinks({ supabase }) {
+function AdminLinks({ supabase, dataReloadKey }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
 
@@ -1167,7 +1171,7 @@ function AdminLinks({ supabase }) {
       }
     };
     load();
-  }, [supabase]);
+  }, [supabase, dataReloadKey]);
 
   if (error) return <ErrorBox>{error}</ErrorBox>;
   if (data === null) return <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
@@ -1231,7 +1235,7 @@ function AdminLinks({ supabase }) {
 // COMPETITORS PUBLIC VIEW (a Versenyzők navfül-höz)
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorsView({ supabase }) {
+export function CompetitorsView({ supabase, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
 
@@ -1242,7 +1246,7 @@ export function CompetitorsView({ supabase }) {
       .eq('is_active', true)
       .order('full_name')
       .then(({ data }) => setCompetitors(data || []));
-  }, [supabase]);
+  }, [supabase, dataReloadKey]);
 
   if (competitors === null) {
     return <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
@@ -1323,7 +1327,7 @@ export function CompetitorsView({ supabase }) {
 // PARENT PROFILE VIEW — szülő látja és szerkesztheti a saját gyerekét
 // ═══════════════════════════════════════════════════════════════════
 
-export function ParentProfileView({ supabase, parentUserId }) {
+export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
   const [children, setChildren] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -1360,7 +1364,7 @@ export function ParentProfileView({ supabase, parentUserId }) {
     }
   }, [supabase, parentUserId]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, dataReloadKey]);
 
   if (editing) {
     return (
