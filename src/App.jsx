@@ -7,6 +7,7 @@ import {
   BarChart3, Loader, Wifi, WifiOff
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
+import { AdminView, CompetitorsView as CompetitorsViewComponent } from './admin';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -458,13 +459,13 @@ function AppShell() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {activeView === 'dashboard' && <DashboardView />}
         {activeView === 'profile' && <PlaceholderView title="Profil" message="A 4. fázisban készül el — eredmények, fejlődési grafikon." />}
-        {activeView === 'competitors' && <PlaceholderView title="Versenyzők" message="A 2. fázisban készül el — versenyző lista, szűrés." />}
+        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} />}
         {activeView === 'competitions' && <PlaceholderView title="Versenyek" message="A 3. fázisban készül el — startlista, pontozás." />}
-        {activeView === 'admin' && <PlaceholderView title="Adminisztráció" message="A 2. fázisban készül el — versenyző/edző/szülő CRUD." />}
+        {activeView === 'admin' && <AdminView supabase={supabase} />}
       </main>
 
       <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center text-xs text-gray-500">
-        Pontregiszter v0.8 (1. fázis: auth) · Csepel SC RG · MRGSZ 2025–2028
+        Pontregiszter v0.8 (2. fázis: admin) · Csepel SC RG · MRGSZ 2025–2028
       </footer>
     </div>
   );
@@ -555,11 +556,11 @@ function DashboardView() {
             1. fázis: Supabase auth + login (KÉSZ)
           </div>
           <div className="flex items-center gap-2">
-            <Loader className="w-4 h-4" />
-            2. fázis: Admin felület (versenyző/szülő/edző CRUD)
+            <Check className="w-4 h-4 text-green-600" />
+            2. fázis: Admin felület (KÉSZ)
           </div>
-          <div className="flex items-center gap-2 opacity-50">
-            <div className="w-4 h-4" />
+          <div className="flex items-center gap-2">
+            <Loader className="w-4 h-4" />
             3. fázis: Versenyek + startlista + pontozás
           </div>
           <div className="flex items-center gap-2 opacity-50">
