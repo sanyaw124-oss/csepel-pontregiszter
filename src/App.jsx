@@ -107,27 +107,22 @@ function useAuth() {
   useEffect(() => {
     let mounted = true;
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (!mounted) return;
-      setSession(session);
-      if (session?.user) {
-        loadProfile(session.user.id).finally(() => {
-          if (mounted) setLoading(false);
-        });
-      } else {
-        setLoading(false);
-      }
-    });
-
+    // Csak az onAuthStateChange-t használjuk - az INITIAL_SESSION event-et 
+    // is meghívja, így nincs lock-konkurencia két párhuzamos auth hívással.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, session) => {
+      async (event, currentSession) => {
         if (!mounted) return;
-        setSession(session);
-        if (session?.user) {
-          await loadProfile(session.user.id);
+        
+        setSession(currentSession);
+        
+        if (currentSession?.user) {
+          await loadProfile(currentSession.user.id);
         } else {
           setProfile(null);
         }
+        
+        // Loading kikapcsolása az első event után
+        if (mounted) setLoading(false);
       }
     );
 
