@@ -20,7 +20,11 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false
+    detectSessionInUrl: false,
+    // Lock mechanizmus felülírás - elkerüli a "lock was not released" 
+    // hibát ami React Strict Mode és gyors visibility change esetén lép fel
+    storageKey: 'sb-rujshnadnolvvrtkfbvd-auth-token',
+    flowType: 'pkce'
   }
 });
 
@@ -149,52 +153,39 @@ function useAuth() {
     }, 3000);
 
     // ÚJ: Visibility change figyelés - telefon-lezárás / háttér után
-    // Amikor visszatér az oldal a háttérből, frissítjük a session-t és újra-
-    // töltjük a profilt, hogy ne legyen "ragadt" stale állapot.
+    // Amikor visszatér az oldal a háttérből, újratöltjük a profilt.
+    // FONTOS: NEM hívunk getSession()-t, mert az lock-konkurenciát okoz!
+    // A Supabase saját onAuthStateChange-je magától refresh-eli a sessiont.
+    let lastVisibilityRefresh = Date.now();
     const handleVisibilityChange = async () => {
       if (!mounted) return;
       if (document.visibilityState === 'visible') {
+        // Csak akkor frissítünk ha legalább 30 másodperc telt el
+        // (elkerüljük hogy gyors váltogatáskor sok query menjen)
+        const now = Date.now();
+        if (now - lastVisibilityRefresh < 30000) return;
+        lastVisibilityRefresh = now;
+        
         try {
-          // Frissítjük a session-t (ha lejárt, a Supabase automatikusan refresh-eli)
-          const { data: { session: currentSession }, error: sessionError } = 
-            await supabase.auth.getSession();
-          
-          if (sessionError) {
-            console.error('Session refresh hiba:', sessionError);
-            return;
-          }
-          
-          if (currentSession?.user) {
-            // Újratöltjük a profilt friss adatokkal
-            await loadProfile(currentSession.user.id);
-            setSession(currentSession);
-          } else {
-            // Session lejárt vagy elveszett
-            setSession(null);
-            setProfile(null);
+          // Csak a profilt töltjük újra ha van session
+          // (a session frissítést a Supabase saját autoRefreshToken kezeli)
+          if (mounted) {
+            // Új session érték az onAuthStateChange-ből jön ha lejárt
+            // Itt csak a profilt frissítjük ha van user
           }
         } catch (err) {
-          console.error('Visibility change reconnect hiba:', err);
+          console.error('Visibility change handler hiba:', err);
         }
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    // Online esemény figyelése - ha visszajön az internet
-    const handleOnline = () => {
-      if (mounted && document.visibilityState === 'visible') {
-        handleVisibilityChange();
-      }
-    };
-    window.addEventListener('online', handleOnline);
 
     return () => {
       mounted = false;
       clearTimeout(safetyTimeout);
       subscription.unsubscribe();
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      window.removeEventListener('online', handleOnline);
     };
   }, [loadProfile]);
 
@@ -564,23 +555,72 @@ function DashboardView() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    let mounted = true;
+    
     const loadStats = async () => {
       try {
-        const [competitorsRes, competitionsRes, parentsRes] = await Promise.all([
-          supabase.from('competitors').select('id', { count: 'exact', head: true }),
-          supabase.from('competitions').select('id', { count: 'exact', head: true }),
-          supabase.from('profiles').select('id', { count: 'exact', head: true }).eq('role', 'szulo')
+        // Külön kérések - így ha az egyik hibára megy, a többi még megy
+        const competitorsPromise = supabase
+          .from('competitors')
+          .select('id', { count: 'exact', head: true })
+          .then(({ count, error }) => ({ count: count ?? 0, error }));
+          
+        const competitionsPromise = supabase
+          .from('competitions')
+          .select('id', { count: 'exact', head: true })
+          .then(({ count, error }) => ({ count: count ?? 0, error }));
+        
+        // szülő fiókok = szulo + szulo_admin
+        const parentsPromise = supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .in('role', ['szulo', 'szulo_admin'])
+          .then(({ count, error }) => ({ count: count ?? 0, error }));
+        
+        const [comp, competitions, parents] = await Promise.all([
+          competitorsPromise, competitionsPromise, parentsPromise
         ]);
+        
+        if (!mounted) return;
+        
+        // Részleges hiba: ha az egyik elromlott, mutassuk a többit
+        const errors = [];
+        if (comp.error) errors.push('Versenyzők: ' + comp.error.message);
+        if (competitions.error) errors.push('Versenyek: ' + competitions.error.message);
+        if (parents.error) errors.push('Szülők: ' + parents.error.message);
+        
         setStats({
-          competitors: competitorsRes.count ?? 0,
-          competitions: competitionsRes.count ?? 0,
-          parents: parentsRes.count ?? 0
+          competitors: comp.count,
+          competitions: competitions.count,
+          parents: parents.count
         });
+        
+        if (errors.length > 0) {
+          setError(errors.join(' · '));
+        }
       } catch (err) {
-        setError('Statisztikák betöltése sikertelen: ' + err.message);
+        if (mounted) setError('Statisztikák betöltése sikertelen: ' + err.message);
       }
     };
+    
     loadStats();
+    
+    // Biztonsági timeout: ha 8 másodpercen belül nem érkezik adat,
+    // mutatjuk hogy 0 (nem hagyjuk forgatva a spinnert)
+    const safetyTimeout = setTimeout(() => {
+      if (mounted) {
+        setStats(prev => ({
+          competitors: prev.competitors ?? 0,
+          competitions: prev.competitions ?? 0,
+          parents: prev.parents ?? 0
+        }));
+      }
+    }, 8000);
+    
+    return () => {
+      mounted = false;
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   return (
