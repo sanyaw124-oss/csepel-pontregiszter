@@ -126,8 +126,17 @@ function useAuth() {
       }
     );
 
+    // Biztonsági timeout: ha 3 másodpercen belül nem érkezett auth event,
+    // mutatjuk a login képernyőt (nincs session)
+    const safetyTimeout = setTimeout(() => {
+      if (mounted) {
+        setLoading(false);
+      }
+    }, 3000);
+
     return () => {
       mounted = false;
+      clearTimeout(safetyTimeout);
       subscription.unsubscribe();
     };
   }, [loadProfile]);
