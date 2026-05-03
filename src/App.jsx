@@ -103,17 +103,20 @@ function useAuth() {
   const [error, setError] = useState(null);
 
   const loadProfile = useCallback(async (userId) => {
+    console.log('[loadProfile] start for userId:', userId);
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
+      console.log('[loadProfile] response:', { hasData: !!data, error: error?.message });
       if (error) throw error;
       setProfile(data);
-      setError(null);  // sikeres töltéskor töröljük a régi hibát
+      setError(null);
+      console.log('[loadProfile] profile set successfully');
     } catch (err) {
-      console.error('Profile betöltési hiba:', err);
+      console.error('[loadProfile] error:', err);
       setError('Profil betöltése sikertelen: ' + err.message);
     }
   }, []);
@@ -186,20 +189,33 @@ function useAuth() {
   }, [loadProfile]);
 
   const signIn = async (email, password) => {
+    console.log('[signIn] start');
     setError(null);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    console.log('[signIn] response:', { 
+      hasData: !!data, 
+      hasSession: !!data?.session, 
+      hasUser: !!data?.user,
+      error: error?.message 
+    });
     if (error) {
       setError(error.message);
       return false;
     }
-    // Manuálisan is meghívjuk a loadProfile-t és a setSession-t,
-    // mert az onAuthStateChange néha nem triggerelődik gyorsan
     if (data?.session) {
+      console.log('[signIn] setting session and loading profile for user:', data.user?.id);
       setSession(data.session);
       if (data.user) {
-        await loadProfile(data.user.id);
+        try {
+          await loadProfile(data.user.id);
+          console.log('[signIn] profile loaded successfully');
+        } catch (e) {
+          console.error('[signIn] loadProfile error:', e);
+        }
       }
       setLoading(false);
+    } else {
+      console.warn('[signIn] no session in response - this should not happen');
     }
     return true;
   };
@@ -218,37 +234,6 @@ function useAuthContext() {
   const ctx = React.useContext(AuthContext);
   if (!ctx) throw new Error('useAuthContext must be inside AuthProvider');
   return ctx;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// VISIBILITY RELOAD HOOK
-// ═══════════════════════════════════════════════════════════════════
-
-// Ez a hook visszaad egy kulcsot ami változik amikor a tab visszanyer
-// fókuszt (pl. háttérből visszatérés). Minden komponens ami ezt használja
-// dependency-ként, automatikusan újratöltődik.
-function useVisibilityReloadKey() {
-  const [key, setKey] = useState(0);
-  
-  useEffect(() => {
-    let lastReload = Date.now();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        const now = Date.now();
-        // Csak akkor reload, ha legalább 3 másodperc telt el
-        // (elkerüljük a gyors váltogatást)
-        if (now - lastReload > 3000) {
-          lastReload = now;
-          setKey(k => k + 1);
-        }
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
-  
-  return key;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -589,69 +574,52 @@ function DashboardView() {
   const { profile } = useAuthContext();
   const [stats, setStats] = useState({ competitors: null, competitions: null, parents: null });
   const [error, setError] = useState(null);
-  const [reloadKey, setReloadKey] = useState(0);
 
-  const loadStats = useCallback(async () => {
-    try {
-      // Külön kérések - így ha az egyik hibára megy, a többi még megy
-      const competitorsPromise = supabase
-        .from('competitors')
-        .select('id', { count: 'exact', head: true })
-        .then(({ count, error }) => ({ count: count ?? 0, error }));
-        
-      const competitionsPromise = supabase
-        .from('competitions')
-        .select('id', { count: 'exact', head: true })
-        .then(({ count, error }) => ({ count: count ?? 0, error }));
-      
-      // szülő fiókok = szulo + szulo_admin
-      const parentsPromise = supabase
-        .from('profiles')
-        .select('id', { count: 'exact', head: true })
-        .in('role', ['szulo', 'szulo_admin'])
-        .then(({ count, error }) => ({ count: count ?? 0, error }));
-      
-      const [comp, competitions, parents] = await Promise.all([
-        competitorsPromise, competitionsPromise, parentsPromise
-      ]);
-      
-      // Részleges hiba: ha az egyik elromlott, mutassuk a többit
-      const errors = [];
-      if (comp.error) errors.push('Versenyzők: ' + comp.error.message);
-      if (competitions.error) errors.push('Versenyek: ' + competitions.error.message);
-      if (parents.error) errors.push('Szülők: ' + parents.error.message);
-      
-      setStats({
-        competitors: comp.count,
-        competitions: competitions.count,
-        parents: parents.count
-      });
-      
-      if (errors.length > 0) {
-        setError(errors.join(' · '));
-      } else {
-        setError(null);
-      }
-    } catch (err) {
-      setError('Statisztikák betöltése sikertelen: ' + err.message);
-    }
-  }, []);
-
-  // Első betöltés és reload-on újratöltés
   useEffect(() => {
     let mounted = true;
     
-    const doLoad = async () => {
-      if (!mounted) return;
-      // Reset stats hogy a spinner megjelenjen
-      setStats({ competitors: null, competitions: null, parents: null });
-      await loadStats();
+    const loadStats = async () => {
+      try {
+        const competitorsPromise = supabase
+          .from('competitors')
+          .select('id', { count: 'exact', head: true })
+          .then(({ count, error }) => ({ count: count ?? 0, error }));
+          
+        const competitionsPromise = supabase
+          .from('competitions')
+          .select('id', { count: 'exact', head: true })
+          .then(({ count, error }) => ({ count: count ?? 0, error }));
+        
+        const parentsPromise = supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .in('role', ['szulo', 'szulo_admin'])
+          .then(({ count, error }) => ({ count: count ?? 0, error }));
+        
+        const [comp, competitions, parents] = await Promise.all([
+          competitorsPromise, competitionsPromise, parentsPromise
+        ]);
+        
+        if (!mounted) return;
+        
+        setStats({
+          competitors: comp.count,
+          competitions: competitions.count,
+          parents: parents.count
+        });
+        
+        const errors = [];
+        if (comp.error) errors.push('Versenyzők: ' + comp.error.message);
+        if (competitions.error) errors.push('Versenyek: ' + competitions.error.message);
+        if (parents.error) errors.push('Szülők: ' + parents.error.message);
+        if (errors.length > 0) setError(errors.join(' · '));
+      } catch (err) {
+        if (mounted) setError('Statisztikák betöltése sikertelen: ' + err.message);
+      }
     };
     
-    doLoad();
+    loadStats();
     
-    // Biztonsági timeout: ha 8 másodpercen belül nem érkezik adat,
-    // mutatjuk hogy 0 (nem hagyjuk forgatva a spinnert)
     const safetyTimeout = setTimeout(() => {
       if (mounted) {
         setStats(prev => ({
@@ -666,24 +634,6 @@ function DashboardView() {
       mounted = false;
       clearTimeout(safetyTimeout);
     };
-  }, [loadStats, reloadKey]);
-
-  // Tab visibility - ha visszatérünk a háttérből, újratölt
-  useEffect(() => {
-    let lastReload = Date.now();
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        // Csak akkor reload, ha legalább 5 másodperc telt el
-        const now = Date.now();
-        if (now - lastReload > 5000) {
-          lastReload = now;
-          setReloadKey(k => k + 1);
-        }
-      }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, []);
 
   return (
@@ -796,15 +746,12 @@ function PlaceholderView({ title, message }) {
 
 export default function App() {
   const auth = useAuth();
-  const reloadKey = useVisibilityReloadKey();
   
   if (auth.loading) return <LoadingScreen message="Csatlakozás..." />;
 
   return (
     <AuthContext.Provider value={auth}>
-      {auth.session && auth.profile 
-        ? <AppShell key={reloadKey} /> 
-        : <LoginScreen />}
+      {auth.session && auth.profile ? <AppShell /> : <LoginScreen />}
     </AuthContext.Provider>
   );
 }
