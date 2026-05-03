@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart,
+  Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
   Save, ArrowLeft, ChevronRight, Loader, Search, Copy,
   ToggleLeft, ToggleRight
 } from 'lucide-react';
