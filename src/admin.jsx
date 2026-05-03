@@ -5,20 +5,7 @@ import {
   ToggleLeft, ToggleRight
 } from 'lucide-react';
 
-// ═══════════════════════════════════════════════════════════════════
-// HELPER: jelszó generálás
-// ═══════════════════════════════════════════════════════════════════
-
-export function generatePassword(length = 12) {
-  const chars = 'ABCDEFGHIJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  let result = '';
-  const cryptoArr = new Uint32Array(length);
-  window.crypto.getRandomValues(cryptoArr);
-  for (let i = 0; i < length; i++) {
-    result += chars[cryptoArr[i] % chars.length];
-  }
-  return result;
-}
+// HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPER: versenyző név formázás
@@ -738,26 +725,33 @@ function ParentForm({ supabase, parent, onSaved, onCancel }) {
       let generatedPassword = null;
 
       if (isNew) {
-        // Új user: Supabase signUp (mert csak ezt tudjuk publishable key-jel)
-        generatedPassword = generatePassword();
+        // Új user: Edge Function-ön keresztül (admin sessionje érintetlen marad)
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Nincs aktív session');
         
-        const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-          email: form.email.trim(),
-          password: generatedPassword,
-          options: {
-            data: {
-              role: 'szulo',
+        const response = await fetch(
+          `${supabase.supabaseUrl}/functions/v1/create-user`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              email: form.email.trim(),
               full_name: form.full_name.trim(),
-              username: form.email.trim()
-            }
+              role: 'szulo'
+            })
           }
-        });
-        if (signUpError) throw signUpError;
-        userId = signUpData.user?.id;
-        if (!userId) throw new Error('Felhasználó létrehozása sikertelen');
+        );
         
-        // VIGYÁZAT: a signUp utáni session bejelentkezteti az új usert!
-        // Ezt a hívás után helyre kell hozni: az adminnak vissza kell jelentkeznie
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Felhasználó létrehozása sikertelen');
+        }
+        
+        userId = result.user_id;
+        generatedPassword = result.password;
       } else {
         // Frissítés: csak a profile-t
         const { error } = await supabase
@@ -809,9 +803,9 @@ function ParentForm({ supabase, parent, onSaved, onCancel }) {
       </div>
 
       {isNew && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-900">
-          <strong>Fontos:</strong> új fiók létrehozása után a rendszer automatikusan a szülő fiókba lép át. 
-          Mentés után jelentkezz ki, és lépj be újra a saját admin fiókoddal.
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
+          <strong>Új szülő fiók:</strong> a mentés után megjelenik egy biztonságos generált jelszó, 
+          amit egyszer látsz. Másold ki, és add át a szülőnek (email/SMS/papír).
         </div>
       )}
 
@@ -1033,25 +1027,33 @@ function StaffForm({ supabase, member, onSaved, onCancel }) {
       let generatedPassword = null;
 
       if (isNew) {
-        generatedPassword = generatePassword();
-        const { data, error } = await supabase.auth.signUp({
-          email: form.email.trim(),
-          password: generatedPassword,
-          options: {
-            data: {
-              role: form.role,
+        // Új user: Edge Function-ön keresztül (admin sessionje érintetlen marad)
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Nincs aktív session');
+        
+        const response = await fetch(
+          `${supabase.supabaseUrl}/functions/v1/create-user`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              email: form.email.trim(),
               full_name: form.full_name.trim(),
-              username: form.email.trim()
-            }
+              role: form.role,
+              titulus: form.titulus.trim() || null
+            })
           }
-        });
-        if (error) throw error;
-        if (data.user && form.titulus) {
-          await supabase
-            .from('profiles')
-            .update({ titulus: form.titulus.trim() })
-            .eq('id', data.user.id);
+        );
+        
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Felhasználó létrehozása sikertelen');
         }
+        
+        generatedPassword = result.password;
       } else {
         const { error } = await supabase
           .from('profiles')
@@ -1087,9 +1089,9 @@ function StaffForm({ supabase, member, onSaved, onCancel }) {
       </div>
 
       {isNew && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-900">
-          <strong>Fontos:</strong> új fiók létrehozása után a rendszer az új edző fiókba lép át. 
-          Mentés után jelentkezz ki, és lépj be újra adminként.
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
+          <strong>Új edző fiók:</strong> a mentés után megjelenik egy biztonságos generált jelszó, 
+          amit egyszer látsz. Másold ki, és add át az edzőnek.
         </div>
       )}
 
@@ -1291,6 +1293,239 @@ export function CompetitorsView({ supabase }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PARENT PROFILE VIEW — szülő látja és szerkesztheti a saját gyerekét
+// ═══════════════════════════════════════════════════════════════════
+
+export function ParentProfileView({ supabase, parentUserId }) {
+  const [children, setChildren] = useState(null);
+  const [editing, setEditing] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    // A szülő gyerekei a parent_child_links-ből
+    const { data: links, error: linksErr } = await supabase
+      .from('parent_child_links')
+      .select('competitor_id')
+      .eq('parent_user_id', parentUserId);
+    
+    if (linksErr) {
+      setError(linksErr.message);
+      return;
+    }
+    
+    if (!links || links.length === 0) {
+      setChildren([]);
+      return;
+    }
+    
+    const childIds = links.map(l => l.competitor_id);
+    const { data: comps, error: compsErr } = await supabase
+      .from('competitors')
+      .select('*')
+      .in('id', childIds)
+      .order('full_name');
+    
+    if (compsErr) {
+      setError(compsErr.message);
+    } else {
+      setChildren(comps || []);
+    }
+  }, [supabase, parentUserId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (editing) {
+    return (
+      <ParentChildEditForm
+        supabase={supabase}
+        competitor={editing}
+        onSaved={() => { setEditing(null); load(); }}
+        onCancel={() => setEditing(null)}
+      />
+    );
+  }
+
+  if (children === null) {
+    return <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
+  }
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold mb-4" style={{ color: COLORS.blueDark }}>
+        Gyermekeim
+      </h2>
+
+      <ErrorBox>{error}</ErrorBox>
+
+      {children.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500 shadow-sm">
+          Nincs összerendelt gyermek. Kérd meg az adminisztrátort vagy az edzőt.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {children.map(child => {
+            const age = calculateAge(child.birth_date) ?? (new Date().getFullYear() - child.birth_year);
+            return (
+              <div 
+                key={child.id} 
+                className="bg-white rounded-lg border p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer"
+                style={{ borderColor: COLORS.gray200 }}
+                onClick={() => setEditing(child)}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="font-semibold" style={{ color: COLORS.blueDark }}>
+                      {formatCompetitorName(child)}
+                    </div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      {child.kategoria} · {child.korosztaly} · {age} éves
+                    </div>
+                    {!child.is_active && (
+                      <div className="text-xs text-gray-500 mt-1">Inaktív</div>
+                    )}
+                  </div>
+                  <Edit2 className="w-5 h-5 text-gray-400" />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">
+        <strong>Megjegyzés:</strong> Kattints egy gyerekre a profil szerkesztéséhez. 
+        Új gyerek hozzárendelését vagy szülők változtatását az adminisztrátortól kérheted.
+      </div>
+    </div>
+  );
+}
+
+function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
+  const [form, setForm] = useState({
+    full_name: competitor.full_name,
+    nickname: competitor.nickname || '',
+    birth_date: competitor.birth_date || '',
+    kategoria: competitor.kategoria,
+    korosztaly: competitor.korosztaly,
+    email: competitor.email || ''
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+
+  const save = async () => {
+    setError(null);
+    if (!form.full_name.trim()) {
+      setError('A név kötelező');
+      return;
+    }
+    if (!form.birth_date) {
+      setError('A születési dátum kötelező');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const birthYear = new Date(form.birth_date).getFullYear();
+      const { error: updErr } = await supabase
+        .from('competitors')
+        .update({
+          full_name: form.full_name.trim(),
+          nickname: form.nickname.trim() || null,
+          birth_date: form.birth_date,
+          birth_year: birthYear,
+          kategoria: form.kategoria,
+          korosztaly: form.korosztaly,
+          email: form.email.trim() || null
+        })
+        .eq('id', competitor.id);
+      
+      if (updErr) throw updErr;
+      onSaved();
+    } catch (err) {
+      setError('Mentés sikertelen: ' + err.message);
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onCancel} className="p-1 hover:bg-gray-100 rounded">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h2 className="text-xl font-bold" style={{ color: COLORS.blueDark }}>
+          {formatCompetitorName(competitor)}
+        </h2>
+      </div>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3 shadow-sm"
+           style={{ borderColor: COLORS.gray200 }}>
+        <Field label="Teljes név *">
+          <Input
+            type="text"
+            value={form.full_name}
+            onChange={(e) => setForm({...form, full_name: e.target.value})}
+          />
+        </Field>
+
+        <Field label="Becenév" hint='Megjelenítés: Vezetéknév "Becenév" Keresztnév'>
+          <Input
+            type="text"
+            value={form.nickname}
+            onChange={(e) => setForm({...form, nickname: e.target.value})}
+          />
+        </Field>
+
+        <Field label="Születési dátum *">
+          <Input
+            type="date"
+            value={form.birth_date}
+            onChange={(e) => setForm({...form, birth_date: e.target.value})}
+            max={new Date().toISOString().split('T')[0]}
+            min="2000-01-01"
+          />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Kategória">
+            <Select value={form.kategoria} onChange={(e) => setForm({...form, kategoria: e.target.value})}>
+              {KATEGORIAK.map(k => <option key={k}>{k}</option>)}
+            </Select>
+          </Field>
+          <Field label="Korosztály">
+            <Select value={form.korosztaly} onChange={(e) => setForm({...form, korosztaly: e.target.value})}>
+              {KOROSZTALYOK.map(k => <option key={k}>{k}</option>)}
+            </Select>
+          </Field>
+        </div>
+        <div className="text-xs text-gray-500 -mt-1">
+          A kategória/korosztály változás automatikusan rögzítésre kerül a fejlődési előzményben.
+        </div>
+
+        <Field label="Email (opcionális)">
+          <Input
+            type="email"
+            value={form.email}
+            onChange={(e) => setForm({...form, email: e.target.value})}
+          />
+        </Field>
+
+        <ErrorBox>{error}</ErrorBox>
+
+        <div className="flex gap-2 pt-2">
+          <PrimaryButton onClick={save} disabled={saving}>
+            {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Mentés
+          </PrimaryButton>
+          <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
+        </div>
+      </div>
     </div>
   );
 }
