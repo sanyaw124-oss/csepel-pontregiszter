@@ -1,9 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Users, UserPlus, Edit2, Plus, X, Check, AlertCircle, Heart, Award,
-  Save, ArrowLeft, ChevronRight, Shield, Crown, BookOpen, Star,
-  Loader, Search, Filter, Eye, EyeOff, Copy, ToggleLeft, ToggleRight,
-  Mail, Phone, Calendar
+  Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart,
+  Save, ArrowLeft, ChevronRight, Loader, Search, Copy,
+  ToggleLeft, ToggleRight
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -69,15 +68,6 @@ const COLORS = {
   gray700: '#374151'
 };
 
-const ROLES = {
-  ADMIN: 'admin',
-  VEZETOEDZO: 'vezetoedzo',
-  EDZO: 'edzo',
-  SEGEDEDZO: 'segededzo',
-  SZULO: 'szulo',
-  VERSENYZO: 'versenyzo'
-};
-
 const ROLE_LABELS = {
   vezetoedzo: 'Vezetőedző',
   edzo: 'Edző',
@@ -140,18 +130,6 @@ function SecondaryButton({ children, ...props }) {
       {...props}
       className={`px-4 py-2 border rounded-lg hover:bg-gray-50 ${props.className || ''}`}
       style={{ borderColor: COLORS.gray200, ...props.style }}
-    >
-      {children}
-    </button>
-  );
-}
-
-function DangerButton({ children, ...props }) {
-  return (
-    <button
-      {...props}
-      className={`flex items-center gap-1 px-4 py-2 text-white rounded-lg disabled:opacity-50 ${props.className || ''}`}
-      style={{ backgroundColor: COLORS.red, ...props.style }}
     >
       {children}
     </button>
