@@ -351,8 +351,8 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
     const loadParents = async () => {
       const { data: p } = await supabase
         .from('profiles')
-        .select('id, full_name, email')
-        .eq('role', 'szulo')
+        .select('id, full_name, email, role')
+        .in('role', ['szulo', 'szulo_admin'])
         .order('full_name');
       setParents(p || []);
 
@@ -590,8 +590,8 @@ function AdminParents({ supabase }) {
     setError(null);
     const { data, error } = await supabase
       .from('profiles')
-      .select('id, full_name, email, username, created_at')
-      .eq('role', 'szulo')
+      .select('id, full_name, email, username, role, created_at')
+      .in('role', ['szulo', 'szulo_admin'])
       .order('full_name');
     if (error) setError(error.message);
     else setParents(data);
@@ -659,7 +659,15 @@ function ParentRow({ parent, supabase, onEdit }) {
     <div className="border rounded-lg p-3 flex items-center justify-between hover:bg-gray-50"
          style={{ borderColor: COLORS.gray200 }}>
       <div className="min-w-0 flex-1">
-        <div className="font-semibold" style={{ color: COLORS.blueDark }}>{parent.full_name}</div>
+        <div className="font-semibold flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+          {parent.full_name}
+          {parent.role === 'szulo_admin' && (
+            <span className="text-xs px-2 py-0.5 rounded font-normal"
+                  style={{ backgroundColor: COLORS.blue, color: 'white' }}>
+              Admin
+            </span>
+          )}
+        </div>
         <div className="text-xs text-gray-500 truncate">
           {parent.email}
           {childCount !== null && ` · ${childCount} gyerek`}
@@ -1149,7 +1157,7 @@ function AdminLinks({ supabase }) {
     const load = async () => {
       try {
         const [{ data: parents }, { data: competitors }, { data: links }] = await Promise.all([
-          supabase.from('profiles').select('id, full_name, email').eq('role', 'szulo').order('full_name'),
+          supabase.from('profiles').select('id, full_name, email, role').in('role', ['szulo', 'szulo_admin']).order('full_name'),
           supabase.from('competitors').select('id, full_name, nickname, kategoria, birth_year, is_active').order('full_name'),
           supabase.from('parent_child_links').select('parent_user_id, competitor_id')
         ]);
@@ -1188,6 +1196,12 @@ function AdminLinks({ supabase }) {
                      style={{ color: COLORS.blueDark }}>
                   <Heart className="w-4 h-4" style={{ color: COLORS.blue }} />
                   {parent.full_name}
+                  {parent.role === 'szulo_admin' && (
+                    <span className="text-xs px-2 py-0.5 rounded font-normal"
+                          style={{ backgroundColor: COLORS.blue, color: 'white' }}>
+                      Admin
+                    </span>
+                  )}
                   <span className="text-xs text-gray-500 font-normal">({parent.email})</span>
                 </div>
                 <div className="ml-6 space-y-1">
