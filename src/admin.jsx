@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
   Save, ArrowLeft, ChevronRight, Loader, Search, Copy,
-  ToggleLeft, ToggleRight
+  ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
@@ -685,12 +685,18 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
   const [form, setForm] = useState({
     full_name: parent?.full_name || '',
     email: parent?.email || '',
-    role: parent?.role || 'szulo'
+    role: parent?.role || 'szulo',
+    password: '',  // ÚJ: manuálisan megadott jelszó (új fiókhoz)
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(false); // ÚJ: jelszó módosítás panel megjelenítése
+  const [newPassword, setNewPassword] = useState(''); // ÚJ: új jelszó (létező fiókhoz)
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [competitors, setCompetitors] = useState([]);
   const [linkedChildIds, setLinkedChildIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [passwordChangeMessage, setPasswordChangeMessage] = useState(null); // ÚJ: jelszó módosítás után üzenet
 
   // Csak admin (nem szulo_admin) változtathat szülő-admin szerepkört
   const canSetSzuloAdmin = userRole === 'admin';
@@ -721,6 +727,13 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
     );
   };
 
+  // Jelszó validáció: legalább 6 karakter és legalább egy szám
+  const validatePassword = (pwd) => {
+    if (!pwd || pwd.length < 6) return 'A jelszó legalább 6 karakter legyen';
+    if (!/\d/.test(pwd)) return 'A jelszó legalább 1 számot tartalmazzon';
+    return null;
+  };
+
   const save = async () => {
     setError(null);
     if (!(form.full_name || '').trim()) {
@@ -731,14 +744,22 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
       setError('Az email kötelező');
       return;
     }
+    
+    // ÚJ: új fióknál kötelező a jelszó megadása
+    if (isNew) {
+      const pwdError = validatePassword(form.password);
+      if (pwdError) {
+        setError(pwdError);
+        return;
+      }
+    }
 
     setSaving(true);
     try {
       let userId = parent?.id;
-      let generatedPassword = null;
 
       if (isNew) {
-        // Új user: Edge Function-ön keresztül (admin sessionje érintetlen marad)
+        // Új user: Edge Function-ön keresztül - manuális jelszóval
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error('Nincs aktív session');
         
@@ -753,7 +774,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
             body: JSON.stringify({
               email: form.email.trim(),
               full_name: form.full_name.trim(),
-              role: 'szulo'
+              role: form.role,
+              password: form.password  // ÚJ: manuális jelszó átadása
             })
           }
         );
@@ -764,15 +786,20 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
         }
         
         userId = result.user_id;
-        generatedPassword = result.password;
       } else {
-        // Frissítés: csak a profile-t
+        // Frissítés: profile - név, email, ÉS role
+        const updates = {
+          full_name: (form.full_name || '').trim(),
+          email: (form.email || '').trim()
+        };
+        // Csak ha admin, és változott a role
+        if (canSetSzuloAdmin && form.role !== parent.role) {
+          updates.role = form.role;
+        }
+        
         const { error } = await supabase
           .from('profiles')
-          .update({
-            full_name: (form.full_name || '').trim(),
-            email: (form.email || '').trim()
-          })
+          .update(updates)
           .eq('id', parent.id);
         if (error) throw error;
       }
@@ -793,13 +820,59 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
         if (linkError) throw linkError;
       }
 
-      onSaved(generatedPassword ? { 
+      onSaved(isNew ? { 
         email: form.email.trim(), 
-        password: generatedPassword,
+        password: form.password,
         name: form.full_name.trim()
       } : null);
     } catch (err) {
       setError('Mentés sikertelen: ' + err.message);
+      setSaving(false);
+    }
+  };
+
+  // ÚJ: jelszó megváltoztatása meglévő felhasználónak (csak admin)
+  const changePassword = async () => {
+    setError(null);
+    setPasswordChangeMessage(null);
+    
+    const pwdError = validatePassword(newPassword);
+    if (pwdError) {
+      setError(pwdError);
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nincs aktív session');
+      
+      const response = await fetch(
+        `${supabase.supabaseUrl}/functions/v1/change-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: parent.id,
+            new_password: newPassword
+          })
+        }
+      );
+      
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Jelszó módosítása sikertelen');
+      }
+      
+      setPasswordChangeMessage(`Jelszó sikeresen módosítva. Új jelszó: ${newPassword}`);
+      setNewPassword('');
+      setShowPasswordChange(false);
+    } catch (err) {
+      setError('Jelszó módosítás sikertelen: ' + err.message);
+    } finally {
       setSaving(false);
     }
   };
@@ -817,8 +890,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
 
       {isNew && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
-          <strong>Új szülő fiók:</strong> a mentés után megjelenik egy biztonságos generált jelszó, 
-          amit egyszer látsz. Másold ki, és add át a szülőnek (email/SMS/papír).
+          <strong>Új szülő fiók:</strong> add meg a jelszót (min. 6 karakter, min. 1 szám), 
+          és továbbítsd a szülőnek (email/SMS/papír).
         </div>
       )}
 
@@ -843,9 +916,87 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
         </Field>
 
         {isNew && (
-          <div className="text-xs bg-blue-50 border border-blue-200 rounded-lg p-3 text-blue-900">
-            <strong>Jelszó:</strong> Mentés után automatikusan generálódik egy biztonságos jelszó, 
-            ami megjelenik a képernyőn — másold ki és add át a szülőnek.
+          <Field label="Jelszó * (min. 6 karakter, min. 1 szám)">
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm({...form, password: e.target.value})}
+                placeholder="pl. csepel123"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </Field>
+        )}
+
+        {/* ÚJ: meglévő szülőnél role-váltó (csak admin láthatja) */}
+        {!isNew && canSetSzuloAdmin && (
+          <Field 
+            label="Szerepkör" 
+            hint={form.role === 'szulo_admin' 
+              ? 'Szülő-admin: admin jog + saját gyerekek látása' 
+              : 'Sima szülő: csak saját gyerekek'}
+          >
+            <Select 
+              value={form.role} 
+              onChange={(e) => setForm({...form, role: e.target.value})}
+            >
+              <option value="szulo">Szülő (alapértelmezett)</option>
+              <option value="szulo_admin">Szülő-admin (admin jogokkal)</option>
+            </Select>
+          </Field>
+        )}
+
+        {/* ÚJ: jelszó módosítása meglévő fióknál */}
+        {!isNew && (
+          <div className="border-t pt-3" style={{ borderColor: COLORS.gray200 }}>
+            {!showPasswordChange ? (
+              <SecondaryButton onClick={() => setShowPasswordChange(true)}>
+                <Eye className="w-4 h-4" /> Jelszó megváltoztatása
+              </SecondaryButton>
+            ) : (
+              <div className="space-y-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="text-sm font-medium text-amber-900">
+                  Új jelszó (min. 6 karakter, min. 1 szám):
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="új jelszó"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <PrimaryButton onClick={changePassword} disabled={saving}>
+                    {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Jelszó beállítása
+                  </PrimaryButton>
+                  <SecondaryButton onClick={() => { setShowPasswordChange(false); setNewPassword(''); }}>
+                    Mégse
+                  </SecondaryButton>
+                </div>
+              </div>
+            )}
+            {passwordChangeMessage && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-2 text-sm text-green-900">
+                <Check className="w-4 h-4 inline mr-1" />
+                {passwordChangeMessage}
+              </div>
+            )}
           </div>
         )}
 
@@ -913,9 +1064,9 @@ function CredentialsPopup({ creds, onClose }) {
           </h3>
         </div>
         
-        <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mb-4 text-sm text-amber-900">
-          <strong>FONTOS:</strong> Ez a jelszó CSAK MOST jelenik meg. Másold ki és küldd el a szülőnek
-          (email/SMS/papír). A bezárás után már nem tudod visszanézni!
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
+          <strong>Tipp:</strong> Másold ki az adatokat és küldd át a felhasználónak (email/SMS/papír). 
+          A jelszót később is megváltoztathatod a Szerkesztés panelen.
         </div>
 
         <div className="space-y-2 mb-4">
@@ -1026,13 +1177,25 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
     full_name: member?.full_name || '',
     email: member?.email || '',
     role: member?.role || 'edzo',
-    titulus: member?.titulus || ''
+    titulus: member?.titulus || '',
+    password: ''  // ÚJ: manuális jelszó
   });
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [passwordChangeMessage, setPasswordChangeMessage] = useState(null);
 
   // Csak admin (nem szulo_admin) hozhat létre szulo_admin fiókot
   const canCreateSzuloAdmin = userRole === 'admin';
+
+  const validatePassword = (pwd) => {
+    if (!pwd || pwd.length < 6) return 'A jelszó legalább 6 karakter legyen';
+    if (!/\d/.test(pwd)) return 'A jelszó legalább 1 számot tartalmazzon';
+    return null;
+  };
 
   const save = async () => {
     setError(null);
@@ -1040,13 +1203,19 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
       setError('Név és email kötelező');
       return;
     }
+    
+    // ÚJ: új fióknál kötelező a jelszó
+    if (isNew) {
+      const pwdError = validatePassword(form.password);
+      if (pwdError) {
+        setError(pwdError);
+        return;
+      }
+    }
 
     setSaving(true);
     try {
-      let generatedPassword = null;
-
       if (isNew) {
-        // Új user: Edge Function-ön keresztül (admin sessionje érintetlen marad)
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) throw new Error('Nincs aktív session');
         
@@ -1062,7 +1231,8 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
               email: (form.email || '').trim(),
               full_name: (form.full_name || '').trim(),
               role: form.role,
-              titulus: (form.titulus || '').trim() || null
+              titulus: (form.titulus || '').trim() || null,
+              password: form.password  // ÚJ
             })
           }
         );
@@ -1071,8 +1241,6 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
         if (!response.ok) {
           throw new Error(result.error || 'Felhasználó létrehozása sikertelen');
         }
-        
-        generatedPassword = result.password;
       } else {
         const { error } = await supabase
           .from('profiles')
@@ -1085,13 +1253,59 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
         if (error) throw error;
       }
 
-      onSaved(generatedPassword ? { 
+      onSaved(isNew ? { 
         email: (form.email || '').trim(), 
-        password: generatedPassword,
+        password: form.password,
         name: (form.full_name || '').trim()
       } : null);
     } catch (err) {
       setError('Mentés sikertelen: ' + err.message);
+      setSaving(false);
+    }
+  };
+
+  // ÚJ: jelszó változtatás meglévő fiókhoz
+  const changePassword = async () => {
+    setError(null);
+    setPasswordChangeMessage(null);
+    
+    const pwdError = validatePassword(newPassword);
+    if (pwdError) {
+      setError(pwdError);
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nincs aktív session');
+      
+      const response = await fetch(
+        `${supabase.supabaseUrl}/functions/v1/change-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: member.id,
+            new_password: newPassword
+          })
+        }
+      );
+      
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Jelszó módosítása sikertelen');
+      }
+      
+      setPasswordChangeMessage(`Jelszó sikeresen módosítva. Új jelszó: ${newPassword}`);
+      setNewPassword('');
+      setShowPasswordChange(false);
+    } catch (err) {
+      setError('Jelszó módosítás sikertelen: ' + err.message);
+    } finally {
       setSaving(false);
     }
   };
@@ -1109,8 +1323,8 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
 
       {isNew && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-sm text-blue-900">
-          <strong>Új fiók:</strong> a mentés után megjelenik egy biztonságos generált jelszó, 
-          amit egyszer látsz. Másold ki, és add át a felhasználónak.
+          <strong>Új fiók:</strong> add meg a jelszót (min. 6 karakter, min. 1 szám), 
+          és továbbítsd a felhasználónak.
         </div>
       )}
 
@@ -1122,6 +1336,27 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
           <Input type="email" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} 
                  disabled={!isNew} />
         </Field>
+        
+        {isNew && (
+          <Field label="Jelszó * (min. 6 karakter, min. 1 szám)">
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm({...form, password: e.target.value})}
+                placeholder="pl. csepel123"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </Field>
+        )}
+        
         <Field label="Szerepkör" hint={form.role === 'szulo_admin' ? 'Admin jog + saját gyerekek látása. A gyerekeket a Szülők fülön rendelheted hozzá.' : null}>
           <Select value={form.role} onChange={(e) => setForm({...form, role: e.target.value})}>
             <option value="vezetoedzo">Vezetőedző</option>
@@ -1134,6 +1369,53 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
           <Input value={form.titulus} onChange={(e) => setForm({...form, titulus: e.target.value})} 
                  placeholder="pl. balett-edző, koreográfus" />
         </Field>
+
+        {/* ÚJ: jelszó módosítása meglévő fióknál */}
+        {!isNew && (
+          <div className="border-t pt-3" style={{ borderColor: COLORS.gray200 }}>
+            {!showPasswordChange ? (
+              <SecondaryButton onClick={() => setShowPasswordChange(true)}>
+                <Eye className="w-4 h-4" /> Jelszó megváltoztatása
+              </SecondaryButton>
+            ) : (
+              <div className="space-y-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="text-sm font-medium text-amber-900">
+                  Új jelszó (min. 6 karakter, min. 1 szám):
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="új jelszó"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <PrimaryButton onClick={changePassword} disabled={saving}>
+                    {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                    Jelszó beállítása
+                  </PrimaryButton>
+                  <SecondaryButton onClick={() => { setShowPasswordChange(false); setNewPassword(''); }}>
+                    Mégse
+                  </SecondaryButton>
+                </div>
+              </div>
+            )}
+            {passwordChangeMessage && (
+              <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-2 text-sm text-green-900">
+                <Check className="w-4 h-4 inline mr-1" />
+                {passwordChangeMessage}
+              </div>
+            )}
+          </div>
+        )}
 
         <ErrorBox>{error}</ErrorBox>
 

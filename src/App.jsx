@@ -684,7 +684,11 @@ function DashboardView() {
   const { profile } = useAuthContext();
   const { key: dataReloadKey } = useDataReload();
   const [stats, setStats] = useState({ competitors: null, competitions: null, parents: null });
+  const [myChildren, setMyChildren] = useState(null);  // ÚJ: saját gyerekek (szulo_admin)
   const [error, setError] = useState(null);
+  
+  const isParentLike = profile.role === 'szulo' || profile.role === 'szulo_admin';
+  const isAdminLike = profile.role === 'admin' || profile.role === 'szulo_admin';
 
   useEffect(() => {
     let mounted = true;
@@ -729,8 +733,36 @@ function DashboardView() {
         if (mounted) setError('Statisztikák betöltése sikertelen: ' + err.message);
       }
     };
+
+    // ÚJ: szülő/szülő-admin esetén töltjük a saját gyerekeket
+    const loadMyChildren = async () => {
+      if (!isParentLike) return;
+      try {
+        const { data: links } = await supabase
+          .from('parent_child_links')
+          .select('competitor_id')
+          .eq('parent_user_id', profile.id);
+        
+        if (!links || links.length === 0) {
+          if (mounted) setMyChildren([]);
+          return;
+        }
+        
+        const childIds = links.map(l => l.competitor_id);
+        const { data: kids } = await supabase
+          .from('competitors')
+          .select('*')
+          .in('id', childIds)
+          .order('full_name');
+        
+        if (mounted) setMyChildren(kids || []);
+      } catch (err) {
+        console.error('Gyerekek betöltése hiba:', err);
+      }
+    };
     
     loadStats();
+    loadMyChildren();
     
     const safetyTimeout = setTimeout(() => {
       if (mounted) {
@@ -746,7 +778,7 @@ function DashboardView() {
       mounted = false;
       clearTimeout(safetyTimeout);
     };
-  }, [dataReloadKey]);  // ← ÚJ: dataReloadKey változására újra fut
+  }, [dataReloadKey, isParentLike, profile.id]);
 
   return (
     <div>
@@ -766,11 +798,53 @@ function DashboardView() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-        <StatCard icon={Users} label="Versenyzők" value={stats.competitors} accent="blue" />
-        <StatCard icon={Calendar} label="Versenyek" value={stats.competitions} accent="red" />
-        <StatCard icon={Heart} label="Szülő fiókok" value={stats.parents} accent="blue" />
-      </div>
+      {/* ÚJ: szülő/szülő-admin saját gyerekek */}
+      {isParentLike && (
+        <div className="mb-6">
+          <h3 className="font-semibold text-lg mb-3 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+            <Heart className="w-5 h-5" style={{ color: COLORS.red }} />
+            Saját gyerek(ek)
+          </h3>
+          {myChildren === null ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+              <Loader className="w-5 h-5 animate-spin text-gray-400" />
+            </div>
+          ) : myChildren.length === 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm text-sm text-gray-500 italic">
+              Még nincs hozzád rendelt gyermek. Az adminisztrátor tudja hozzárendelni.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {myChildren.map(c => (
+                <div key={c.id} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                  <div className="font-semibold" style={{ color: COLORS.blueDark }}>
+                    {c.nickname 
+                      ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
+                      : c.full_name}
+                  </div>
+                  <div className="text-xs text-gray-500 mt-1">
+                    {c.kategoria} · {c.korosztaly} · született {c.birth_year}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Admin/edző számára: statisztikák */}
+      {isAdminLike && (
+        <>
+          <h3 className="font-semibold text-lg mb-3" style={{ color: COLORS.blueDark }}>
+            Klub áttekintés
+          </h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            <StatCard icon={Users} label="Versenyzők" value={stats.competitors} accent="blue" />
+            <StatCard icon={Calendar} label="Versenyek" value={stats.competitions} accent="red" />
+            <StatCard icon={Heart} label="Szülő fiókok" value={stats.parents} accent="blue" />
+          </div>
+        </>
+      )}
 
       <div 
         className="mt-6 rounded-lg p-4 flex gap-3 border"
