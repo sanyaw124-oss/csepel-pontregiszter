@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
 import { AdminView, CompetitorsView as CompetitorsViewComponent, ParentProfileView } from './admin';
+import { CompetitionsView } from './competitions';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -665,7 +666,7 @@ function AppShell() {
           <PlaceholderView title="Profil" message="A 4. fázisban készül el — saját eredmények, fejlődési grafikon." />
         )}
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} dataReloadKey={dataReloadKey} />}
-        {activeView === 'competitions' && <PlaceholderView title="Versenyek" message="A 3. fázisban készül el — startlista, pontozás." />}
+        {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
