@@ -300,15 +300,21 @@ function CompetitorRow({ competitor, onEdit }) {
     <div 
       className="border rounded-lg p-3 flex items-center justify-between hover:bg-gray-50"
       style={{ 
-        borderColor: COLORS.gray200,
+        borderColor: competitor.is_provisional ? '#fbbf24' : COLORS.gray200,
+        backgroundColor: competitor.is_provisional ? '#fef3c7' : undefined,
         opacity: competitor.is_active ? 1 : 0.5
       }}
     >
       <div className="min-w-0 flex-1">
-        <div className="font-semibold flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+        <div className="font-semibold flex items-center gap-2 flex-wrap" style={{ color: COLORS.blueDark }}>
           {formatCompetitorName(competitor)}
           {!competitor.is_active && (
             <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">Inaktív</span>
+          )}
+          {competitor.is_provisional && (
+            <span className="text-xs px-2 py-0.5 rounded font-medium" style={{ backgroundColor: '#f59e0b', color: 'white' }}>
+              ⚠ Ideiglenes
+            </span>
           )}
         </div>
         <div className="text-xs text-gray-500">
@@ -374,7 +380,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
     );
   };
 
-  const save = async () => {
+  const save = async (markAsFinal = false) => {
     setError(null);
     if (!(form.full_name || '').trim()) {
       setError('A név kötelező');
@@ -399,6 +405,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
         is_active: form.is_active,
         is_club_member: form.is_club_member
       };
+      
+      // Ha "véglegesként" mentjük, állítsuk false-ra a provisional flaget
+      if (markAsFinal) {
+        payload.is_provisional = false;
+      }
 
       let competitorId;
       if (isNew) {
@@ -563,14 +574,37 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
             A szülő-gyerek kapcsolatokat a mentés után tudod beállítani — szerkeszd újra a versenyzőt.
           </div>
         )}
+        
+        {/* Ideiglenes profil figyelmeztetés */}
+        {!isNew && competitor?.is_provisional && (
+          <div className="rounded-lg p-3 text-sm flex gap-2 border"
+               style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold mb-1">Ideiglenes profil</div>
+              <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
+            </div>
+          </div>
+        )}
 
         <ErrorBox>{error}</ErrorBox>
 
-        <div className="flex gap-2 pt-2">
-          <PrimaryButton onClick={save} disabled={saving}>
+        <div className="flex gap-2 pt-2 flex-wrap">
+          <PrimaryButton onClick={() => save(false)} disabled={saving}>
             {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             Mentés
           </PrimaryButton>
+          {!isNew && competitor?.is_provisional && (
+            <button
+              onClick={() => save(true)}
+              disabled={saving}
+              className="px-4 py-2 rounded-lg font-medium text-white text-sm flex items-center gap-1.5 disabled:opacity-50"
+              style={{ backgroundColor: '#f59e0b' }}
+            >
+              <Check className="w-4 h-4" />
+              Mentés véglegesként
+            </button>
+          )}
           <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
         </div>
       </div>
@@ -1548,6 +1582,10 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
     }
     return true;
   });
+  
+  // Csoportosítás: ideiglenes vs végleges
+  const provisional = filtered.filter(c => c.is_provisional);
+  const finalized = filtered.filter(c => !c.is_provisional);
 
   return (
     <div>
@@ -1586,10 +1624,41 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
 
           <div className="text-sm text-gray-600 mb-3">
             {filtered.length} / {competitors.length} versenyző
+            {provisional.length > 0 && (
+              <span className="ml-2 text-amber-700">· {provisional.length} ideiglenes</span>
+            )}
           </div>
 
+          {/* Ideiglenes profilok szekció */}
+          {provisional.length > 0 && (
+            <div className="mb-4 border-2 rounded-lg overflow-hidden" style={{ borderColor: '#f59e0b' }}>
+              <div className="px-3 py-2 text-sm font-semibold flex items-center gap-2"
+                   style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
+                <AlertCircle className="w-4 h-4" />
+                Ideiglenes profilok ({provisional.length}) — kiegészítésre vár
+              </div>
+              <div className="space-y-1 p-2 bg-amber-50">
+                {provisional.map(c => {
+                  const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
+                  return (
+                    <div key={c.id} className="bg-white border rounded p-2"
+                         style={{ borderColor: '#fbbf24' }}>
+                      <div className="font-semibold" style={{ color: COLORS.blueDark }}>
+                        {formatCompetitorName(c)} <span className="text-xs text-amber-700 font-normal">⚠ Ideiglenes</span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {c.kategoria} · {c.korosztaly} · {age} éves
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Végleges profilok */}
           <div className="space-y-2">
-            {filtered.map(c => {
+            {finalized.map(c => {
               const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
               return (
                 <div key={c.id} className="bg-white border rounded-lg p-3 shadow-sm"
