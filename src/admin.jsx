@@ -79,6 +79,7 @@ function Field({ label, children, hint }) {
 function Input(props) {
   return (
     <input
+      autoComplete="off"
       {...props}
       className={`w-full px-3 py-2 border rounded-lg outline-none transition-all ${props.className || ''}`}
       style={{ borderColor: COLORS.gray200, ...props.style }}
@@ -178,7 +179,7 @@ export function AdminView({ supabase, userRole, dataReloadKey }) {
 
         <div className="p-4">
           {tab === 'competitors' && <AdminCompetitors supabase={supabase} dataReloadKey={dataReloadKey} />}
-          {tab === 'parents' && <AdminParents supabase={supabase} dataReloadKey={dataReloadKey} />}
+          {tab === 'parents' && <AdminParents supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
           {tab === 'staff' && <AdminStaff supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
           {tab === 'links' && <AdminLinks supabase={supabase} dataReloadKey={dataReloadKey} />}
         </div>
@@ -556,6 +557,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
           </Field>
         )}
 
+
         {isNew && (
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
             A szülő-gyerek kapcsolatokat a mentés után tudod beállítani — szerkeszd újra a versenyzőt.
@@ -580,7 +582,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
 // SZÜLŐK
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminParents({ supabase, dataReloadKey }) {
+function AdminParents({ supabase, dataReloadKey, userRole }) {
   const [parents, setParents] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -604,6 +606,7 @@ function AdminParents({ supabase, dataReloadKey }) {
       <ParentForm
         supabase={supabase}
         parent={editing === 'new' ? null : editing}
+        userRole={userRole}
         onSaved={(creds) => { 
           setEditing(null); 
           load();
@@ -908,6 +911,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
         <Field label="Email * (ezzel fog belépni)">
           <Input
             type="email"
+            name="parent_email_field"
+            autoComplete="off"
             value={form.email}
             onChange={(e) => setForm({...form, email: e.target.value})}
             disabled={!isNew}
