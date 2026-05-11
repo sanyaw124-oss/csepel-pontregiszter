@@ -10,8 +10,6 @@ import {
   Calendar, MapPin, Plus, ArrowLeft, Save, Loader, AlertCircle,
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus
 } from 'lucide-react';
-import { ScoringView } from './scoring';
-import { CompetitionTeamsView } from './teams';
 
 // ═══════════════════════════════════════════════════════════════════
 // COLORS
@@ -210,7 +208,6 @@ export function CompetitionsView({ supabase, userRole, dataReloadKey }) {
         supabase={supabase}
         competition={editing === 'new' ? null : editing}
         canManage={canManage}
-        userRole={userRole}
         onClose={() => setEditing(null)}
       />
     );
@@ -423,16 +420,31 @@ function CompetitionCard({ competition, onClick }) {
 // COMPETITION EDITOR (egyetlen verseny szerkesztése)
 // ═══════════════════════════════════════════════════════════════════
 
-function CompetitionEditor({ supabase, competition, canManage, userRole, onClose }) {
+function CompetitionEditor({ supabase, competition, canManage, onClose }) {
   const isNew = !competition;
   const [tab, setTab] = useState('basics');
   const [current, setCurrent] = useState(competition);
+  const [showImportToCurrent, setShowImportToCurrent] = useState(false);
   
   const tabs = [
     { id: 'basics', label: 'Alapadatok', icon: Calendar },
-    { id: 'days', label: 'Napok és kategóriák', icon: Trophy, disabled: isNew && !current },
-    { id: 'teams', label: 'Klub-csapatok', icon: UsersIcon, disabled: isNew && !current }
+    { id: 'days', label: 'Napok és kategóriák', icon: Trophy, disabled: isNew && !current }
   ];
+
+  // Ha a JSON-import view aktív (meglévő versenyhez)
+  if (showImportToCurrent && current) {
+    return (
+      <JsonImportView
+        supabase={supabase}
+        existingCompetition={current}
+        onClose={() => setShowImportToCurrent(false)}
+        onImported={() => {
+          setShowImportToCurrent(false);
+          setTab('days'); // a Napok fülre dobjuk hogy lássa az új kategóriákat
+        }}
+      />
+    );
+  }
 
   return (
     <div>
@@ -477,6 +489,9 @@ function CompetitionEditor({ supabase, competition, canManage, userRole, onClose
                 competition={current}
                 canManage={canManage}
                 onSaved={(updated) => setCurrent(updated)}
+                onAction={(action) => {
+                  if (action === 'import_json') setShowImportToCurrent(true);
+                }}
               />
             )}
             {tab === 'days' && current && (
@@ -484,14 +499,6 @@ function CompetitionEditor({ supabase, competition, canManage, userRole, onClose
                 supabase={supabase}
                 competitionId={current.id}
                 canManage={canManage}
-                userRole={userRole}
-              />
-            )}
-            {tab === 'teams' && current && (
-              <CompetitionTeamsView
-                supabase={supabase}
-                userRole={userRole}
-                competitionId={current.id}
               />
             )}
           </div>
@@ -517,7 +524,7 @@ function CompetitionEditor({ supabase, competition, canManage, userRole, onClose
 // BASICS TAB (alapadatok)
 // ═══════════════════════════════════════════════════════════════════
 
-function BasicsTab({ supabase, competition, canManage, onSaved }) {
+function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
   const isNew = !competition;
   const [form, setForm] = useState({
     name: competition?.name || '',
@@ -748,11 +755,49 @@ function BasicsTab({ supabase, competition, canManage, onSaved }) {
       <ErrorBox>{error}</ErrorBox>
       
       {canManage && (
-        <div className="pt-2">
+        <div className="pt-2 flex flex-wrap gap-2">
           <PrimaryButton onClick={save} disabled={saving}>
             {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
             {isNew ? 'Verseny létrehozása' : 'Módosítások mentése'}
           </PrimaryButton>
+          
+          {/* Meglévő versenynél: JSON import + lezárás */}
+          {!isNew && (
+            <>
+              <SecondaryButton onClick={() => onAction && onAction('import_json')}>
+                <Upload className="w-4 h-4" /> Startlista JSON-ból
+              </SecondaryButton>
+              
+              <button
+                onClick={async () => {
+                  const newState = !form.is_finalized;
+                  if (newState && !window.confirm('Biztos lezárod a versenyt? Az eredmények véglegesek lesznek. (Visszavonható.)')) return;
+                  if (!newState && !window.confirm('Biztos visszanyitod a versenyt? Az eredmények ismét szerkeszthetők lesznek.')) return;
+                  setForm({...form, is_finalized: newState});
+                  // Azonnal mentjük is
+                  setSaving(true);
+                  try {
+                    const { error } = await supabase
+                      .from('competitions')
+                      .update({ is_finalized: newState })
+                      .eq('id', competition.id);
+                    if (error) throw error;
+                    if (onSaved) onSaved({...competition, is_finalized: newState});
+                  } catch (err) {
+                    setError('Mentés sikertelen: ' + err.message);
+                    setForm({...form, is_finalized: !newState});
+                  } finally {
+                    setSaving(false);
+                  }
+                }}
+                disabled={saving}
+                className="px-4 py-2 rounded-lg font-medium text-white text-sm flex items-center gap-1.5 disabled:opacity-50"
+                style={{ backgroundColor: form.is_finalized ? COLORS.gray700 : '#15803D' }}
+              >
+                {form.is_finalized ? <><Edit2 className="w-4 h-4" /> Verseny újranyitása</> : <><Check className="w-4 h-4" /> Verseny lezárása</>}
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>
@@ -763,7 +808,7 @@ function BasicsTab({ supabase, competition, canManage, onSaved }) {
 // DAYS TAB (versenynapok és kategóriák)
 // ═══════════════════════════════════════════════════════════════════
 
-function DaysTab({ supabase, competitionId, canManage, userRole }) {
+function DaysTab({ supabase, competitionId, canManage }) {
   const [days, setDays] = useState(null);
   const [error, setError] = useState(null);
   const [openCategory, setOpenCategory] = useState(null);  // ÚJ: nyitott kategória startlistája
@@ -808,7 +853,6 @@ function DaysTab({ supabase, competitionId, canManage, userRole }) {
         supabase={supabase}
         category={openCategory}
         canManage={canManage}
-        userRole={userRole}
         onClose={() => { setOpenCategory(null); load(); }}
       />
     );
@@ -1260,12 +1304,11 @@ function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
 // STARTLIST VIEW (egy kategória startlistája)
 // ═══════════════════════════════════════════════════════════════════
 
-function StartlistView({ supabase, category, canManage, userRole, onClose }) {
+function StartlistView({ supabase, category, canManage, onClose }) {
   const [entries, setEntries] = useState(null);
   const [competitors, setCompetitors] = useState([]);
   const [error, setError] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);  // null | 'new' | entry
-  const [viewMode, setViewMode] = useState('startlist');  // 'startlist' | 'scoring'
   
   const isTeam = category.type === 'csapat';
   
@@ -1328,19 +1371,6 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
   const csepeliCount = (entries || []).filter(e => e.competitor_id).length;
   const externalCount = (entries || []).filter(e => !e.competitor_id).length;
   
-  // Ha pontozás módban vagyunk, mutassuk a ScoringView-t
-  if (viewMode === 'scoring' && !isTeam) {
-    return (
-      <ScoringView
-        supabase={supabase}
-        userRole={userRole}
-        category={category}
-        onBack={() => setViewMode('startlist')}
-        onChange={() => load()}
-      />
-    );
-  }
-  
   return (
     <div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1357,16 +1387,6 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
             <span>Szerek: {(category.apparatuses || []).map(a => APPARATUS_LABELS[a] || a).join(', ') || '—'}</span>
           </div>
         </div>
-        {!isTeam && entries && entries.length > 0 && (
-          <button
-            onClick={() => setViewMode('scoring')}
-            className="px-3 py-2 rounded text-white font-medium text-sm flex items-center gap-2"
-            style={{ backgroundColor: COLORS.blue }}
-          >
-            <Trophy className="w-4 h-4" />
-            Pontozás
-          </button>
-        )}
       </div>
       
       <ErrorBox>{error}</ErrorBox>
@@ -2096,7 +2116,7 @@ function CsepeliMatchRow({ match, allCompetitors, currentValue, onChange, onCrea
   );
 }
 
-function JsonImportView({ supabase, onClose, onImported }) {
+function JsonImportView({ supabase, onClose, onImported, existingCompetition = null }) {
   const [jsonText, setJsonText] = useState('');
   const [parsed, setParsed] = useState(null);  // null | object - parsed JSON
   const [parseError, setParseError] = useState(null);
@@ -2259,28 +2279,64 @@ function JsonImportView({ supabase, onClose, onImported }) {
         }
       }
       
-      // 2. competition
-      const endDate = parsed.competition.end_date || parsed.competition.start_date;
-      const { data: comp, error: compError } = await supabase
-        .from('competitions')
-        .insert({
-          name: parsed.competition.name,
-          venue_id: venueId,
-          start_date: parsed.competition.start_date,
-          end_date: endDate,
-          importance: parsed.competition.importance
-        })
-        .select()
-        .single();
-      if (compError) throw compError;
+      // 2. competition — vagy létrehozzuk újat, vagy a meglévő verseny ID-ját használjuk
+      let comp;
+      if (existingCompetition) {
+        // Meglévő verseny — csak lekérdezzük a friss adatokat
+        const { data: existingData, error: fetchErr } = await supabase
+          .from('competitions')
+          .select('*')
+          .eq('id', existingCompetition.id)
+          .single();
+        if (fetchErr) throw fetchErr;
+        comp = existingData;
+      } else {
+        // Új verseny létrehozása
+        const endDate = parsed.competition.end_date || parsed.competition.start_date;
+        const { data: newComp, error: compError } = await supabase
+          .from('competitions')
+          .insert({
+            name: parsed.competition.name,
+            venue_id: venueId,
+            start_date: parsed.competition.start_date,
+            end_date: endDate,
+            importance: parsed.competition.importance
+          })
+          .select()
+          .single();
+        if (compError) throw compError;
+        comp = newComp;
+      }
       
-      // SQL trigger automatikusan létrehozza a competition_days rekordokat
+      // SQL trigger automatikusan létrehozza a competition_days rekordokat (új versenynél)
       // Lekérdezzük őket
-      const { data: days } = await supabase
+      let { data: days } = await supabase
         .from('competition_days')
         .select('*')
         .eq('competition_id', comp.id)
         .order('day_number');
+      
+      // Ha létező versenyhez adunk, lehet hogy hiányoznak napok (pl. az importált JSON több napos)
+      // Ilyenkor hozzáadjuk őket
+      if (existingCompetition && days && parsed.days.length > 0) {
+        const existingDayNumbers = new Set((days || []).map(d => d.day_number));
+        const missingDays = parsed.days.filter(d => !existingDayNumbers.has(d.day_number));
+        if (missingDays.length > 0) {
+          const newDaysPayload = missingDays.map(d => ({
+            competition_id: comp.id,
+            day_number: d.day_number,
+            date: d.date,
+            type: 'egyeni'
+          }));
+          const { data: insertedDays, error: dayErr } = await supabase
+            .from('competition_days')
+            .insert(newDaysPayload)
+            .select();
+          if (dayErr) throw dayErr;
+          // Frissítsük a `days` változót
+          days = [...(days || []), ...(insertedDays || [])];
+        }
+      }
       
       // 3. minden napra: kategóriák + startlista
       for (const dayData of parsed.days) {
@@ -2289,20 +2345,47 @@ function JsonImportView({ supabase, onClose, onImported }) {
         if (!day) continue;
         
         for (const catData of (dayData.categories || [])) {
-          // Kategória létrehozása
-          const { data: cat, error: catError } = await supabase
-            .from('competition_categories')
-            .insert({
-              competition_day_id: day.id,
-              kategoria: catData.kategoria,
-              korosztaly: catData.korosztaly,
-              type: catData.type || 'egyeni',
-              apparatuses: catData.apparatuses || [],
-              time_range: catData.time_range || null
-            })
-            .select()
-            .single();
-          if (catError) throw catError;
+          // Kategória létrehozása vagy meglévő használata (importnál meglévő versenyhez)
+          let cat;
+          if (existingCompetition) {
+            // Próbáljuk megtalálni a már létező kategóriát
+            const { data: existingCat } = await supabase
+              .from('competition_categories')
+              .select('*')
+              .eq('competition_day_id', day.id)
+              .eq('kategoria', catData.kategoria)
+              .eq('korosztaly', catData.korosztaly)
+              .eq('type', catData.type || 'egyeni')
+              .maybeSingle();
+            
+            if (existingCat) {
+              cat = existingCat;
+              // Frissítjük az apparatuses-t ha különböző
+              if (JSON.stringify((existingCat.apparatuses || []).sort()) !== JSON.stringify((catData.apparatuses || []).sort())) {
+                await supabase
+                  .from('competition_categories')
+                  .update({ apparatuses: catData.apparatuses || [], time_range: catData.time_range || existingCat.time_range })
+                  .eq('id', existingCat.id);
+              }
+            }
+          }
+          
+          if (!cat) {
+            const { data: newCat, error: catError } = await supabase
+              .from('competition_categories')
+              .insert({
+                competition_day_id: day.id,
+                kategoria: catData.kategoria,
+                korosztaly: catData.korosztaly,
+                type: catData.type || 'egyeni',
+                apparatuses: catData.apparatuses || [],
+                time_range: catData.time_range || null
+              })
+              .select()
+              .single();
+            if (catError) throw catError;
+            cat = newCat;
+          }
           
           // Startlista bejegyzések
           const entries = (catData.startlist || []).map(s => {
@@ -2344,6 +2427,22 @@ function JsonImportView({ supabase, onClose, onImported }) {
           });
           
           if (entries.length > 0) {
+            // Meglévő versenynél: nézzük meg már létezik-e startlista ebben a kategóriában
+            if (existingCompetition) {
+              const { data: existingEntries } = await supabase
+                .from('startlist_entries')
+                .select('start_order')
+                .eq('competition_category_id', cat.id);
+              
+              if (existingEntries && existingEntries.length > 0) {
+                // Már van bejegyzés — ütközés-elkerülés: a max start_order után írjuk
+                const maxOrder = Math.max(...existingEntries.map(e => e.start_order || 0));
+                entries.forEach((e, idx) => {
+                  e.start_order = maxOrder + idx + 1;
+                });
+              }
+            }
+            
             // Batch insert
             const { error: insertError } = await supabase
               .from('startlist_entries')
@@ -2368,9 +2467,24 @@ function JsonImportView({ supabase, onClose, onImported }) {
           <ArrowLeft className="w-5 h-5" />
         </button>
         <h2 className="text-xl font-bold flex-1" style={{ color: COLORS.blueDark }}>
-          Verseny importálása JSON-ból
+          {existingCompetition 
+            ? `Startlista importálása JSON-ból — ${existingCompetition.name}` 
+            : 'Verseny importálása JSON-ból'}
         </h2>
       </div>
+      
+      {existingCompetition && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-4 text-sm text-amber-900">
+          <div className="font-semibold mb-1 flex items-center gap-2">
+            <AlertCircle className="w-4 h-4" /> Meglévő versenyhez fűzöd hozzá
+          </div>
+          <div>
+            A JSON-ban szereplő napok/kategóriák a már létező <strong>{existingCompetition.name}</strong> versenyhez kerülnek hozzáadásra. 
+            A verseny alapadatai (név, dátum, helyszín) NEM változnak.
+            Az új kategóriák az importálás után a "Napok és kategóriák" fülön szerkeszthetők.
+          </div>
+        </div>
+      )}
       
       <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4 text-sm text-blue-900">
         <div className="font-semibold mb-2 flex items-center gap-2">
@@ -2381,7 +2495,7 @@ function JsonImportView({ supabase, onClose, onImported }) {
           <div>2. Töltsd fel a fájlt VAGY másold be a tartalmat</div>
           <div>3. A rendszer érvényesíti és előnézet látsz</div>
           <div>4. Csepeli versenyzők automatikusan beazonosítva (név alapján)</div>
-          <div>5. Mentés gombbal létrejön az egész verseny</div>
+          <div>5. Mentés gombbal {existingCompetition ? 'hozzáadódnak a kategóriák a meglévő versenyhez' : 'létrejön az egész verseny'}</div>
         </div>
       </div>
       
