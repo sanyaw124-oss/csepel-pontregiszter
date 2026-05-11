@@ -430,15 +430,15 @@ function ClubBanner() {
               style={{ 
                 fontFamily: "'Caveat', cursive",
                 color: 'white',
-                fontSize: 'clamp(20px, 3vw, 38px)',
+                fontSize: 'clamp(22px, 2.4vw, 44px)',
                 fontWeight: 700,
-                lineHeight: 1.05,
+                lineHeight: 1,
                 textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-                letterSpacing: '0.5px'
+                letterSpacing: '0.5px',
+                whiteSpace: 'nowrap'
               }}
             >
-              „Ügyesen,<br />
-              Okosan, Mosoly"
+              „Ügyesen, Okosan, Mosoly"
             </div>
           </div>
         </div>
