@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
-  Save, ArrowLeft, ChevronRight, Loader, Search, Copy,
+  Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
@@ -334,13 +334,15 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
     if (competitor) {
       return {
         ...competitor,
-        birth_date: competitor.birth_date || ''
+        birth_date: competitor.birth_date || '',
+        competing_since: competitor.competing_since || ''
       };
     }
     return {
       full_name: '',
       nickname: '',
       birth_date: '',
+      competing_since: '',
       kategoria: 'VSK II',
       korosztaly: 'serdülő',
       email: '',
@@ -399,6 +401,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
         nickname: (form.nickname || '').trim() || null,
         birth_date: form.birth_date,
         birth_year: birthYear,
+        competing_since: form.competing_since || null,
         kategoria: form.kategoria,
         korosztaly: form.korosztaly,
         email: (form.email || '').trim() || null,
@@ -495,6 +498,19 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
           />
         </Field>
 
+        <Field label="Versenyez óta (opcionális)">
+          <Input
+            type="date"
+            value={form.competing_since}
+            onChange={(e) => setForm({...form, competing_since: e.target.value})}
+            max={new Date().toISOString().split('T')[0]}
+            min={form.birth_date || '2000-01-01'}
+          />
+          <div className="text-xs text-gray-500 mt-1">
+            Mióta versenyez aktívan (statisztikákhoz, edzői áttekintéshez)
+          </div>
+        </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Kategória">
             <Select value={form.kategoria} onChange={(e) => setForm({...form, kategoria: e.target.value})}>
@@ -585,6 +601,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
               <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
             </div>
           </div>
+        )}
+
+        {/* Csapat-eredmények - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
         )}
 
         <ErrorBox>{error}</ErrorBox>
@@ -1793,6 +1814,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
     full_name: competitor.full_name,
     nickname: competitor.nickname || '',
     birth_date: competitor.birth_date || '',
+    competing_since: competitor.competing_since || '',
     kategoria: competitor.kategoria,
     korosztaly: competitor.korosztaly,
     email: competitor.email || ''
@@ -1821,6 +1843,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           nickname: form.nickname.trim() || null,
           birth_date: form.birth_date,
           birth_year: birthYear,
+          competing_since: form.competing_since || null,
           kategoria: form.kategoria,
           korosztaly: form.korosztaly,
           email: form.email.trim() || null
@@ -1874,6 +1897,19 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           />
         </Field>
 
+        <Field label="Versenyez óta (opcionális)">
+          <Input
+            type="date"
+            value={form.competing_since}
+            onChange={(e) => setForm({...form, competing_since: e.target.value})}
+            max={new Date().toISOString().split('T')[0]}
+            min={form.birth_date || '2000-01-01'}
+          />
+          <div className="text-xs text-gray-500 mt-1">
+            Mióta versenyez aktívan
+          </div>
+        </Field>
+
         <div className="grid grid-cols-2 gap-3">
           <Field label="Kategória">
             <Select value={form.kategoria} onChange={(e) => setForm({...form, kategoria: e.target.value})}>
@@ -1898,6 +1934,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           />
         </Field>
 
+        {/* Csapat-eredmények */}
+        {competitor?.id && (
+          <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
         <ErrorBox>{error}</ErrorBox>
 
         <div className="flex gap-2 pt-2">
@@ -1908,6 +1949,131 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSAPAT-EREDMÉNYEK KOMPONENS (v0.9.2)
+// Megjelenik a versenyző adatlapján: minden csapat ahol részt vett
+// ═══════════════════════════════════════════════════════════════════
+
+function CompetitorTeamResults({ supabase, competitorId }) {
+  const [teams, setTeams] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setError(null);
+      try {
+        // Lekérdezzük a csapatokat amikben a versenyző részt vett
+        // + a versenyek nevét és dátumát
+        const { data, error: err } = await supabase
+          .from('competition_team_members')
+          .select(`
+            id,
+            position,
+            team:team_id (
+              id, name, age_range, placement, score, notes,
+              competition:competition_id (id, name, start_date, end_date)
+            )
+          `)
+          .eq('competitor_id', competitorId);
+        if (err) throw err;
+        if (active) setTeams(data || []);
+      } catch (err) {
+        if (active) setError(err.message);
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase, competitorId]);
+
+  if (teams === null && !error) return null; // betöltés alatt, semmi
+
+  return (
+    <div className="rounded-lg p-3 border" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Trophy className="w-4 h-4" style={{ color: COLORS.amber || '#B45309' }} />
+        <span className="font-semibold text-sm">Csapat-eredmények ({teams?.length || 0})</span>
+      </div>
+      
+      {error && (
+        <div className="text-xs text-red-600">Hiba a betöltéskor: {error}</div>
+      )}
+      
+      {teams?.length === 0 && !error && (
+        <div className="text-xs text-gray-500 italic">Még nincs rögzített csapat-eredmény.</div>
+      )}
+      
+      {teams && teams.length > 0 && (
+        <div className="space-y-2">
+          {teams
+            .filter(t => t.team) // a teljesen törölt csapatok kiszűrése
+            .sort((a, b) => {
+              // Versenyek dátuma szerint csökkenően (legújabb felülre)
+              const aDate = a.team.competition?.start_date || '';
+              const bDate = b.team.competition?.start_date || '';
+              return bDate.localeCompare(aDate);
+            })
+            .map(tm => {
+              const team = tm.team;
+              const comp = team.competition;
+              const placement = team.placement;
+              const placementColor = placement === 1 ? '#B45309' 
+                : placement === 2 ? '#6B7280' 
+                : placement === 3 ? '#92400E' 
+                : COLORS.gray700;
+              
+              return (
+                <div 
+                  key={tm.id} 
+                  className="bg-white rounded p-2 border-l-4 text-sm"
+                  style={{ borderLeftColor: '#BE123C', borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px' }}
+                >
+                  <div className="flex items-start justify-between flex-wrap gap-1">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-medium" style={{ color: '#BE123C' }}>
+                        {team.name}
+                        {team.age_range && (
+                          <span className="text-xs font-normal text-gray-500 ml-2">
+                            ({team.age_range})
+                          </span>
+                        )}
+                      </div>
+                      {comp && (
+                        <div className="text-xs text-gray-600 mt-0.5">
+                          {comp.name}
+                          {comp.start_date && (
+                            <span className="text-gray-400 ml-1">
+                              · {comp.start_date}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {team.notes && (
+                        <div className="text-xs text-gray-500 italic mt-0.5">{team.notes}</div>
+                      )}
+                    </div>
+                    {placement && (
+                      <div className="text-right">
+                        <div className="font-bold text-base" style={{ color: placementColor }}>
+                          {placement}. hely
+                        </div>
+                        {team.score && (
+                          <div className="text-xs text-gray-500">
+                            {parseFloat(team.score).toFixed(3)} pont
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          }
+        </div>
+      )}
     </div>
   );
 }

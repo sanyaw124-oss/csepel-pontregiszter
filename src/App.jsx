@@ -9,6 +9,7 @@ import {
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
 import { AdminView, CompetitorsView as CompetitorsViewComponent, ParentProfileView } from './admin';
 import { CompetitionsView } from './competitions';
+import { TrainingView } from './training';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -632,6 +633,7 @@ const NAV_ITEMS = [
   { id: 'profile', label: 'Profil', icon: User, roles: [ROLES.VERSENYZO, ROLES.SZULO, ROLES.SZULO_ADMIN] },
   { id: 'competitors', label: 'Versenyzők', icon: Users, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
+  { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN] }
 ];
 
@@ -729,6 +731,7 @@ function AppShell() {
         )}
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} dataReloadKey={dataReloadKey} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
+        {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
