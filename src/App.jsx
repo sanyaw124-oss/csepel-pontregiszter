@@ -358,44 +358,92 @@ function useConnectionStatus() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CLUB BANNER
+// CLUB BANNER — szimmetrikus, átlógó logókkal + Caveat szlogen
 // ═══════════════════════════════════════════════════════════════════
 
 function ClubBanner() {
   return (
-    <div className="w-full overflow-hidden shadow-md">
-      {/* Felső sáv - kék */}
-      <div 
-        className="px-4 py-3 flex items-center gap-3"
-        style={{ backgroundColor: COLORS.blue }}
-      >
-        <img 
-          src={CSEPEL_SC_LOGO} 
-          alt="Csepel SC" 
-          className="h-10 w-10 sm:h-12 sm:w-12 object-contain flex-shrink-0"
-        />
-        <div className="flex-1 min-w-0">
-          <h1 className="text-white font-bold text-lg sm:text-2xl tracking-wide leading-tight">
-            Pontregiszter
-          </h1>
-          <div className="text-blue-100 text-xs sm:text-sm">
-            Csepel SC · Ritmikus Gimnasztika
+    <>
+      {/* Caveat font betöltése a Google Fonts-ból */}
+      <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap" rel="stylesheet" />
+      
+      <div className="w-full overflow-hidden shadow-md relative">
+        {/* KÉK sáv (felül) */}
+        <div style={{ backgroundColor: COLORS.blue, height: '90px' }}></div>
+        
+        {/* PIROS sáv (alul) */}
+        <div style={{ backgroundColor: COLORS.red, height: '90px' }}></div>
+        
+        {/* Tartalom réteg — átlóg mindkét sávon */}
+        <div 
+          className="absolute inset-0 flex items-center justify-between gap-4 px-4 sm:px-6 lg:px-10"
+        >
+          {/* BAL: Csepel SC pajzs + Pontregiszter */}
+          <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+            <div 
+              className="flex-shrink-0 bg-white rounded-lg p-1 sm:p-1.5"
+              style={{ 
+                boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
+                border: '2px solid white'
+              }}
+            >
+              <img 
+                src={CSEPEL_SC_LOGO} 
+                alt="Csepel SC" 
+                className="h-14 w-14 sm:h-20 sm:w-20 object-contain"
+              />
+            </div>
+            <div className="min-w-0">
+              <h1 
+                className="text-white font-extrabold text-xl sm:text-3xl tracking-wide leading-none"
+                style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
+              >
+                Pontregiszter
+              </h1>
+              <div 
+                className="text-white text-xs sm:text-sm mt-1 opacity-95"
+                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
+              >
+                Csepel SC · Ritmikus Gimnasztika
+              </div>
+            </div>
+          </div>
+          
+          {/* KÖZÉP: Csepeli RG Klub logó (nagy, átlóg) */}
+          <div 
+            className="flex-shrink-0 bg-white rounded-lg p-2 sm:p-3"
+            style={{ 
+              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
+              border: '2px solid white'
+            }}
+          >
+            <img 
+              src={CSEPEL_RG_LOGO}
+              alt="Csepeli RG Klub"
+              className="h-16 sm:h-24 object-contain"
+            />
+          </div>
+          
+          {/* JOBB: szlogen Caveat fonttal */}
+          <div className="flex-1 text-right hidden sm:block">
+            <div 
+              style={{ 
+                fontFamily: "'Caveat', cursive",
+                color: 'white',
+                fontSize: 'clamp(20px, 3vw, 38px)',
+                fontWeight: 700,
+                lineHeight: 1.05,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
+                letterSpacing: '0.5px'
+              }}
+            >
+              „Ügyesen,<br />
+              Okosan, Mosoly"
+            </div>
           </div>
         </div>
       </div>
-      
-      {/* Alsó sáv - piros */}
-      <div 
-        className="flex items-center justify-center py-2 px-4"
-        style={{ backgroundColor: COLORS.red }}
-      >
-        <img 
-          src={CSEPEL_RG_LOGO}
-          alt="Csepeli RG Klub"
-          className="h-12 sm:h-16 object-contain"
-        />
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -519,7 +567,15 @@ function LoginScreen() {
           </div>
         </div>
         <div className="mt-6 text-center">
-          <div className="text-base italic font-medium" style={{ color: '#BE123C' }}>
+          <div 
+            style={{ 
+              fontFamily: "'Caveat', cursive",
+              color: COLORS.red || '#BE123C',
+              fontSize: '28px',
+              fontWeight: 700,
+              lineHeight: 1
+            }}
+          >
             „Ügyesen, Okosan, Mosoly"
           </div>
           <div className="text-xs text-gray-500 mt-1">Csepel SC · Ritmikus Gimnasztika</div>
@@ -677,10 +733,18 @@ function AppShell() {
       </main>
 
       <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center">
-        <div className="text-sm italic text-red-700 font-medium mb-1">
+        <div 
+          style={{ 
+            fontFamily: "'Caveat', cursive",
+            color: COLORS.red,
+            fontSize: '20px',
+            fontWeight: 700,
+            lineHeight: 1
+          }}
+        >
           „Ügyesen, Okosan, Mosoly"
         </div>
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-gray-500 mt-1">
           Pontregiszter v0.9 · Csepel SC RG · MRGSZ 2025–2028
         </div>
       </footer>
