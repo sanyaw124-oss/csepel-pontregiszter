@@ -335,7 +335,7 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
             <CompetitionGroup title="📅 Közelgő versenyek" competitions={upcoming} onSelect={onSelect} />
           )}
           {past.length > 0 && (
-            <CompetitionGroup title="🏆 Lezárt versenyek" competitions={past} onSelect={onSelect} />
+            <CompetitionGroup title="✅ Elmúlt versenyek" competitions={past} onSelect={onSelect} />
           )}
         </div>
       )}
@@ -384,11 +384,37 @@ function CompetitionCard({ competition, onClick }) {
             {competition.name}
           </h4>
           {importanceBadge(competition.importance)}
-          {competition.is_finalized && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-              Lezárt
-            </span>
-          )}
+          {(() => {
+            const today = new Date().toISOString().split('T')[0];
+            const isLive = competition.start_date <= today && competition.end_date >= today;
+            const isPast = competition.end_date < today;
+            
+            if (competition.is_finalized) {
+              return (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ backgroundColor: '#D1FAE5', color: '#15803D' }}>
+                  ✓ Lezárt
+                </span>
+              );
+            }
+            if (isLive) {
+              return (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
+                  ● Élő
+                </span>
+              );
+            }
+            if (isPast) {
+              return (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium"
+                      style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+                  ⏳ Befejezetlen rögzítés
+                </span>
+              );
+            }
+            return null; // upcoming, nincs külön plecsni
+          })()}
         </div>
         
         <div className="text-xs text-gray-500 flex flex-wrap items-center gap-x-3 gap-y-0.5">

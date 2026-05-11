@@ -1078,12 +1078,13 @@ function ClubRankingsWidget() {
         const yearStart = `${year}-01-01`;
         const yearEnd = `${year}-12-31`;
 
-        // Idei versenyek lekérdezése
+        // Idei versenyek lekérdezése — CSAK véglegesített (is_finalized = true)
         const { data: comps, error: compErr } = await supabase
           .from('competitions')
-          .select('id, importance, start_date')
+          .select('id, importance, start_date, is_finalized')
           .gte('start_date', yearStart)
-          .lte('start_date', yearEnd);
+          .lte('start_date', yearEnd)
+          .eq('is_finalized', true);
         if (compErr) throw compErr;
 
         const allCompIds = (comps || []).map(c => c.id);
@@ -1303,7 +1304,9 @@ function ClubRankingsWidget() {
           </div>
           {!loading && (
             <div className="text-xs text-gray-500 mt-0.5">
-              {competitionCount.total} verseny: {compSummary()}
+              {competitionCount.total > 0 
+                ? `${competitionCount.total} véglegesített verseny: ${compSummary()}`
+                : 'Még nincs véglegesített verseny ebben az évben'}
             </div>
           )}
         </div>
