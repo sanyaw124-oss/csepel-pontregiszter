@@ -518,6 +518,12 @@ function LoginScreen() {
             Ha nincs még fiókod, kérd az adminisztrátortól.
           </div>
         </div>
+        <div className="mt-6 text-center">
+          <div className="text-base italic font-medium" style={{ color: '#BE123C' }}>
+            „Ügyesen, Okosan, Mosoly"
+          </div>
+          <div className="text-xs text-gray-500 mt-1">Csepel SC · Ritmikus Gimnasztika</div>
+        </div>
       </div>
     </div>
   );
@@ -670,8 +676,13 @@ function AppShell() {
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
-      <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center text-xs text-gray-500">
-        Pontregiszter v0.8 · Csepel SC RG · MRGSZ 2025–2028
+      <footer className="bg-white border-t border-gray-200 py-3 px-4 text-center">
+        <div className="text-sm italic text-red-700 font-medium mb-1">
+          „Ügyesen, Okosan, Mosoly"
+        </div>
+        <div className="text-xs text-gray-500">
+          Pontregiszter v0.9 · Csepel SC RG · MRGSZ 2025–2028
+        </div>
       </footer>
     </div>
   );
