@@ -1,15 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════
-// Pontregiszter v0.9 — Pontozási modul (2B-3)
+// Pontregiszter v0.9.1 — Pontozási modul
 // ═══════════════════════════════════════════════════════════════════
 // Funkciók:
-//   - Egyéni pontozás kategóriánként
-//   - DB+DA → D (csepelinél), külsősnél csak D
-//   - A, E, P bevitel
-//   - Total auto-számolás
-//   - Helyezés számítás tie-break-kel (E → D → A)
+//   - Egyéni pontozás kategóriánként, mindenki ugyanazokat a mezőket kapja
+//   - DB, DA, D, A, E, P opcionális mezők (csak Total kötelező)
+//   - Total: kézzel beírható VAGY auto-számolt (D+A+E-P)
+//   - Helyezés számítás tie-break-kel (Total → E → D → A)
 //   - Ideiglenes / véglegesített állapot
 //   - Édző+admin módosíthatja a véglegesített pontokat is (audit nyommal)
-//   - Szülő látja az ideiglenest is (csak saját gyerekét)
+//   - Csepeli kiemelés: piros háttér + csillag (de pontmezők ugyanazok)
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useState, useEffect, useCallback } from 'react';
@@ -203,6 +202,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       score_a: r?.score_a ?? '',
       score_e: r?.score_e ?? '',
       score_p: r?.score_p ?? '',
+      score_total_manual: r?.score_total ?? '',
       apparatus: entry.apparatus || '',
       _isCsepeli: isCsepeli
     });
@@ -241,17 +241,28 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         return n;
       };
 
-      const scoreDb = isCsepeli ? validateScore(f.score_db, 'DB', null) : null;
-      const scoreDa = isCsepeli ? validateScore(f.score_da, 'DA', null) : null;
+      // DB+DA: mindenkinél opcionális (csepelinél tipikusan használt)
+      const scoreDb = validateScore(f.score_db, 'DB', null);
+      const scoreDa = validateScore(f.score_da, 'DA', null);
       let scoreD = validateScore(f.score_d, 'D', null);
-      if (isCsepeli && scoreD === null && (scoreDb !== null || scoreDa !== null)) {
+      // Ha DB+DA van megadva és D nincs → D = DB + DA
+      if (scoreD === null && (scoreDb !== null || scoreDa !== null)) {
         scoreD = (scoreDb || 0) + (scoreDa || 0);
       }
       const scoreA = validateScore(f.score_a, 'A', 10);
       const scoreE = validateScore(f.score_e, 'E', 10);
       const scoreP = validateScore(f.score_p, 'P', null);
+      const totalManual = validateScore(f.score_total_manual, 'Total', null);
 
-      const total = calculateTotal(scoreDb, scoreDa, scoreD, scoreA, scoreE, scoreP);
+      // Total számítása: ha kézzel beírt → az; különben D+A+E-P
+      let total;
+      if (totalManual !== null) {
+        total = totalManual;
+      } else if (scoreD !== null || scoreA !== null || scoreE !== null) {
+        total = calculateTotal(scoreDb, scoreDa, scoreD, scoreA, scoreE, scoreP);
+      } else {
+        throw new Error('Legalább a Total mezőt töltsd ki, vagy add meg D/A/E/P-t!');
+      }
 
       // Konfirmáció ha extrém érték
       if (total > 60) {
@@ -639,33 +650,56 @@ function StartlistScoringView({
                   </div>
                 )}
                 
-                {/* Pont mezők */}
+                {/* Pont mezők — mindenki ugyanazt látja */}
+                <div className="text-xs text-gray-600 mb-2">
+                  💡 Csak Total kötelező. DB/DA/D/A/E/P opcionális. Ha kitöltöd, abból számolódik a Total.
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {editForm._isCsepeli && (
-                    <>
-                      <ScoreInput label="DB" value={editForm.score_db} onChange={v => setEditForm({...editForm, score_db: v})} />
-                      <ScoreInput label="DA" value={editForm.score_da} onChange={v => setEditForm({...editForm, score_da: v})} />
-                    </>
-                  )}
+                  <ScoreInput label="DB" value={editForm.score_db} onChange={v => setEditForm({...editForm, score_db: v})} />
+                  <ScoreInput label="DA" value={editForm.score_da} onChange={v => setEditForm({...editForm, score_da: v})} />
                   <ScoreInput 
-                    label={editForm._isCsepeli ? "D (auto)" : "D"} 
+                    label="D" 
                     value={editForm.score_d} 
                     onChange={v => setEditForm({...editForm, score_d: v})}
-                    placeholder={editForm._isCsepeli ? (
-                      ((parseFloat(editForm.score_db) || 0) + (parseFloat(editForm.score_da) || 0)).toFixed(2)
-                    ) : ''}
+                    placeholder={
+                      ((parseFloat(editForm.score_db) || 0) + (parseFloat(editForm.score_da) || 0) > 0)
+                        ? ((parseFloat(editForm.score_db) || 0) + (parseFloat(editForm.score_da) || 0)).toFixed(2)
+                        : ''
+                    }
                   />
                   <ScoreInput label="A (max 10)" value={editForm.score_a} onChange={v => setEditForm({...editForm, score_a: v})} max="10" />
                   <ScoreInput label="E (max 10)" value={editForm.score_e} onChange={v => setEditForm({...editForm, score_e: v})} max="10" />
                   <ScoreInput label="P" value={editForm.score_p} onChange={v => setEditForm({...editForm, score_p: v})} />
                 </div>
                 
-                {/* Auto Total */}
-                <div className="mt-3 p-2 bg-gray-50 rounded text-center">
-                  <span className="text-xs text-gray-600">Total: </span>
-                  <span className="text-lg font-semibold">
-                    {formatNum(calculateTotal(editForm.score_db, editForm.score_da, editForm.score_d, editForm.score_a, editForm.score_e, editForm.score_p))}
-                  </span>
+                {/* Total mező - mindenkinél elérhető (manuális beírás VAGY auto) */}
+                <div className="mt-3 p-3 bg-amber-50 rounded border border-amber-200">
+                  <label className="text-xs text-gray-700 block mb-1 font-medium">
+                    Total * (kötelező — vagy add meg D/A/E mezőket fent és magától számolódik)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.001"
+                      min="0"
+                      value={editForm.score_total_manual}
+                      onChange={(e) => setEditForm({...editForm, score_total_manual: e.target.value})}
+                      placeholder={
+                        (editForm.score_d || editForm.score_a || editForm.score_e)
+                          ? `auto: ${calculateTotal(editForm.score_db, editForm.score_da, editForm.score_d, editForm.score_a, editForm.score_e, editForm.score_p).toFixed(3)}`
+                          : 'pl. 21.500'
+                      }
+                      className="flex-1 px-2 py-1.5 text-base font-semibold border border-amber-300 rounded focus:outline-none focus:ring-1 focus:ring-amber-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({...editForm, score_total_manual: ''})}
+                      className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                      title="Auto-számolásra állít"
+                    >
+                      auto
+                    </button>
+                  </div>
                 </div>
                 
                 {/* Gombok */}
@@ -703,15 +737,15 @@ function StartlistScoringView({
               </div>
             )}
 
-            {/* Részletes pont megjelenítés csepeli ha nincs szerkesztés alatt */}
-            {!isEditing && r && isCsepeli && (
+            {/* Részletes pont megjelenítés - mindenkinél */}
+            {!isEditing && r && (
               <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-2 ml-11">
-                {r.score_db !== null && <span>DB: {formatNum(r.score_db)}</span>}
-                {r.score_da !== null && <span>DA: {formatNum(r.score_da)}</span>}
-                {r.score_d !== null && <span>D: {formatNum(r.score_d)}</span>}
-                {r.score_a !== null && <span>A: {formatNum(r.score_a)}</span>}
-                {r.score_e !== null && <span>E: {formatNum(r.score_e)}</span>}
-                {r.score_p !== null && r.score_p > 0 && <span>P: {formatNum(r.score_p)}</span>}
+                {r.score_db !== null && r.score_db !== undefined && <span>DB: {formatNum(r.score_db)}</span>}
+                {r.score_da !== null && r.score_da !== undefined && <span>DA: {formatNum(r.score_da)}</span>}
+                {r.score_d !== null && r.score_d !== undefined && <span>D: {formatNum(r.score_d)}</span>}
+                {r.score_a !== null && r.score_a !== undefined && <span>A: {formatNum(r.score_a)}</span>}
+                {r.score_e !== null && r.score_e !== undefined && <span>E: {formatNum(r.score_e)}</span>}
+                {r.score_p !== null && r.score_p !== undefined && r.score_p > 0 && <span>P: {formatNum(r.score_p)}</span>}
                 {r.is_provisional ? (
                   <span className="px-1.5 py-0.5 rounded text-xs" style={{ backgroundColor: COLORS.amberLight, color: COLORS.amber }}>ideiglenes</span>
                 ) : (
@@ -777,14 +811,12 @@ function RankingsView({ entries, results, calculatedRankings, userRole }) {
                   <span style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
                 </div>
                 <div className="text-xs text-gray-500">{displayClub} · {apparatusLabel}</div>
-                {isCsepeli && (
-                  <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-2">
-                    {r.score_d !== null && <span>D: {formatNum(r.score_d)}</span>}
-                    {r.score_a !== null && <span>A: {formatNum(r.score_a)}</span>}
-                    {r.score_e !== null && <span>E: {formatNum(r.score_e)}</span>}
-                    {r.score_p !== null && r.score_p > 0 && <span>P: {formatNum(r.score_p)}</span>}
-                  </div>
-                )}
+                <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-2">
+                  {r.score_d !== null && r.score_d !== undefined && <span>D: {formatNum(r.score_d)}</span>}
+                  {r.score_a !== null && r.score_a !== undefined && <span>A: {formatNum(r.score_a)}</span>}
+                  {r.score_e !== null && r.score_e !== undefined && <span>E: {formatNum(r.score_e)}</span>}
+                  {r.score_p !== null && r.score_p !== undefined && r.score_p > 0 && <span>P: {formatNum(r.score_p)}</span>}
+                </div>
               </div>
               <div className="text-right">
                 <div className="text-lg font-semibold">{formatNum(r.score_total)}</div>
