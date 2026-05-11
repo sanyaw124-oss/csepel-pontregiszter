@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
-  Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy,
+  Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy, BookOpen,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
@@ -606,6 +606,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
         {/* Csapat-eredmények - csak meglévő versenyzőnél */}
         {!isNew && competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Edzések - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
         )}
 
         <ErrorBox>{error}</ErrorBox>
@@ -1939,6 +1944,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
         )}
 
+        {/* Edzések */}
+        {competitor?.id && (
+          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
+        )}
+
         <ErrorBox>{error}</ErrorBox>
 
         <div className="flex gap-2 pt-2">
@@ -2072,6 +2082,143 @@ function CompetitorTeamResults({ supabase, competitorId }) {
               );
             })
           }
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EDZÉSEK SZEKCIÓ KOMPONENS (v0.9.7)
+// Megjelenik a versenyző adatlapján: idei évi összesítő + utolsó alkalmak
+// ═══════════════════════════════════════════════════════════════════
+
+function CompetitorTrainingHistory({ supabase, competitorId }) {
+  const [yearStats, setYearStats] = useState(null);
+  const [previousYearStats, setPreviousYearStats] = useState(null);
+  const [recent, setRecent] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const currentYear = new Date().getFullYear();
+  const lastYear = currentYear - 1;
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Idei évi összesítő
+        const { data: yStats } = await supabase
+          .from('v_training_yearly_summary')
+          .select('edzes_count, egesznapos_count, tabor_count, total_count')
+          .eq('competitor_id', competitorId)
+          .eq('year', currentYear)
+          .maybeSingle();
+
+        // Tavalyi évi összesítő
+        const { data: prevStats } = await supabase
+          .from('v_training_yearly_summary')
+          .select('edzes_count, egesznapos_count, tabor_count, total_count')
+          .eq('competitor_id', competitorId)
+          .eq('year', lastYear)
+          .maybeSingle();
+
+        // Utolsó 10 alkalom (idei évben)
+        const { data: recentSess, error: rErr } = await supabase
+          .from('training_attendance')
+          .select('id, training_sessions!inner(id, date, session_type, notes)')
+          .eq('competitor_id', competitorId)
+          .gte('training_sessions.date', `${currentYear}-01-01`)
+          .order('training_sessions(date)', { ascending: false })
+          .limit(10);
+        if (rErr) throw rErr;
+
+        if (!active) return;
+        setYearStats(yStats || { edzes_count: 0, egesznapos_count: 0, tabor_count: 0, total_count: 0 });
+        setPreviousYearStats(prevStats);
+        setRecent(recentSess || []);
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase, competitorId, currentYear, lastYear]);
+
+  const getTypeLabel = (type) => {
+    if (type === 'edzes') return { label: 'Edzés', color: '#1D4ED8', bg: '#DBEAFE' };
+    if (type === 'egesznapos') return { label: 'Egésznapos', color: '#15803D', bg: '#D1FAE5' };
+    if (type === 'tabor') return { label: 'Tábor', color: '#B45309', bg: '#FEF3C7' };
+    return { label: type, color: COLORS.gray700, bg: '#F3F4F6' };
+  };
+
+  if (loading) return null;
+
+  return (
+    <div className="rounded-lg p-3 border" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <BookOpen className="w-4 h-4" style={{ color: '#1D4ED8' }} />
+        <span className="font-semibold text-sm">Edzések ({currentYear})</span>
+      </div>
+
+      {error && (
+        <div className="text-xs text-red-600">Hiba a betöltéskor: {error}</div>
+      )}
+
+      {/* Idei évi 3 stat kártya */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
+          <div className="text-xs text-gray-500 mb-0.5">Edzés</div>
+          <div className="text-lg font-semibold" style={{ color: '#1D4ED8' }}>{yearStats.edzes_count}</div>
+        </div>
+        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
+          <div className="text-xs text-gray-500 mb-0.5">Egésznapos</div>
+          <div className="text-lg font-semibold" style={{ color: '#15803D' }}>{yearStats.egesznapos_count}</div>
+        </div>
+        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
+          <div className="text-xs text-gray-500 mb-0.5">Tábor</div>
+          <div className="text-lg font-semibold" style={{ color: '#B45309' }}>{yearStats.tabor_count}</div>
+        </div>
+      </div>
+
+      {/* Tavalyi év (ha van) */}
+      {previousYearStats && previousYearStats.total_count > 0 && (
+        <div className="text-xs text-gray-500 mb-3">
+          {lastYear}: {previousYearStats.edzes_count} edzés · {previousYearStats.egesznapos_count} egésznap · {previousYearStats.tabor_count} tábor
+        </div>
+      )}
+
+      {/* Utolsó alkalmak */}
+      {recent.length > 0 ? (
+        <div>
+          <div className="text-xs text-gray-500 mb-1">Utolsó alkalmak</div>
+          <div className="space-y-1">
+            {recent.map(r => {
+              const sess = r.training_sessions;
+              const meta = getTypeLabel(sess.session_type);
+              return (
+                <div key={r.id} className="flex items-center gap-2 text-xs bg-white p-1.5 rounded border" style={{ borderColor: COLORS.gray200 }}>
+                  <span className="text-gray-500 font-mono min-w-[88px]">{sess.date}</span>
+                  <span 
+                    className="px-1.5 py-0.5 rounded font-medium"
+                    style={{ backgroundColor: meta.bg, color: meta.color }}
+                  >
+                    {meta.label}
+                  </span>
+                  {sess.notes && (
+                    <span className="text-gray-500 italic flex-1 truncate">{sess.notes}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : (
+        <div className="text-xs text-gray-500 italic">
+          {currentYear}-ben még nincs rögzített edzés.
         </div>
       )}
     </div>
