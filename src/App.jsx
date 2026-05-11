@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Calendar, Settings, LogOut, User,
   Check, AlertCircle, Eye, EyeOff,
-  Shield, Crown, Award, BookOpen, Heart, Star,
+  Shield, Crown, Award, BookOpen, Heart, Star, Trophy,
   BarChart3, Loader, Wifi, WifiOff, RefreshCw
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
@@ -934,6 +934,11 @@ function DashboardView() {
             <StatCard icon={Heart} label="Szülő fiókok" value={stats.parents} accent="blue" />
           </div>
           
+          {/* Helyezések táblázat */}
+          <div className="mt-4">
+            <ClubRankingsWidget />
+          </div>
+          
           {/* Ideiglenes profilok jelzés */}
           {stats.provisional > 0 && provisionalCompetitors && (
             <div className="mt-4 border-2 rounded-lg overflow-hidden" style={{ borderColor: '#f59e0b' }}>
@@ -1040,6 +1045,314 @@ function StatCard({ icon: Icon, label, value, accent }) {
         {value === null ? <Loader className="w-5 h-5 animate-spin text-gray-400" /> : value}
       </div>
       <div className="text-xs text-gray-500">{label}</div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CLUB RANKINGS WIDGET — helyezési táblázat klubszintű (v0.9.8)
+// 1-8. helyezésig, kategóriánként (FIG / MB / Regionális / Diákolimpia / Klub)
+// ═══════════════════════════════════════════════════════════════════
+
+function ClubRankingsWidget() {
+  const [year, setYear] = useState(new Date().getFullYear());
+  const [rankings, setRankings] = useState(null);
+  const [competitionCount, setCompetitionCount] = useState({ total: 0, byImportance: {} });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const IMPORTANCE_ROWS = [
+    { key: 'fig', label: 'FIG nemzetközi' },
+    { key: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
+    { key: 'mrgsz_regional', label: 'MRGSZ Regionális' },
+    { key: 'diakolimpia', label: 'Diákolimpia' },
+    { key: 'club', label: 'Klubverseny / Kisverseny' }
+  ];
+
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const yearStart = `${year}-01-01`;
+        const yearEnd = `${year}-12-31`;
+
+        // Idei versenyek lekérdezése
+        const { data: comps, error: compErr } = await supabase
+          .from('competitions')
+          .select('id, importance, start_date')
+          .gte('start_date', yearStart)
+          .lte('start_date', yearEnd);
+        if (compErr) throw compErr;
+
+        const allCompIds = (comps || []).map(c => c.id);
+        const compImportanceMap = {};
+        const countByImp = {};
+        (comps || []).forEach(c => {
+          compImportanceMap[c.id] = c.importance;
+          countByImp[c.importance] = (countByImp[c.importance] || 0) + 1;
+        });
+
+        // Klub-csapat eredmények (csapat versenyek)
+        let teamPlacements = [];
+        if (allCompIds.length > 0) {
+          const { data: teams, error: tErr } = await supabase
+            .from('competition_teams')
+            .select('competition_id, placement')
+            .in('competition_id', allCompIds)
+            .not('placement', 'is', null);
+          if (tErr) throw tErr;
+          teamPlacements = teams || [];
+        }
+
+        // Egyéni eredmények csak csepeli versenyzőkre, csak véglegesített kategóriákban
+        // results → competition_categories → competition_days → competitions
+        // startlist_entries.competitor_id != null (csak csepeli)
+        let individualPlacements = [];
+        if (allCompIds.length > 0) {
+          const { data: dayData, error: dErr } = await supabase
+            .from('competition_days')
+            .select('id, competition_id')
+            .in('competition_id', allCompIds);
+          if (dErr) throw dErr;
+          const dayMap = {};
+          (dayData || []).forEach(d => { dayMap[d.id] = d.competition_id; });
+
+          const dayIds = (dayData || []).map(d => d.id);
+          if (dayIds.length > 0) {
+            const { data: catData, error: cErr } = await supabase
+              .from('competition_categories')
+              .select('id, competition_day_id, type, is_finalized')
+              .in('competition_day_id', dayIds)
+              .eq('type', 'egyeni');
+            if (cErr) throw cErr;
+
+            const catMap = {};
+            (catData || []).forEach(c => { catMap[c.id] = dayMap[c.competition_day_id]; });
+            const categoryIds = (catData || []).map(c => c.id);
+
+            if (categoryIds.length > 0) {
+              const { data: entries, error: eErr } = await supabase
+                .from('startlist_entries')
+                .select('id, competition_category_id, competitor_id')
+                .in('competition_category_id', categoryIds)
+                .not('competitor_id', 'is', null);
+              if (eErr) throw eErr;
+
+              const entryToCompMap = {};
+              (entries || []).forEach(e => {
+                entryToCompMap[e.id] = catMap[e.competition_category_id];
+              });
+
+              const entryIds = (entries || []).map(e => e.id);
+              if (entryIds.length > 0) {
+                const { data: results, error: rErr } = await supabase
+                  .from('results')
+                  .select('startlist_entry_id, score_total, score_e, score_d, score_a')
+                  .in('startlist_entry_id', entryIds)
+                  .not('score_total', 'is', null);
+                if (rErr) throw rErr;
+
+                // Helyezések számítása kategóriánként
+                // Csoportosítás kategóriánként, majd rendezés
+                const resultsByCategory = {};
+                (results || []).forEach(r => {
+                  const entry = entries.find(e => e.id === r.startlist_entry_id);
+                  if (!entry) return;
+                  const catId = entry.competition_category_id;
+                  if (!resultsByCategory[catId]) resultsByCategory[catId] = [];
+                  resultsByCategory[catId].push({ ...r, _entry: entry });
+                });
+
+                Object.entries(resultsByCategory).forEach(([catId, catResults]) => {
+                  // Rendezés tie-break: Total → E → D → A
+                  catResults.sort((a, b) => {
+                    if (Math.abs((b.score_total || 0) - (a.score_total || 0)) > 0.001) return (b.score_total || 0) - (a.score_total || 0);
+                    if (Math.abs((b.score_e || 0) - (a.score_e || 0)) > 0.001) return (b.score_e || 0) - (a.score_e || 0);
+                    if (Math.abs((b.score_d || 0) - (a.score_d || 0)) > 0.001) return (b.score_d || 0) - (a.score_d || 0);
+                    return (b.score_a || 0) - (a.score_a || 0);
+                  });
+                  catResults.forEach((r, idx) => {
+                    const placement = idx + 1;
+                    if (placement <= 8) {
+                      individualPlacements.push({
+                        placement,
+                        competition_id: entryToCompMap[r.startlist_entry_id]
+                      });
+                    }
+                  });
+                });
+              }
+            }
+          }
+        }
+
+        // Számolás: kategóriánként + típus szerint
+        const result = {};
+        IMPORTANCE_ROWS.forEach(r => {
+          result[r.key] = { individual: {}, team: {} };
+          for (let i = 1; i <= 8; i++) {
+            result[r.key].individual[i] = 0;
+            result[r.key].team[i] = 0;
+          }
+        });
+
+        individualPlacements.forEach(ip => {
+          const imp = compImportanceMap[ip.competition_id];
+          if (!imp || !result[imp]) return;
+          if (ip.placement >= 1 && ip.placement <= 8) {
+            result[imp].individual[ip.placement]++;
+          }
+        });
+
+        teamPlacements.forEach(tp => {
+          const imp = compImportanceMap[tp.competition_id];
+          if (!imp || !result[imp]) return;
+          if (tp.placement >= 1 && tp.placement <= 8) {
+            result[imp].team[tp.placement]++;
+          }
+        });
+
+        if (!active) return;
+        setRankings(result);
+        setCompetitionCount({
+          total: (comps || []).length,
+          byImportance: countByImp
+        });
+      } catch (err) {
+        if (active) setError(err.message);
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+    load();
+    return () => { active = false; };
+  }, [year]);
+
+  // Helyezés render
+  const renderPlacements = (placementMap) => {
+    const items = [];
+    for (let i = 1; i <= 8; i++) {
+      if (placementMap[i] > 0) {
+        items.push({ place: i, count: placementMap[i] });
+      }
+    }
+    if (items.length === 0) return <span style={{ color: '#9CA3AF' }}>—</span>;
+
+    const getStyle = (place) => {
+      // 1. arany, 2. ezüst, 3. bronz, 4-8 halvány szürke
+      if (place === 1) return { bg: '#FAEEDA', color: '#854F0B', icon: '🥇' };
+      if (place === 2) return { bg: '#F1EFE8', color: '#444441', icon: '🥈' };
+      if (place === 3) return { bg: '#FAECE7', color: '#712B13', icon: '🥉' };
+      return { bg: '#F9FAFB', color: '#6B7280', icon: null };
+    };
+
+    return (
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', justifyContent: 'center' }}>
+        {items.map(({ place, count }) => {
+          const s = getStyle(place);
+          return (
+            <span
+              key={place}
+              style={{
+                backgroundColor: s.bg,
+                color: s.color,
+                padding: '2px 8px',
+                borderRadius: '4px',
+                fontSize: '12px',
+                fontWeight: 600,
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {count}×{s.icon || `${place}.`}
+            </span>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const importanceLabel = (key) => {
+    if (key === 'fig') return 'FIG';
+    if (key === 'mrgsz_mb') return 'MB';
+    if (key === 'mrgsz_regional') return 'Reg.';
+    if (key === 'diakolimpia') return 'Diák';
+    if (key === 'club') return 'Klub';
+    return key;
+  };
+
+  const compSummary = () => {
+    const parts = [];
+    IMPORTANCE_ROWS.forEach(r => {
+      const cnt = competitionCount.byImportance[r.key] || 0;
+      if (cnt > 0) parts.push(`${cnt} ${importanceLabel(r.key)}`);
+    });
+    return parts.length > 0 ? parts.join(' · ') : 'nincs verseny';
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div>
+          <div className="flex items-center gap-2">
+            <Trophy className="w-4 h-4" style={{ color: '#B45309' }} />
+            <h3 className="font-semibold text-sm" style={{ color: COLORS.blueDark }}>
+              Helyezések {year}
+            </h3>
+          </div>
+          {!loading && (
+            <div className="text-xs text-gray-500 mt-0.5">
+              {competitionCount.total} verseny: {compSummary()}
+            </div>
+          )}
+        </div>
+        <select
+          value={year}
+          onChange={(e) => setYear(parseInt(e.target.value, 10))}
+          className="text-xs border border-gray-300 rounded px-2 py-1"
+        >
+          {[0, 1, 2].map(offset => {
+            const y = new Date().getFullYear() - offset;
+            return <option key={y} value={y}>{y}</option>;
+          })}
+        </select>
+      </div>
+
+      {loading && (
+        <div className="text-center py-4">
+          <Loader className="w-4 h-4 animate-spin text-gray-400 inline" />
+        </div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-600 p-2 bg-red-50 rounded">{error}</div>
+      )}
+
+      {!loading && !error && rankings && (
+        <table style={{ width: '100%', fontSize: '13px', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '0.5px solid #E5E7EB' }}>
+              <th style={{ textAlign: 'left', padding: '6px 4px', fontWeight: 500, color: '#6B7280', fontSize: '12px' }}>Verseny</th>
+              <th style={{ textAlign: 'center', padding: '6px 4px', fontWeight: 500, color: '#6B7280', fontSize: '12px' }}>Egyéni</th>
+              <th style={{ textAlign: 'center', padding: '6px 4px', fontWeight: 500, color: '#6B7280', fontSize: '12px' }}>Csapat</th>
+            </tr>
+          </thead>
+          <tbody>
+            {IMPORTANCE_ROWS.map(row => (
+              <tr key={row.key} style={{ borderBottom: '0.5px solid #F3F4F6' }}>
+                <td style={{ padding: '8px 4px' }}>{row.label}</td>
+                <td style={{ textAlign: 'center', padding: '8px 4px' }}>
+                  {renderPlacements(rankings[row.key].individual)}
+                </td>
+                <td style={{ textAlign: 'center', padding: '8px 4px' }}>
+                  {renderPlacements(rankings[row.key].team)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
