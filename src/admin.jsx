@@ -2406,29 +2406,55 @@ function HistoricalResultCard({ item, onEdit, onDelete }) {
         </div>
       </div>
 
-      {/* Szerek + Összetett + Csapat — csak amibe írtak */}
-      {(visibleApparatuses.length > 0 || hasOsszetett || hasCsapat) && (
-        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
-          {visibleApparatuses.map(a => {
-            const r = results[a.key];
-            return (
-              <div key={a.key} className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded">
-                <span className="text-gray-600 min-w-[55px]">{a.label}:</span>
-                {r.placement && <span className="font-semibold" style={{ color: placementColor(r.placement) }}>{r.placement}. hely</span>}
-                {r.score && <span className="text-gray-500">({r.score})</span>}
-              </div>
-            );
-          })}
-          {hasOsszetett && (
-            <div className="flex items-center gap-1.5 bg-yellow-50 px-2 py-1 rounded col-span-2 sm:col-span-3">
-              <span className="text-gray-600 font-medium min-w-[80px]">Összetett:</span>
-              {results.osszetett.placement && <span className="font-semibold" style={{ color: placementColor(results.osszetett.placement) }}>{results.osszetett.placement}. hely</span>}
-              {results.osszetett.score && <span className="text-gray-500">({results.osszetett.score})</span>}
+      {/* Eredmények megjelenítése — típus alapján */}
+      {(visibleApparatuses.length > 0 || hasOsszetett || hasCsapat || (results.team_apparatuses && results.team_apparatuses.length > 0)) && (
+        <div className="mt-2 space-y-1.5 text-xs">
+          
+          {/* EGYÜTTES: szerek lista (csak megnevezés, nem helyezés) */}
+          {item.competition_type === 'egyuttes' && results.team_apparatuses && results.team_apparatuses.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-purple-50 px-2 py-1 rounded">
+              <span className="text-gray-600 min-w-[55px] font-medium">Szerek:</span>
+              <span className="text-gray-700">
+                {results.team_apparatuses
+                  .map(k => APPARATUS_LIST.find(a => a.key === k)?.label || k)
+                  .join(' + ')}
+              </span>
             </div>
           )}
+          
+          {/* EGYÉNI: szerek soronként + Összetett */}
+          {item.competition_type === 'egyeni' && (
+            <>
+              {visibleApparatuses.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {visibleApparatuses.map(a => {
+                    const r = results[a.key];
+                    return (
+                      <div key={a.key} className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded">
+                        <span className="text-gray-600 min-w-[55px]">{a.label}:</span>
+                        {r.placement && <span className="font-semibold" style={{ color: placementColor(r.placement) }}>{r.placement}. hely</span>}
+                        {r.score && <span className="text-gray-500">({r.score})</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {hasOsszetett && (
+                <div className="flex items-center gap-1.5 bg-yellow-50 px-2 py-1 rounded">
+                  <span className="text-gray-600 font-medium min-w-[120px]">Egyéni Összetett:</span>
+                  {results.osszetett.placement && <span className="font-semibold" style={{ color: placementColor(results.osszetett.placement) }}>{results.osszetett.placement}. hely</span>}
+                  {results.osszetett.score && <span className="text-gray-500">({results.osszetett.score})</span>}
+                </div>
+              )}
+            </>
+          )}
+          
+          {/* Csapat eredmény (mindhárom típusnál) */}
           {hasCsapat && (
-            <div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded col-span-2 sm:col-span-3">
-              <span className="text-gray-600 font-medium min-w-[80px]">Csapat:</span>
+            <div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded">
+              <span className="text-gray-600 font-medium min-w-[120px]">
+                {item.competition_type === 'egyeni' ? 'Klub csapat:' : 'Csapat eredmény:'}
+              </span>
               {results.csapat.placement && <span className="font-semibold" style={{ color: placementColor(results.csapat.placement) }}>{results.csapat.placement}. hely</span>}
               {results.csapat.score && <span className="text-gray-500">({results.csapat.score})</span>}
             </div>
@@ -2509,9 +2535,31 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
       }
 
       // Üres results tisztítás: csak azok maradnak amikben van adat
+      // A típus alapján csak a releváns mezők mennek mentésre
       const cleanResults = {};
+      const type = form.competition_type;
+      
       Object.entries(form.results || {}).forEach(([key, val]) => {
-        if (val && (val.placement || val.score)) {
+        // team_apparatuses: csak együttesnél, array
+        if (key === 'team_apparatuses') {
+          if (type === 'egyuttes' && Array.isArray(val) && val.length > 0) {
+            cleanResults[key] = val;
+          }
+          return;
+        }
+        
+        // Egyéni szerek (szabad, karika, ...): csak egyéninél
+        const isApparatus = ['szabad', 'karika', 'labda', 'buzogany', 'szalag', 'kotel'].includes(key);
+        if (isApparatus && type !== 'egyeni') return;
+        
+        // Összetett: csak egyéninél
+        if (key === 'osszetett' && type !== 'egyeni') return;
+        
+        // Csapat: mindhárom típusnál engedélyezett
+        // (egyéninél = klub csapat eredmény, csapatosnál = csapat eredmény)
+        
+        // Normál {placement, score} struktúra
+        if (val && typeof val === 'object' && (val.placement || val.score)) {
           cleanResults[key] = {
             placement: val.placement ? parseInt(val.placement, 10) : null,
             score: val.score ? parseFloat(String(val.score).replace(',', '.')) : null
@@ -2596,7 +2644,24 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
         </Field>
 
         <Field label="Versenyszám típusa *">
-          <Select value={form.competition_type} onChange={(e) => setForm({ ...form, competition_type: e.target.value })}>
+          <Select 
+            value={form.competition_type} 
+            onChange={(e) => {
+              const newType = e.target.value;
+              // Ha váltunk, az inkompatibilis adatokat tisztítjuk
+              const cleanedResults = { ...form.results };
+              if (newType !== 'egyeni') {
+                // Eltüntetjük az egyéni szerek + összetett adatait
+                ['szabad', 'karika', 'labda', 'buzogany', 'szalag', 'kotel', 'osszetett'].forEach(k => {
+                  delete cleanedResults[k];
+                });
+              }
+              if (newType !== 'egyuttes') {
+                delete cleanedResults.team_apparatuses;
+              }
+              setForm({ ...form, competition_type: newType, results: cleanedResults });
+            }}
+          >
             {COMPETITION_TYPE_LIST.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </Select>
         </Field>
@@ -2624,31 +2689,100 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
           />
         </Field>
 
-        {/* Eredmények szerenként */}
+        {/* Eredmények — a competition_type alapján dinamikus */}
         <div className="bg-white rounded p-2 mt-2">
-          <div className="text-xs font-semibold text-gray-700 mb-2">Eredmények (csak amit be akarsz írni)</div>
-          <div className="space-y-1.5">
-            {APPARATUS_LIST.map(a => (
+          <div className="text-xs font-semibold text-gray-700 mb-2">
+            Eredmények (csak azt töltsd ki amiben helyezést értetek el)
+          </div>
+          
+          {/* EGYÉNI: szerek + összetett + klub csapat */}
+          {form.competition_type === 'egyeni' && (
+            <div className="space-y-1.5">
+              {APPARATUS_LIST.map(a => (
+                <ApparatusResultRow
+                  key={a.key}
+                  label={a.label}
+                  placement={form.results[a.key]?.placement || ''}
+                  score={form.results[a.key]?.score || ''}
+                  onPlacementChange={v => updateResult(a.key, 'placement', v)}
+                  onScoreChange={v => updateResult(a.key, 'score', v)}
+                />
+              ))}
+              <div className="border-t pt-1.5 mt-1.5 space-y-1.5">
+                <ApparatusResultRow
+                  label="Egyéni Összetett"
+                  placement={form.results.osszetett?.placement || ''}
+                  score={form.results.osszetett?.score || ''}
+                  onPlacementChange={v => updateResult('osszetett', 'placement', v)}
+                  onScoreChange={v => updateResult('osszetett', 'score', v)}
+                  highlight="yellow"
+                />
+                <ApparatusResultRow
+                  label="Klub csapat eredmény"
+                  placement={form.results.csapat?.placement || ''}
+                  score={form.results.csapat?.score || ''}
+                  onPlacementChange={v => updateResult('csapat', 'placement', v)}
+                  onScoreChange={v => updateResult('csapat', 'score', v)}
+                  highlight="blue"
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* EGYÜTTES KÉZISZER: szer-választó (multi) + csapat eredmény */}
+          {form.competition_type === 'egyuttes' && (
+            <div className="space-y-2">
+              <div>
+                <div className="text-xs text-gray-700 mb-1.5 font-medium">
+                  Csapat szerei (válassz egyet vagy többet):
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                  {APPARATUS_LIST.map(a => {
+                    const checked = (form.results.team_apparatuses || []).includes(a.key);
+                    return (
+                      <label key={a.key} className="flex items-center gap-2 text-sm cursor-pointer p-1.5 rounded hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) => {
+                            const current = form.results.team_apparatuses || [];
+                            const updated = e.target.checked
+                              ? [...current, a.key]
+                              : current.filter(k => k !== a.key);
+                            setForm(prev => ({
+                              ...prev,
+                              results: { ...prev.results, team_apparatuses: updated }
+                            }));
+                          }}
+                          style={{ accentColor: '#7c3aed' }}
+                        />
+                        <span>{a.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="border-t pt-2">
+                <ApparatusResultRow
+                  label="Csapat eredmény"
+                  placement={form.results.csapat?.placement || ''}
+                  score={form.results.csapat?.score || ''}
+                  onPlacementChange={v => updateResult('csapat', 'placement', v)}
+                  onScoreChange={v => updateResult('csapat', 'score', v)}
+                  highlight="blue"
+                />
+              </div>
+            </div>
+          )}
+          
+          {/* ESZTÉTIKUS CSAPAT: csak csapat eredmény */}
+          {form.competition_type === 'esztetikus' && (
+            <div className="space-y-1.5">
+              <div className="text-xs text-gray-500 italic mb-2">
+                Esztétikus csapat gimnasztikánál csak csapat eredmény van (zene + koreográfia).
+              </div>
               <ApparatusResultRow
-                key={a.key}
-                label={a.label}
-                placement={form.results[a.key]?.placement || ''}
-                score={form.results[a.key]?.score || ''}
-                onPlacementChange={v => updateResult(a.key, 'placement', v)}
-                onScoreChange={v => updateResult(a.key, 'score', v)}
-              />
-            ))}
-            <div className="border-t pt-1.5 mt-1.5">
-              <ApparatusResultRow
-                label="Összetett"
-                placement={form.results.osszetett?.placement || ''}
-                score={form.results.osszetett?.score || ''}
-                onPlacementChange={v => updateResult('osszetett', 'placement', v)}
-                onScoreChange={v => updateResult('osszetett', 'score', v)}
-                highlight="yellow"
-              />
-              <ApparatusResultRow
-                label="Csapat"
+                label="Csapat eredmény"
                 placement={form.results.csapat?.placement || ''}
                 score={form.results.csapat?.score || ''}
                 onPlacementChange={v => updateResult('csapat', 'placement', v)}
@@ -2656,7 +2790,7 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
                 highlight="blue"
               />
             </div>
-          </div>
+          )}
         </div>
 
         <Field label="Megjegyzés (opcionális)">
