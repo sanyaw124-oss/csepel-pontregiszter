@@ -368,79 +368,95 @@ function ClubBanner() {
       {/* Caveat font betöltése a Google Fonts-ból */}
       <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@600;700&display=swap" rel="stylesheet" />
       
-      <div className="w-full overflow-hidden shadow-md relative">
-        {/* KÉK sáv (felül) */}
+      {/* DESKTOP fejléc (sm: és nagyobb) — szimmetrikus átlógó */}
+      <div className="hidden sm:block w-full overflow-hidden shadow-md relative">
         <div style={{ backgroundColor: COLORS.blue, height: '90px' }}></div>
-        
-        {/* PIROS sáv (alul) */}
         <div style={{ backgroundColor: COLORS.red, height: '90px' }}></div>
         
-        {/* Tartalom réteg — átlóg mindkét sávon */}
-        <div 
-          className="absolute inset-0 flex items-center justify-between gap-4 px-4 sm:px-6 lg:px-10"
-        >
+        <div className="absolute inset-0 flex items-center justify-between gap-4 px-6 lg:px-10">
           {/* BAL: Csepel SC pajzs + Pontregiszter */}
-          <div className="flex items-center gap-3 sm:gap-4 flex-1 min-w-0">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
             <div 
-              className="flex-shrink-0 bg-white rounded-lg p-1 sm:p-1.5"
-              style={{ 
-                boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
-                border: '2px solid white'
-              }}
+              className="flex-shrink-0 bg-white rounded-lg p-1.5"
+              style={{ boxShadow: '0 4px 14px rgba(0,0,0,0.25)', border: '2px solid white' }}
             >
-              <img 
-                src={CSEPEL_SC_LOGO} 
-                alt="Csepel SC" 
-                className="h-14 w-14 sm:h-20 sm:w-20 object-contain"
-              />
+              <img src={CSEPEL_SC_LOGO} alt="Csepel SC" className="h-20 w-20 object-contain" />
             </div>
             <div className="min-w-0">
-              <h1 
-                className="text-white font-extrabold text-xl sm:text-3xl tracking-wide leading-none"
-                style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}
-              >
+              <h1 className="text-white font-extrabold text-3xl tracking-wide leading-none" style={{ textShadow: '0 1px 3px rgba(0,0,0,0.3)' }}>
                 Pontregiszter
               </h1>
-              <div 
-                className="text-white text-xs sm:text-sm mt-1 opacity-95"
-                style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}
-              >
+              <div className="text-white text-sm mt-1 opacity-95" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
                 Csepel SC · Ritmikus Gimnasztika
               </div>
             </div>
           </div>
           
-          {/* KÖZÉP: Csepeli RG Klub logó (nagy, átlóg) */}
+          {/* KÖZÉP: Csepeli RG Klub logó */}
           <div 
-            className="flex-shrink-0 bg-white rounded-lg p-2 sm:p-3"
-            style={{ 
-              boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-              border: '2px solid white'
-            }}
+            className="flex-shrink-0 bg-white rounded-lg p-3"
+            style={{ boxShadow: '0 4px 16px rgba(0,0,0,0.3)', border: '2px solid white' }}
           >
-            <img 
-              src={CSEPEL_RG_LOGO}
-              alt="Csepeli RG Klub"
-              className="h-16 sm:h-24 object-contain"
-            />
+            <img src={CSEPEL_RG_LOGO} alt="Csepeli RG Klub" className="h-24 object-contain" />
           </div>
           
           {/* JOBB: szlogen Caveat fonttal */}
-          <div className="flex-1 text-right hidden sm:block">
+          <div className="flex-1 text-right">
             <div 
               style={{ 
-                fontFamily: "'Caveat', cursive",
-                color: 'white',
-                fontSize: 'clamp(22px, 2.4vw, 44px)',
-                fontWeight: 700,
-                lineHeight: 1,
-                textShadow: '0 2px 4px rgba(0,0,0,0.35)',
-                letterSpacing: '0.5px',
-                whiteSpace: 'nowrap'
+                fontFamily: "'Caveat', cursive", color: 'white',
+                fontSize: 'clamp(22px, 2.4vw, 44px)', fontWeight: 700, lineHeight: 1,
+                textShadow: '0 2px 4px rgba(0,0,0,0.35)', letterSpacing: '0.5px', whiteSpace: 'nowrap'
               }}
             >
               „Ügyesen, Okosan, Mosoly"
             </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* MOBILE fejléc (sm alatt) — két soros, kompakt */}
+      <div className="sm:hidden w-full overflow-hidden shadow-md">
+        {/* Felső sor: kék háttér, logók + cím */}
+        <div 
+          style={{ backgroundColor: COLORS.blue }}
+          className="px-3 py-2 flex items-center gap-2"
+        >
+          <div 
+            className="flex-shrink-0 bg-white rounded p-0.5"
+            style={{ boxShadow: '0 2px 6px rgba(0,0,0,0.2)', border: '1.5px solid white' }}
+          >
+            <img src={CSEPEL_SC_LOGO} alt="Csepel SC" className="h-12 w-12 object-contain" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-white font-extrabold text-lg leading-tight" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.3)' }}>
+              Pontregiszter
+            </h1>
+            <div className="text-white text-[10px] opacity-95 leading-tight">
+              Csepel SC · Ritmikus Gimnasztika
+            </div>
+          </div>
+          <div 
+            className="flex-shrink-0 bg-white rounded p-1"
+            style={{ boxShadow: '0 2px 6px rgba(0,0,0,0.25)', border: '1.5px solid white' }}
+          >
+            <img src={CSEPEL_RG_LOGO} alt="Csepeli RG Klub" className="h-10 object-contain" />
+          </div>
+        </div>
+        
+        {/* Alsó sor: piros háttér, szlogen */}
+        <div 
+          style={{ backgroundColor: COLORS.red }}
+          className="px-3 py-1.5 text-center"
+        >
+          <div 
+            style={{ 
+              fontFamily: "'Caveat', cursive", color: 'white',
+              fontSize: '22px', fontWeight: 700, lineHeight: 1,
+              textShadow: '0 1px 2px rgba(0,0,0,0.3)', letterSpacing: '0.3px'
+            }}
+          >
+            „Ügyesen, Okosan, Mosoly"
           </div>
         </div>
       </div>
@@ -926,13 +942,25 @@ function DashboardView() {
       {/* Admin/edző számára: statisztikák */}
       {isAdminLike && (
         <>
-          <h3 className="font-semibold text-lg mb-3" style={{ color: COLORS.blueDark }}>
+          {/* HERO doboz: soron következő verseny */}
+          <NextCompetitionHero />
+          
+          {/* Klub szlogen kiemelve */}
+          <SloganHero />
+          
+          <h3 className="font-semibold text-lg mb-3 mt-6" style={{ color: COLORS.blueDark }}>
             Klub áttekintés
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard icon={Users} label="Versenyzők" value={stats.competitors} accent="blue" />
             <StatCard icon={Calendar} label="Aktív versenyek" value={stats.competitions} accent="red" />
             <StatCard icon={Heart} label="Szülő fiókok" value={stats.parents} accent="blue" />
+          </div>
+          
+          {/* Legutóbbi csepeli sikerek + Klub büszkesége */}
+          <div className="grid md:grid-cols-2 gap-4 mt-4">
+            <RecentSuccessesWidget />
+            <ClubPrideWidget />
           </div>
           
           {/* Helyezések táblázat */}
@@ -1032,6 +1060,292 @@ function DashboardView() {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// NEXT COMPETITION HERO — soron következő verseny kiemelt doboza
+// ═══════════════════════════════════════════════════════════════════
+
+function NextCompetitionHero() {
+  const [comp, setComp] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const { data, error } = await supabase
+          .from('competitions')
+          .select('id, name, importance, start_date, end_date, arrival_info, arrival_time, venue:venues(name, city)')
+          .gte('end_date', today)
+          .order('start_date', { ascending: true })
+          .limit(1);
+        if (error) throw error;
+        if (active) setComp((data && data[0]) || null);
+      } catch (err) {
+        console.error('NextCompetitionHero:', err);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  if (loading || !comp) return null;
+
+  const today = new Date();
+  const startDate = new Date(comp.start_date);
+  const diffDays = Math.ceil((startDate - today) / (1000 * 60 * 60 * 24));
+  
+  const isLive = comp.start_date <= today.toISOString().split('T')[0] && comp.end_date >= today.toISOString().split('T')[0];
+  
+  let dayLabel = '';
+  if (isLive) dayLabel = '📍 ÉLŐ MOST';
+  else if (diffDays === 0) dayLabel = '🎯 MA';
+  else if (diffDays === 1) dayLabel = '🌅 HOLNAP';
+  else if (diffDays > 0) dayLabel = `📅 ${diffDays} NAP MÚLVA`;
+
+  const importanceLabels = {
+    'fig': 'FIG nemzetközi', 'mrgsz_mb': 'Magyar Bajnokság',
+    'mrgsz_regional': 'Regionális verseny', 'diakolimpia': 'Diákolimpia',
+    'club': 'Klubverseny', 'egyeb': 'Egyéb verseny'
+  };
+
+  const formatDate = (dateStr) => {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}.`;
+  };
+
+  return (
+    <div 
+      className="rounded-xl p-4 sm:p-5 mb-4 text-white shadow-lg"
+      style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #BE123C 100%)' }}
+    >
+      <div className="text-xs opacity-90 mb-1 font-semibold tracking-wide">
+        🏆 SORON KÖVETKEZŐ VERSENY · {dayLabel}
+      </div>
+      <div className="text-xl sm:text-2xl font-bold mb-1 leading-tight">{comp.name}</div>
+      <div className="text-sm opacity-95 flex flex-wrap gap-x-3 gap-y-1">
+        <span>📌 {importanceLabels[comp.importance] || comp.importance}</span>
+        <span>📅 {formatDate(comp.start_date)}</span>
+        {comp.venue && <span>📍 {comp.venue.name}{comp.venue.city ? `, ${comp.venue.city}` : ''}</span>}
+      </div>
+      {(comp.arrival_time || comp.arrival_info) && (
+        <div className="mt-2 pt-2 border-t border-white/20 text-sm">
+          {comp.arrival_time && <span className="font-semibold">⏰ Találkozó: {comp.arrival_time}</span>}
+          {comp.arrival_info && <div className="text-xs opacity-95 mt-1">{comp.arrival_info}</div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SLOGAN HERO — kiemelt klub szlogen
+// ═══════════════════════════════════════════════════════════════════
+
+function SloganHero() {
+  return (
+    <div 
+      className="rounded-xl p-4 mb-4 text-center"
+      style={{ 
+        background: 'linear-gradient(135deg, #fef9c3 0%, #fde68a 100%)',
+        borderLeft: `4px solid ${COLORS.red}`,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+      }}
+    >
+      <div 
+        style={{ 
+          fontFamily: "'Caveat', cursive", color: COLORS.red,
+          fontSize: 'clamp(28px, 4vw, 42px)', fontWeight: 700,
+          lineHeight: 1, letterSpacing: '0.5px'
+        }}
+      >
+        „Ügyesen, Okosan, Mosoly"
+      </div>
+      <div className="text-xs sm:text-sm text-amber-800 mt-2 opacity-90">
+        Csepel SC · Ritmikus Gimnasztika · MRGSZ
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RECENT SUCCESSES — legutóbbi csepeli sikerek (1-3. hely)
+// ═══════════════════════════════════════════════════════════════════
+
+function RecentSuccessesWidget() {
+  const [successes, setSuccesses] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data: comps } = await supabase
+          .from('competitions')
+          .select('id, name, start_date, importance')
+          .eq('is_finalized', true)
+          .order('start_date', { ascending: false })
+          .limit(20);
+
+        if (!comps || comps.length === 0) {
+          if (active) { setSuccesses([]); setLoading(false); }
+          return;
+        }
+
+        const compMap = {};
+        comps.forEach(c => { compMap[c.id] = c; });
+
+        const { data: teams } = await supabase
+          .from('competition_teams')
+          .select('name, placement, competition_id')
+          .in('competition_id', comps.map(c => c.id))
+          .not('placement', 'is', null)
+          .lte('placement', 3);
+
+        const items = [];
+        (teams || []).forEach(t => {
+          const comp = compMap[t.competition_id];
+          if (!comp) return;
+          items.push({
+            type: 'team', placement: t.placement, name: t.name,
+            competitionName: comp.name, date: comp.start_date
+          });
+        });
+
+        items.sort((a, b) => {
+          if (a.date !== b.date) return b.date.localeCompare(a.date);
+          return a.placement - b.placement;
+        });
+
+        if (active) setSuccesses(items.slice(0, 6));
+      } catch (err) {
+        console.error('RecentSuccesses:', err);
+        if (active) setSuccesses([]);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  const medalEmoji = (p) => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : `${p}.`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <Trophy className="w-4 h-4" style={{ color: '#B45309' }} />
+        <h3 className="font-semibold text-sm" style={{ color: COLORS.blueDark }}>
+          🏆 Legutóbbi csepeli sikerek
+        </h3>
+      </div>
+      
+      {loading && (
+        <div className="text-center py-4"><Loader className="w-4 h-4 animate-spin text-gray-400 inline" /></div>
+      )}
+      
+      {!loading && successes && successes.length === 0 && (
+        <div className="text-xs text-gray-500 italic py-2">
+          Még nincsenek véglegesített eredmények.
+        </div>
+      )}
+      
+      {!loading && successes && successes.length > 0 && (
+        <div className="space-y-1.5">
+          {successes.map((s, idx) => (
+            <div key={idx} className="flex items-start gap-2 text-sm">
+              <span className="text-base flex-shrink-0">{medalEmoji(s.placement)}</span>
+              <div className="flex-1 min-w-0">
+                <span className="font-medium" style={{ color: '#BE123C' }}>
+                  {s.name}
+                </span>
+                <span className="text-xs text-gray-500 ml-1">
+                  · {s.competitionName} (csapat)
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CLUB PRIDE — klub büszkesége (admin manuálisan szerkeszthető)
+// ═══════════════════════════════════════════════════════════════════
+
+function ClubPrideWidget() {
+  const [items, setItems] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('club_pride')
+          .select('*')
+          .eq('is_active', true)
+          .order('display_order');
+        if (active) setItems(data || []);
+      } catch (err) {
+        console.error('ClubPride:', err);
+        if (active) setItems([]);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  return (
+    <div 
+      className="rounded-xl p-4 shadow-sm"
+      style={{ 
+        background: 'linear-gradient(135deg, #fef9c3 0%, #fde68a 100%)',
+        border: '1px solid #f59e0b'
+      }}
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <Star className="w-4 h-4" style={{ color: '#92400e' }} />
+        <h3 className="font-semibold text-sm" style={{ color: '#92400e' }}>
+          ⭐ Klub büszkesége
+        </h3>
+      </div>
+      
+      {loading && (
+        <div className="text-center py-2"><Loader className="w-4 h-4 animate-spin text-amber-400 inline" /></div>
+      )}
+      
+      {!loading && items && items.length === 0 && (
+        <div className="text-xs text-amber-800 italic">
+          Még nincs felvett klubbüszkeség.
+        </div>
+      )}
+      
+      {!loading && items && items.length > 0 && (
+        <div className="space-y-2">
+          {items.map(item => (
+            <div key={item.id} className="text-sm">
+              <div className="font-semibold text-amber-900 flex items-center gap-1.5">
+                {item.icon && <span>{item.icon}</span>}
+                <span>{item.title}</span>
+              </div>
+              {item.description && (
+                <div className="text-xs text-amber-800 mt-0.5 leading-snug">
+                  {item.description}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatCard({ icon: Icon, label, value, accent }) {
   const accentColor = accent === 'red' ? COLORS.red : COLORS.blue;
   return (
@@ -1057,6 +1371,7 @@ function StatCard({ icon: Icon, label, value, accent }) {
 
 function ClubRankingsWidget() {
   const [year, setYear] = useState(new Date().getFullYear());
+  const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
   const [rankings, setRankings] = useState(null);
   const [competitionCount, setCompetitionCount] = useState({ total: 0, byImportance: {} });
   const [loading, setLoading] = useState(true);
@@ -1069,6 +1384,36 @@ function ClubRankingsWidget() {
     { key: 'diakolimpia', label: 'Diákolimpia' },
     { key: 'club', label: 'Klubverseny / Kisverseny' }
   ];
+
+  // Elérhető évek dinamikusan a competitions táblából
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('competitions')
+          .select('start_date')
+          .eq('is_finalized', true);
+        if (!active) return;
+        
+        const yearSet = new Set();
+        const currentYear = new Date().getFullYear();
+        yearSet.add(currentYear); // mindig legyen idei év
+        (data || []).forEach(c => {
+          if (c.start_date) {
+            const y = parseInt(c.start_date.slice(0, 4), 10);
+            if (!isNaN(y)) yearSet.add(y);
+          }
+        });
+        
+        const years = Array.from(yearSet).sort((a, b) => b - a); // csökkenő
+        setAvailableYears(years);
+      } catch (err) {
+        console.error('Available years load error:', err);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1316,10 +1661,9 @@ function ClubRankingsWidget() {
           onChange={(e) => setYear(parseInt(e.target.value, 10))}
           className="text-xs border border-gray-300 rounded px-2 py-1"
         >
-          {[0, 1, 2].map(offset => {
-            const y = new Date().getFullYear() - offset;
-            return <option key={y} value={y}>{y}</option>;
-          })}
+          {availableYears.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
         </select>
       </div>
 
