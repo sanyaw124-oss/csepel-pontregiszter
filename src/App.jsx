@@ -3,13 +3,14 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Calendar, Settings, LogOut, User,
   Check, AlertCircle, Eye, EyeOff,
-  Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight,
+  Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight, MessageCircle,
   BarChart3, Loader, Wifi, WifiOff, RefreshCw
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
 import { AdminView, CompetitorsView as CompetitorsViewComponent, ParentProfileView } from './admin';
 import { CompetitionsView } from './competitions';
 import { TrainingView } from './training';
+import { EventsView, UpcomingEventsWidget } from './events';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -650,6 +651,7 @@ const NAV_ITEMS = [
   { id: 'competitors', label: 'Versenyzők', icon: Users, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
+  { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN] }
 ];
 
@@ -738,7 +740,7 @@ function AppShell() {
       </nav>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
-        {activeView === 'dashboard' && <DashboardView />}
+        {activeView === 'dashboard' && <DashboardView setActiveView={setActiveView} />}
         {activeView === 'profile' && hasParentRights(profile.role) && (
           <ParentProfileView supabase={supabase} parentUserId={profile.id} dataReloadKey={dataReloadKey} />
         )}
@@ -748,6 +750,7 @@ function AppShell() {
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} dataReloadKey={dataReloadKey} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
+        {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
@@ -775,7 +778,7 @@ function AppShell() {
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════
 
-function DashboardView() {
+function DashboardView({ setActiveView }) {
   const { profile } = useAuthContext();
   const { key: dataReloadKey } = useDataReload();
   const [stats, setStats] = useState({ competitors: null, competitions: null, parents: null, provisional: null });
@@ -1000,6 +1003,14 @@ function DashboardView() {
         <>
           {/* HERO doboz: soron következő verseny */}
           <NextCompetitionHero />
+          
+          {/* Közelgő események — 14 napon belüli klub-események (max 5) */}
+          <div className="mb-4">
+            <UpcomingEventsWidget 
+              supabase={supabase}
+              onOpenEvents={() => setActiveView('events')}
+            />
+          </div>
           
           <h3 className="font-semibold text-lg mb-3 mt-2" style={{ color: COLORS.blueDark }}>
             Klub áttekintés
