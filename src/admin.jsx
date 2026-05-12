@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
-  Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy, BookOpen,
+  Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy, BookOpen, Clock, Trash2, X,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
@@ -39,8 +39,8 @@ export function calculateAge(birthDate) {
 // CONSTANTS
 // ═══════════════════════════════════════════════════════════════════
 
-export const KATEGORIAK = ['VSK I', 'VSK II', 'SZK', 'BNK'];
-export const KOROSZTALYOK = ['gyermek', 'serdülő', 'junior', 'felnőtt', 'master'];
+export const KATEGORIAK = ['BNK', 'SZK', 'VSK I', 'VSK II'];
+export const KOROSZTALYOK = ['Mini', 'Kisgyermek', 'Gyermek', 'Serdülő', 'Junior', 'Ifjúsági', 'Felnőtt'];
 
 const COLORS = {
   blue: '#1e3a8a',
@@ -606,6 +606,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
         {/* Csapat-eredmények - csak meglévő versenyzőnél */}
         {!isNew && competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Korábbi eredmények - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
         )}
 
         {/* Edzések - csak meglévő versenyzőnél */}
@@ -1944,6 +1949,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
         )}
 
+        {/* Korábbi eredmények */}
+        {competitor?.id && (
+          <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole="szulo" />
+        )}
+
         {/* Edzések */}
         {competitor?.id && (
           <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
@@ -2221,6 +2231,487 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
           {currentYear}-ben még nincs rögzített edzés.
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KORÁBBI EREDMÉNYEK KOMPONENS (v0.9.14)
+// Versenyző adatlapján: régi (jellemzően 2026 előtti) eredmények rögzítése
+// Szülő is rögzíthet, edző/admin szerkesztheti
+// ═══════════════════════════════════════════════════════════════════
+
+const APPARATUS_LIST = [
+  { key: 'szabad', label: 'Szabad' },
+  { key: 'karika', label: 'Karika' },
+  { key: 'labda', label: 'Labda' },
+  { key: 'buzogany', label: 'Buzogány' },
+  { key: 'szalag', label: 'Szalag' },
+  { key: 'kotel', label: 'Kötél' }
+];
+
+const COMPETITION_TYPE_LIST = [
+  { value: 'egyeni', label: 'Egyéni' },
+  { value: 'egyuttes', label: 'Együttes (kéziszer)' },
+  { value: 'esztetikus', label: 'Esztétikus csapat gimnasztika' }
+];
+
+const VERSENY_BESOROLAS_LIST = [
+  { value: 'fig', label: 'FIG nemzetközi' },
+  { value: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
+  { value: 'mrgsz_regional', label: 'MRGSZ Regionális verseny' },
+  { value: 'diakolimpia', label: 'Diákolimpia' },
+  { value: 'club', label: 'Klubverseny / Kisverseny' },
+  { value: 'egyeb', label: 'Egyéb' }
+];
+
+function CompetitorHistoricalResults({ supabase, competitorId, userRole }) {
+  const [items, setItems] = useState(null);
+  const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(null); // null | 'new' | item
+
+  const canEdit = ['admin', 'szulo', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const { data, error: err } = await supabase
+        .from('historical_results')
+        .select('*')
+        .eq('competitor_id', competitorId)
+        .order('year', { ascending: false })
+        .order('created_at', { ascending: false });
+      if (err) throw err;
+      setItems(data || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [supabase, competitorId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (item) => {
+    if (!window.confirm(`Biztos törlöd? ${item.year} · ${item.competition_name}`)) return;
+    try {
+      await supabase.from('historical_results').delete().eq('id', item.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  if (items === null && !error) return null;
+
+  if (editing !== null) {
+    return (
+      <HistoricalResultForm
+        supabase={supabase}
+        competitorId={competitorId}
+        item={editing === 'new' ? null : editing}
+        existingItems={items || []}
+        onSaved={() => { setEditing(null); load(); }}
+        onCancel={() => setEditing(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="rounded-lg p-3 border" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Clock className="w-4 h-4" style={{ color: '#7c3aed' }} />
+          <span className="font-semibold text-sm">Korábbi eredmények ({items?.length || 0})</span>
+        </div>
+        {canEdit && (
+          <button
+            onClick={() => setEditing('new')}
+            className="text-xs px-3 py-1.5 rounded text-white font-medium"
+            style={{ backgroundColor: '#7c3aed' }}
+          >
+            <Plus className="w-3 h-3 inline mr-1" /> Új eredmény
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="text-xs text-red-600 mb-2">{error}</div>
+      )}
+
+      {items?.length === 0 && !error && (
+        <div className="text-xs text-gray-500 italic">Még nincs rögzített korábbi eredmény.</div>
+      )}
+
+      <div className="space-y-2">
+        {(items || []).map(item => (
+          <HistoricalResultCard
+            key={item.id}
+            item={item}
+            onEdit={canEdit ? () => setEditing(item) : null}
+            onDelete={canEdit ? () => handleDelete(item) : null}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Egy korábbi eredmény kártyája (megjelenítéshez)
+function HistoricalResultCard({ item, onEdit, onDelete }) {
+  const typeLabel = COMPETITION_TYPE_LIST.find(t => t.value === item.competition_type)?.label || item.competition_type;
+  const besorolas = VERSENY_BESOROLAS_LIST.find(v => v.value === item.importance)?.label;
+  const results = item.results || {};
+  
+  // Csak azok a szerek listáznak amibe írtak adatot
+  const visibleApparatuses = APPARATUS_LIST.filter(a => 
+    results[a.key] && (results[a.key].placement || results[a.key].score)
+  );
+  const hasOsszetett = results.osszetett && (results.osszetett.placement || results.osszetett.score);
+  const hasCsapat = results.csapat && (results.csapat.placement || results.csapat.score);
+
+  const placementColor = (p) => {
+    if (p === 1) return '#B45309';
+    if (p === 2) return '#6B7280';
+    if (p === 3) return '#92400E';
+    return COLORS.gray700;
+  };
+
+  return (
+    <div className="bg-white rounded p-2.5 border-l-4 text-sm" 
+         style={{ borderLeftColor: '#7c3aed', borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px' }}>
+      <div className="flex items-start justify-between gap-2 flex-wrap">
+        <div className="flex-1 min-w-0">
+          <div className="font-medium" style={{ color: '#7c3aed' }}>
+            {item.year} · {item.competition_name}
+          </div>
+          <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-2">
+            <span>{typeLabel}</span>
+            {besorolas && <span>· {besorolas}</span>}
+            {item.kategoria && <span>· {item.kategoria}</span>}
+            {item.korosztaly && <span>· {item.korosztaly}</span>}
+            {item.team_name && <span>· {item.team_name}</span>}
+          </div>
+        </div>
+        <div className="flex gap-1">
+          {onEdit && (
+            <button onClick={onEdit} className="p-1 hover:bg-gray-100 rounded" title="Szerkesztés">
+              <Edit2 className="w-3.5 h-3.5 text-gray-500" />
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={onDelete} className="p-1 hover:bg-red-50 rounded" title="Törlés">
+              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Szerek + Összetett + Csapat — csak amibe írtak */}
+      {(visibleApparatuses.length > 0 || hasOsszetett || hasCsapat) && (
+        <div className="mt-2 grid grid-cols-2 sm:grid-cols-3 gap-1.5 text-xs">
+          {visibleApparatuses.map(a => {
+            const r = results[a.key];
+            return (
+              <div key={a.key} className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded">
+                <span className="text-gray-600 min-w-[55px]">{a.label}:</span>
+                {r.placement && <span className="font-semibold" style={{ color: placementColor(r.placement) }}>{r.placement}. hely</span>}
+                {r.score && <span className="text-gray-500">({r.score})</span>}
+              </div>
+            );
+          })}
+          {hasOsszetett && (
+            <div className="flex items-center gap-1.5 bg-yellow-50 px-2 py-1 rounded col-span-2 sm:col-span-3">
+              <span className="text-gray-600 font-medium min-w-[80px]">Összetett:</span>
+              {results.osszetett.placement && <span className="font-semibold" style={{ color: placementColor(results.osszetett.placement) }}>{results.osszetett.placement}. hely</span>}
+              {results.osszetett.score && <span className="text-gray-500">({results.osszetett.score})</span>}
+            </div>
+          )}
+          {hasCsapat && (
+            <div className="flex items-center gap-1.5 bg-blue-50 px-2 py-1 rounded col-span-2 sm:col-span-3">
+              <span className="text-gray-600 font-medium min-w-[80px]">Csapat:</span>
+              {results.csapat.placement && <span className="font-semibold" style={{ color: placementColor(results.csapat.placement) }}>{results.csapat.placement}. hely</span>}
+              {results.csapat.score && <span className="text-gray-500">({results.csapat.score})</span>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {item.notes && (
+        <div className="text-xs text-gray-500 italic mt-1.5">{item.notes}</div>
+      )}
+    </div>
+  );
+}
+
+// Szerkesztő űrlap (új vagy meglévő rekord)
+function HistoricalResultForm({ supabase, competitorId, item, existingItems, onSaved, onCancel }) {
+  const [form, setForm] = useState({
+    year: item?.year ?? new Date().getFullYear() - 1,
+    competition_name: item?.competition_name ?? '',
+    competition_type: item?.competition_type ?? 'egyeni',
+    importance: item?.importance ?? 'club',
+    kategoria: item?.kategoria ?? '',
+    korosztaly: item?.korosztaly ?? '',
+    team_name: item?.team_name ?? '',
+    notes: item?.notes ?? '',
+    results: item?.results ?? {}
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [nameAutocomplete, setNameAutocomplete] = useState([]);
+
+  // Autocomplete: a megadott évre tartozó már létező verseny nevek
+  useEffect(() => {
+    if (!form.year) return;
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('historical_results')
+          .select('competition_name, importance')
+          .eq('year', parseInt(form.year, 10));
+        if (!active) return;
+        // Egyedi nevek
+        const uniqueNames = {};
+        (data || []).forEach(r => {
+          if (!uniqueNames[r.competition_name]) {
+            uniqueNames[r.competition_name] = r.importance;
+          }
+        });
+        setNameAutocomplete(Object.keys(uniqueNames).sort());
+      } catch (err) {
+        console.error(err);
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase, form.year]);
+
+  const updateResult = (key, field, value) => {
+    setForm(prev => ({
+      ...prev,
+      results: {
+        ...prev.results,
+        [key]: { ...(prev.results[key] || {}), [field]: value }
+      }
+    }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (!form.year || !form.competition_name) {
+        throw new Error('Az év és a verseny neve kötelező!');
+      }
+      const year = parseInt(form.year, 10);
+      if (isNaN(year) || year < 2000 || year > 2100) {
+        throw new Error('Érvényes évet adj meg (2000-2100)!');
+      }
+
+      // Üres results tisztítás: csak azok maradnak amikben van adat
+      const cleanResults = {};
+      Object.entries(form.results || {}).forEach(([key, val]) => {
+        if (val && (val.placement || val.score)) {
+          cleanResults[key] = {
+            placement: val.placement ? parseInt(val.placement, 10) : null,
+            score: val.score ? parseFloat(String(val.score).replace(',', '.')) : null
+          };
+        }
+      });
+
+      const userResp = await supabase.auth.getUser();
+      const userId = userResp.data?.user?.id;
+
+      const payload = {
+        competitor_id: competitorId,
+        year,
+        competition_name: form.competition_name.trim(),
+        competition_type: form.competition_type,
+        importance: form.importance,
+        kategoria: form.kategoria || null,
+        korosztaly: form.korosztaly || null,
+        team_name: form.team_name || null,
+        notes: form.notes || null,
+        results: cleanResults,
+        modified_by: userId,
+        modified_at: new Date().toISOString()
+      };
+
+      if (item) {
+        await supabase.from('historical_results').update(payload).eq('id', item.id);
+      } else {
+        payload.created_by = userId;
+        await supabase.from('historical_results').insert(payload);
+      }
+      
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg p-3 border-2" style={{ borderColor: '#7c3aed', backgroundColor: '#faf5ff' }}>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="font-semibold text-sm" style={{ color: '#7c3aed' }}>
+          {item ? 'Korábbi eredmény szerkesztése' : 'Új korábbi eredmény'}
+        </h4>
+        <button onClick={onCancel} className="p-1 hover:bg-gray-100 rounded">
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Év *">
+            <Input
+              type="number"
+              min="2000"
+              max="2100"
+              value={form.year}
+              onChange={(e) => setForm({ ...form, year: e.target.value })}
+            />
+          </Field>
+          <Field label="Verseny besorolása *">
+            <Select value={form.importance} onChange={(e) => setForm({ ...form, importance: e.target.value })}>
+              {VERSENY_BESOROLAS_LIST.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </Select>
+          </Field>
+        </div>
+
+        <Field label="Verseny neve *">
+          <Input
+            list="comp-names"
+            value={form.competition_name}
+            onChange={(e) => setForm({ ...form, competition_name: e.target.value })}
+            placeholder={nameAutocomplete.length > 0 ? `Pl. ${nameAutocomplete[0]}` : "Pl. Magyar Bajnokság"}
+          />
+          {nameAutocomplete.length > 0 && (
+            <datalist id="comp-names">
+              {nameAutocomplete.map(n => <option key={n} value={n} />)}
+            </datalist>
+          )}
+        </Field>
+
+        <Field label="Versenyszám típusa *">
+          <Select value={form.competition_type} onChange={(e) => setForm({ ...form, competition_type: e.target.value })}>
+            {COMPETITION_TYPE_LIST.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </Select>
+        </Field>
+
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Kategória">
+            <Select value={form.kategoria} onChange={(e) => setForm({ ...form, kategoria: e.target.value })}>
+              <option value="">— válassz —</option>
+              {KATEGORIAK.map(k => <option key={k} value={k}>{k}</option>)}
+            </Select>
+          </Field>
+          <Field label="Korosztály">
+            <Select value={form.korosztaly} onChange={(e) => setForm({ ...form, korosztaly: e.target.value })}>
+              <option value="">— válassz —</option>
+              {KOROSZTALYOK.map(k => <option key={k} value={k}>{k}</option>)}
+            </Select>
+          </Field>
+        </div>
+
+        <Field label="Csapat neve (opcionális)">
+          <Input
+            value={form.team_name}
+            onChange={(e) => setForm({ ...form, team_name: e.target.value })}
+            placeholder="Pl. Csepel A csapat 2010-2011"
+          />
+        </Field>
+
+        {/* Eredmények szerenként */}
+        <div className="bg-white rounded p-2 mt-2">
+          <div className="text-xs font-semibold text-gray-700 mb-2">Eredmények (csak amit be akarsz írni)</div>
+          <div className="space-y-1.5">
+            {APPARATUS_LIST.map(a => (
+              <ApparatusResultRow
+                key={a.key}
+                label={a.label}
+                placement={form.results[a.key]?.placement || ''}
+                score={form.results[a.key]?.score || ''}
+                onPlacementChange={v => updateResult(a.key, 'placement', v)}
+                onScoreChange={v => updateResult(a.key, 'score', v)}
+              />
+            ))}
+            <div className="border-t pt-1.5 mt-1.5">
+              <ApparatusResultRow
+                label="Összetett"
+                placement={form.results.osszetett?.placement || ''}
+                score={form.results.osszetett?.score || ''}
+                onPlacementChange={v => updateResult('osszetett', 'placement', v)}
+                onScoreChange={v => updateResult('osszetett', 'score', v)}
+                highlight="yellow"
+              />
+              <ApparatusResultRow
+                label="Csapat"
+                placement={form.results.csapat?.placement || ''}
+                score={form.results.csapat?.score || ''}
+                onPlacementChange={v => updateResult('csapat', 'placement', v)}
+                onScoreChange={v => updateResult('csapat', 'score', v)}
+                highlight="blue"
+              />
+            </div>
+          </div>
+        </div>
+
+        <Field label="Megjegyzés (opcionális)">
+          <Input
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.target.value })}
+          />
+        </Field>
+
+        {error && (
+          <div className="text-xs text-red-600 bg-red-50 p-2 rounded">{error}</div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-4 py-2 rounded text-white text-sm font-medium disabled:opacity-50"
+            style={{ backgroundColor: '#7c3aed' }}
+          >
+            {saving ? <Loader className="w-4 h-4 animate-spin inline" /> : <Save className="w-4 h-4 inline mr-1" />}
+            Mentés
+          </button>
+          <button
+            onClick={onCancel}
+            className="px-4 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50"
+          >
+            Mégse
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ApparatusResultRow({ label, placement, score, onPlacementChange, onScoreChange, highlight }) {
+  const bg = highlight === 'yellow' ? '#fefce8' : highlight === 'blue' ? '#eff6ff' : 'transparent';
+  return (
+    <div className="flex items-center gap-2 p-1.5 rounded" style={{ backgroundColor: bg }}>
+      <span className="text-xs text-gray-700 min-w-[80px]">{label}:</span>
+      <input
+        type="text"
+        inputMode="numeric"
+        value={placement}
+        onChange={(e) => onPlacementChange(e.target.value)}
+        placeholder="hely"
+        className="w-16 px-1.5 py-0.5 text-xs border border-gray-300 rounded text-center"
+      />
+      <input
+        type="text"
+        inputMode="decimal"
+        value={score}
+        onChange={(e) => onScoreChange(e.target.value)}
+        placeholder="pont"
+        className="w-20 px-1.5 py-0.5 text-xs border border-gray-300 rounded"
+      />
     </div>
   );
 }
