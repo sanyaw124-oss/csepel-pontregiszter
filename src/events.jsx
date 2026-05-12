@@ -7,7 +7,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Edit2, Trash2, Save, X, Loader, AlertCircle, Calendar,
-  Clock, MapPin, Users, MessageCircle, Filter, ArrowLeft, Check
+  Clock, MapPin, Users, MessageCircle, Filter, ArrowLeft, Check, ChevronDown
 } from 'lucide-react';
 
 const COLORS = {
@@ -463,7 +463,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
       <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3 shadow-sm">
         
         <div>
-          <label className="text-xs font-medium text-gray-700 mb-1 block">Típus *</label>
+          <label className="text-xs font-medium text-gray-700 mb-1 block">Bejegyzés típusa *</label>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             {EVENT_TYPES.map(t => (
               <button
@@ -483,7 +483,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
         </div>
 
         <div>
-          <label className="text-xs font-medium text-gray-700 mb-1 block">Cím *</label>
+          <label className="text-xs font-medium text-gray-700 mb-1 block">Bejegyzés címe *</label>
           <input
             type="text"
             value={form.title}
@@ -706,6 +706,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
 export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
   const [events, setEvents] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -719,7 +720,12 @@ export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
           .select(`
             id, event_type, title, description, event_date, event_time, venue,
             audience_type, audience_category, audience_korosztaly,
-            arrival_times:event_arrival_times(arrival_time, group_label)
+            arrival_times:event_arrival_times(
+              id, arrival_time, group_label, note,
+              competitors:event_arrival_competitors(
+                competitor:competitors(id, full_name, nickname)
+              )
+            )
           `)
           .eq('is_active', true)
           .gte('event_date', today)
@@ -762,6 +768,14 @@ export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
     return `${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
   };
 
+  const audienceLabel = (e) => {
+    if (e.audience_type === 'all') return 'Mindenki';
+    if (e.audience_type === 'category') return e.audience_category;
+    if (e.audience_type === 'korosztaly') return e.audience_korosztaly;
+    if (e.audience_type === 'individual') return 'Egyéni';
+    return '';
+  };
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
@@ -782,32 +796,88 @@ export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
         {displayed.map(e => {
           const typeInfo = EVENT_TYPES.find(t => t.value === e.event_type) || EVENT_TYPES[6];
           const arrivals = e.arrival_times || [];
+          const hasExpandable = arrivals.length > 0 || (e.description && e.description.length > 0);
+          const isExpanded = expandedId === e.id;
+          
           return (
             <div 
               key={e.id} 
-              className="flex items-start gap-2 p-2 rounded border-l-4 text-sm"
+              className="rounded border-l-4 text-sm overflow-hidden"
               style={{ 
                 backgroundColor: typeInfo.bg,
                 borderLeftColor: typeInfo.color
               }}
             >
-              <span className="text-lg flex-shrink-0">{typeInfo.icon}</span>
-              <div className="flex-1 min-w-0">
-                <div className="font-semibold" style={{ color: typeInfo.color }}>
-                  {e.title}
-                </div>
-                <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5">
-                  <span className="font-medium">{formatRelative(e.event_date)}</span>
-                  <span>· {formatDate(e.event_date)}</span>
-                  {e.event_time && <span>· ⏰ {e.event_time}</span>}
-                  {e.venue && <span>· 📍 {e.venue}</span>}
-                </div>
-                {arrivals.length > 0 && (
-                  <div className="text-xs text-gray-600 mt-0.5">
-                    Érkezés: {arrivals.map(a => `${a.arrival_time}${a.group_label ? ` (${a.group_label})` : ''}`).join(' · ')}
+              <div className="flex items-start gap-2 p-2">
+                <span className="text-lg flex-shrink-0">{typeInfo.icon}</span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold flex items-center gap-1.5 flex-wrap" style={{ color: typeInfo.color }}>
+                    <span>{e.title}</span>
+                    <span className="text-xs bg-white/70 px-1.5 py-0.5 rounded font-medium">
+                      {formatRelative(e.event_date)}
+                    </span>
                   </div>
+                  <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                    <span>📅 {formatDate(e.event_date)}</span>
+                    {e.event_time && <span>⏰ {e.event_time}</span>}
+                    {e.venue && <span>📍 {e.venue}</span>}
+                    <span>👥 {audienceLabel(e)}</span>
+                  </div>
+                </div>
+                {hasExpandable && (
+                  <button
+                    onClick={() => setExpandedId(isExpanded ? null : e.id)}
+                    className="p-1 rounded hover:bg-white/50 transition-transform flex-shrink-0"
+                    style={{ 
+                      color: typeInfo.color,
+                      transform: isExpanded ? 'rotate(180deg)' : 'rotate(0deg)'
+                    }}
+                    aria-label={isExpanded ? 'Becsukás' : 'Részletek'}
+                  >
+                    <ChevronDown className="w-4 h-4" />
+                  </button>
                 )}
               </div>
+              
+              {/* Részletek kibontható szekció */}
+              {hasExpandable && isExpanded && (
+                <div className="px-2 pb-2 pt-1 border-t border-white/40 bg-white/30">
+                  {e.description && (
+                    <div className="text-xs text-gray-700 italic mb-2">
+                      💬 {e.description}
+                    </div>
+                  )}
+                  
+                  {arrivals.length > 0 && (
+                    <div>
+                      <div className="text-xs font-semibold text-gray-700 mb-1">⏰ Érkezési időpontok:</div>
+                      <div className="space-y-1">
+                        {arrivals.map(a => (
+                          <div key={a.id} className="bg-white/70 rounded p-1.5 text-xs">
+                            <div>
+                              <span className="font-semibold">{a.arrival_time}</span>
+                              {a.group_label && <span className="text-gray-600"> · {a.group_label}</span>}
+                            </div>
+                            {a.competitors && a.competitors.length > 0 && (
+                              <div className="text-gray-600 mt-0.5">
+                                👥 {a.competitors.map((c, i) => (
+                                  <span key={i}>
+                                    {i > 0 && ', '}
+                                    {c.competitor?.nickname 
+                                      ? `${c.competitor.full_name.split(' ')[0]} "${c.competitor.nickname}"` 
+                                      : c.competitor?.full_name}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                            {a.note && <div className="italic text-gray-500 mt-0.5">📝 {a.note}</div>}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           );
         })}
