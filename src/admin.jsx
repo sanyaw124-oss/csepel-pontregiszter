@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
   Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy, BookOpen, Clock, Trash2, X,
-  Star, ArrowUp, ArrowDown,
+  Star, ArrowUp, ArrowDown, BarChart3,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
@@ -605,6 +605,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
               <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
             </div>
           </div>
+        )}
+
+        {/* Évvégi statisztika - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
         )}
 
         {/* Csapat-eredmények - csak meglévő versenyzőnél */}
@@ -1948,6 +1953,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           />
         </Field>
 
+        {/* Évvégi statisztika */}
+        {competitor?.id && (
+          <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+        )}
+
         {/* Csapat-eredmények */}
         {competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
@@ -3264,6 +3274,348 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
           <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPETITOR YEARLY STATS (v0.9.20)
+// Versenyző adatlapján: eredmény-összesítő évenként
+// 3 forrásból gyűjti: results + competition_teams + historical_results
+// ═══════════════════════════════════════════════════════════════════
+
+function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
+  const [year, setYear] = useState('all'); // 'all' | year (int)
+  const [availableYears, setAvailableYears] = useState([]);
+  const [stats, setStats] = useState(null);
+  const [details, setDetails] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Egyéni szer-eredmények (csak lezárt versenyekből)
+      const { data: resultsData } = await supabase
+        .from('results')
+        .select(`
+          placement, apparatus, score_total,
+          startlist_entry:startlist_entries!inner(
+            competitor_id,
+            competition_category:competition_categories!inner(
+              competition_day:competition_days!inner(
+                competition_id,
+                competition:competitions!inner(id, name, start_date, importance, is_finalized)
+              )
+            )
+          )
+        `)
+        .eq('startlist_entry.competitor_id', competitorId);
+
+      // 2. Összetett eredmények
+      const { data: aaData } = await supabase
+        .from('all_around_results')
+        .select(`
+          placement, score_total,
+          competition_category:competition_categories!inner(
+            competition_day:competition_days!inner(
+              competition_id,
+              competition:competitions!inner(id, name, start_date, importance, is_finalized)
+            )
+          )
+        `)
+        .eq('competitor_id', competitorId);
+
+      // 3. Csapat-eredmények (a versenyzőhöz kapcsolódóan)
+      const { data: teamData } = await supabase
+        .from('competition_team_members')
+        .select(`
+          team:competition_teams!inner(
+            name, placement, score_total, apparatuses,
+            competition:competitions!inner(id, name, start_date, importance, is_finalized)
+          )
+        `)
+        .eq('competitor_id', competitorId);
+
+      // 4. Korábbi (historical) eredmények
+      const { data: historyData } = await supabase
+        .from('historical_results')
+        .select('*')
+        .eq('competitor_id', competitorId);
+
+      // Összes versenyt egy listába gyűjtjük (versenyenkénti összesítéssel)
+      // Map: competitionId or 'historical_' + id → { name, year, importance, items: [], source }
+      const compMap = new Map();
+
+      // Egyéni eredmények
+      (resultsData || []).forEach(r => {
+        const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
+        if (!comp || !comp.is_finalized) return; // CSAK lezárt versenyek
+        const year = parseInt(comp.start_date?.slice(0, 4), 10);
+        const key = `live_${comp.id}`;
+        if (!compMap.has(key)) {
+          compMap.set(key, {
+            name: comp.name, year, date: comp.start_date,
+            importance: comp.importance, items: [], source: 'live'
+          });
+        }
+        if (r.placement) {
+          compMap.get(key).items.push({
+            type: 'apparatus', label: r.apparatus,
+            placement: r.placement, score: r.score_total
+          });
+        }
+      });
+
+      // Összetett eredmények
+      (aaData || []).forEach(a => {
+        const comp = a.competition_category?.competition_day?.competition;
+        if (!comp || !comp.is_finalized) return;
+        const year = parseInt(comp.start_date?.slice(0, 4), 10);
+        const key = `live_${comp.id}`;
+        if (!compMap.has(key)) {
+          compMap.set(key, {
+            name: comp.name, year, date: comp.start_date,
+            importance: comp.importance, items: [], source: 'live'
+          });
+        }
+        if (a.placement) {
+          compMap.get(key).items.push({
+            type: 'allaround', label: 'Egyéni Összetett',
+            placement: a.placement, score: a.score_total
+          });
+        }
+      });
+
+      // Csapat-eredmények
+      (teamData || []).forEach(t => {
+        const team = t.team;
+        const comp = team?.competition;
+        if (!team || !comp || !comp.is_finalized) return;
+        const year = parseInt(comp.start_date?.slice(0, 4), 10);
+        const key = `live_${comp.id}`;
+        if (!compMap.has(key)) {
+          compMap.set(key, {
+            name: comp.name, year, date: comp.start_date,
+            importance: comp.importance, items: [], source: 'live'
+          });
+        }
+        if (team.placement) {
+          compMap.get(key).items.push({
+            type: 'team', label: `Csapat (${team.name})`,
+            placement: team.placement, score: team.score_total
+          });
+        }
+      });
+
+      // Korábbi eredmények
+      (historyData || []).forEach(h => {
+        const key = `hist_${h.id}`;
+        const items = [];
+        const results = h.results || {};
+        
+        // Szerek
+        ['szabad', 'karika', 'labda', 'buzogany', 'szalag', 'kotel'].forEach(a => {
+          if (results[a]?.placement) {
+            const labels = { szabad: 'Szabad', karika: 'Karika', labda: 'Labda', 
+                             buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél' };
+            items.push({
+              type: 'apparatus', label: labels[a],
+              placement: results[a].placement, score: results[a].score
+            });
+          }
+        });
+        
+        // Összetett
+        if (results.osszetett?.placement) {
+          items.push({
+            type: 'allaround', label: 'Egyéni Összetett',
+            placement: results.osszetett.placement, score: results.osszetett.score
+          });
+        }
+        
+        // Csapat
+        if (results.csapat?.placement) {
+          items.push({
+            type: 'team', label: h.team_name || 'Csapat',
+            placement: results.csapat.placement, score: results.csapat.score
+          });
+        }
+        
+        if (items.length > 0) {
+          compMap.set(key, {
+            name: h.competition_name, year: h.year,
+            date: `${h.year}-01-01`, importance: h.importance,
+            items, source: 'historical'
+          });
+        }
+      });
+
+      // Összes verseny listájává konvertáljuk
+      const allComps = Array.from(compMap.values()).sort((a, b) => 
+        (b.date || '').localeCompare(a.date || '')
+      );
+
+      // Elérhető évek
+      const yearSet = new Set();
+      allComps.forEach(c => { if (c.year) yearSet.add(c.year); });
+      const years = Array.from(yearSet).sort((a, b) => b - a);
+
+      // Szűrés évre
+      const filtered = year === 'all' 
+        ? allComps 
+        : allComps.filter(c => c.year === parseInt(year, 10));
+
+      // Statisztika számítás
+      let gold = 0, silver = 0, bronze = 0;
+      filtered.forEach(c => {
+        c.items.forEach(item => {
+          if (item.placement === 1) gold++;
+          else if (item.placement === 2) silver++;
+          else if (item.placement === 3) bronze++;
+        });
+      });
+
+      setAvailableYears(years);
+      setStats({
+        competitionCount: filtered.length,
+        gold, silver, bronze
+      });
+      setDetails(filtered);
+    } catch (err) {
+      console.error('CompetitorYearlyStats:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, competitorId, year]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const placementColor = (p) => {
+    if (p === 1) return '#B45309';
+    if (p === 2) return '#6B7280';
+    if (p === 3) return '#92400E';
+    return COLORS.gray700;
+  };
+
+  const medalEmoji = (p) => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : null;
+
+  const importanceLabels = {
+    'fig': 'FIG', 'mrgsz_mb': 'Magyar Bajnokság',
+    'mrgsz_regional': 'Regionális', 'diakolimpia': 'Diákolimpia',
+    'club': 'Klubverseny', 'egyeb': 'Egyéb'
+  };
+
+  return (
+    <div className="rounded-lg p-3 border" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <BarChart3 className="w-4 h-4" style={{ color: COLORS.blue }} />
+          <span className="font-semibold text-sm" style={{ color: COLORS.blueDark }}>
+            Eredmény-összesítő
+          </span>
+        </div>
+        <select
+          value={year}
+          onChange={(e) => setYear(e.target.value)}
+          className="text-xs px-2 py-1 border border-gray-300 rounded bg-white"
+        >
+          <option value="all">Összes idő</option>
+          {availableYears.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+      </div>
+
+      {loading && (
+        <div className="text-center py-4"><Loader className="w-4 h-4 animate-spin text-gray-400 inline" /></div>
+      )}
+
+      {error && (
+        <div className="text-xs text-red-600 bg-red-50 p-2 rounded">{error}</div>
+      )}
+
+      {!loading && stats && (
+        <>
+          {/* 4 stat kártya */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
+            <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
+              <div className="text-xl font-bold" style={{ color: COLORS.blueDark }}>{stats.competitionCount}</div>
+              <div className="text-xs text-gray-500">Verseny</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center border" style={{ borderColor: '#fbbf24' }}>
+              <div className="text-xl font-bold flex items-center justify-center gap-1">
+                <span>🥇</span><span style={{ color: '#B45309' }}>{stats.gold}</span>
+              </div>
+              <div className="text-xs text-gray-500">Arany</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center border" style={{ borderColor: '#9ca3af' }}>
+              <div className="text-xl font-bold flex items-center justify-center gap-1">
+                <span>🥈</span><span style={{ color: '#6B7280' }}>{stats.silver}</span>
+              </div>
+              <div className="text-xs text-gray-500">Ezüst</div>
+            </div>
+            <div className="bg-white rounded p-2 text-center border" style={{ borderColor: '#d97706' }}>
+              <div className="text-xl font-bold flex items-center justify-center gap-1">
+                <span>🥉</span><span style={{ color: '#92400E' }}>{stats.bronze}</span>
+              </div>
+              <div className="text-xs text-gray-500">Bronz</div>
+            </div>
+          </div>
+
+          {/* Versenyek listája */}
+          {details.length === 0 ? (
+            <div className="text-xs text-gray-500 italic text-center py-3">
+              Nincs eredmény {year === 'all' ? '' : year + '-ben'}.
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="text-xs font-semibold text-gray-700 mb-1">📋 Részletes lista</div>
+              {details.map((c, idx) => (
+                <div 
+                  key={idx} 
+                  className="bg-white rounded p-2 border-l-4 text-xs"
+                  style={{ 
+                    borderLeftColor: c.source === 'historical' ? '#7c3aed' : COLORS.blue,
+                    borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px'
+                  }}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-1">
+                    <div className="flex-1 min-w-0">
+                      <span className="font-semibold" style={{ color: c.source === 'historical' ? '#7c3aed' : COLORS.blueDark }}>
+                        {c.year} · {c.name}
+                      </span>
+                      {c.importance && (
+                        <span className="text-gray-500 ml-1.5">
+                          ({importanceLabels[c.importance] || c.importance})
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {c.items.map((item, i) => (
+                      <span 
+                        key={i}
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                        style={{ 
+                          backgroundColor: item.placement <= 3 ? '#fef3c7' : '#f3f4f6',
+                          color: placementColor(item.placement)
+                        }}
+                      >
+                        {medalEmoji(item.placement) || `${item.placement}.`}
+                        <span>{item.label}</span>
+                        {item.score && <span className="opacity-70">({item.score})</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
