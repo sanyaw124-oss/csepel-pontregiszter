@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
   Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy, BookOpen, Clock, Trash2, X,
-  Star, ArrowUp, ArrowDown, BarChart3,
+  Star, ArrowUp, ArrowDown, BarChart3, Lock, MessageCircle,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
@@ -615,6 +615,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         {/* Csapat-eredmények - csak meglévő versenyzőnél */}
         {!isNew && competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Edzői privát megjegyzések - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole={userRole} />
         )}
 
         {/* Korábbi eredmények - csak meglévő versenyzőnél */}
@@ -1961,6 +1966,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* Csapat-eredmények */}
         {competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Edzői privát megjegyzések - szülő csak olvashat */}
+        {competitor?.id && (
+          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole="szulo" />
         )}
 
         {/* Korábbi eredmények */}
@@ -3631,6 +3641,215 @@ function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPETITOR COACH NOTES (v0.9.23)
+// Edzői privát megjegyzések versenyzőről
+// Edző írhat/szerkeszthet/törölhet, szülő (saját gyerekére) csak olvas
+// ═══════════════════════════════════════════════════════════════════
+
+function CompetitorCoachNotes({ supabase, competitorId, userRole }) {
+  const [notes, setNotes] = useState(null);
+  const [authors, setAuthors] = useState({}); // userId → full_name
+  const [error, setError] = useState(null);
+  const [editing, setEditing] = useState(null); // null | 'new' | note
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const canWrite = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const { data, error: err } = await supabase
+        .from('coach_notes')
+        .select('*')
+        .eq('competitor_id', competitorId)
+        .order('created_at', { ascending: false });
+      if (err) throw err;
+      setNotes(data || []);
+
+      // Szerzők neveinek lekérdezése
+      const authorIds = [...new Set((data || []).map(n => n.created_by).filter(Boolean))];
+      if (authorIds.length > 0) {
+        const { data: profiles } = await supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', authorIds);
+        const map = {};
+        (profiles || []).forEach(p => { map[p.id] = p.full_name; });
+        setAuthors(map);
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [supabase, competitorId]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleSave = async () => {
+    if (!editContent.trim()) {
+      setError('Az üzenet nem lehet üres.');
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const userResp = await supabase.auth.getUser();
+      const userId = userResp.data?.user?.id;
+
+      if (editing === 'new') {
+        await supabase.from('coach_notes').insert({
+          competitor_id: competitorId,
+          content: editContent.trim(),
+          created_by: userId
+        });
+      } else if (editing) {
+        await supabase.from('coach_notes').update({
+          content: editContent.trim(),
+          modified_by: userId,
+          modified_at: new Date().toISOString()
+        }).eq('id', editing.id);
+      }
+      
+      setEditing(null);
+      setEditContent('');
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (note) => {
+    if (!window.confirm('Biztos törlöd ezt a megjegyzést?')) return;
+    try {
+      await supabase.from('coach_notes').delete().eq('id', note.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const formatDate = (dateStr) => {
+    const d = new Date(dateStr);
+    return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')}`;
+  };
+
+  if (notes === null && !error) return null;
+
+  return (
+    <div className="rounded-lg p-3 border" style={{ borderColor: '#fbbf24', backgroundColor: '#FFFBEB' }}>
+      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <Lock className="w-4 h-4" style={{ color: '#92400e' }} />
+          <span className="font-semibold text-sm" style={{ color: '#92400e' }}>
+            Edzői megjegyzések ({notes?.length || 0})
+          </span>
+          <span className="text-xs text-amber-700">— csak edzők és szülő látja</span>
+        </div>
+        {canWrite && editing === null && (
+          <button
+            onClick={() => { setEditing('new'); setEditContent(''); }}
+            className="text-xs px-3 py-1.5 rounded text-white font-medium"
+            style={{ backgroundColor: '#d97706' }}
+          >
+            <Plus className="w-3 h-3 inline mr-1" /> Új megjegyzés
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div className="text-xs text-red-600 bg-red-50 p-2 rounded mb-2">{error}</div>
+      )}
+
+      {/* Szerkesztő űrlap (új vagy meglévő) */}
+      {editing !== null && (
+        <div className="bg-white rounded p-2 border-2 mb-2" style={{ borderColor: '#fbbf24' }}>
+          <textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            placeholder="Megjegyzés a versenyzőről... (pl. fejlődési észrevétel, orvosi infó, egyéb)"
+            className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded resize-y"
+            rows="3"
+            autoFocus
+          />
+          <div className="flex gap-2 mt-2">
+            <button
+              onClick={handleSave}
+              disabled={saving || !editContent.trim()}
+              className="px-3 py-1.5 rounded text-white text-sm font-medium disabled:opacity-50"
+              style={{ backgroundColor: '#d97706' }}
+            >
+              {saving 
+                ? <Loader className="w-3 h-3 animate-spin inline" /> 
+                : <Save className="w-3 h-3 inline mr-1" />}
+              Mentés
+            </button>
+            <button
+              onClick={() => { setEditing(null); setEditContent(''); setError(null); }}
+              className="px-3 py-1.5 rounded border border-gray-300 text-sm hover:bg-gray-50"
+            >
+              Mégse
+            </button>
+          </div>
+        </div>
+      )}
+
+      {notes?.length === 0 && !error && editing === null && (
+        <div className="text-xs text-amber-700 italic">
+          Még nincs megjegyzés. {canWrite && 'Az "Új megjegyzés" gombbal írhatsz egyet.'}
+        </div>
+      )}
+
+      {/* Lista */}
+      <div className="space-y-2">
+        {(notes || []).map(note => {
+          const authorName = authors[note.created_by] || 'Edző';
+          const isModified = note.modified_at && note.modified_at !== note.created_at;
+          return (
+            <div 
+              key={note.id} 
+              className="bg-white rounded p-2.5 border-l-4 text-sm"
+              style={{ borderLeftColor: '#d97706', borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px' }}
+            >
+              <div className="flex items-start justify-between gap-2 mb-1 flex-wrap">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <MessageCircle className="w-3 h-3" style={{ color: '#d97706' }} />
+                  <span className="font-semibold" style={{ color: '#92400e' }}>{authorName}</span>
+                  <span className="text-gray-500">· {formatDate(note.created_at)}</span>
+                  {isModified && <span className="text-gray-400 italic text-xs">(szerkesztett)</span>}
+                </div>
+                {canWrite && (
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => { setEditing(note); setEditContent(note.content); }}
+                      className="p-1 hover:bg-amber-50 rounded" 
+                      title="Szerkesztés"
+                    >
+                      <Edit2 className="w-3 h-3 text-gray-500" />
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(note)}
+                      className="p-1 hover:bg-red-50 rounded" 
+                      title="Törlés"
+                    >
+                      <Trash2 className="w-3 h-3 text-red-500" />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="text-sm text-gray-800 whitespace-pre-wrap">
+                {note.content}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
