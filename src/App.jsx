@@ -791,81 +791,107 @@ function DashboardView() {
     
     const loadStats = async () => {
       try {
-        // Helper: biztonságos lekérdezés AbortError védelemmel + retry
-        const safeQuery = async (queryFn, retries = 1) => {
-          for (let i = 0; i <= retries; i++) {
+        // Helper: biztonságos lekérdezés AbortError védelemmel + agresszív retry
+        // 3x retry: 100ms, 300ms, 700ms
+        const safeQuery = async (queryFn) => {
+          const delays = [0, 100, 300, 700];
+          let lastErr = null;
+          for (let i = 0; i < delays.length; i++) {
+            if (delays[i] > 0) {
+              await new Promise(r => setTimeout(r, delays[i]));
+            }
             try {
-              return await queryFn();
+              const result = await queryFn();
+              // Ha a result-ban is van error mező
+              if (result && result.error) {
+                const errMsg = result.error.message || '';
+                if (errMsg.includes('AbortError') || errMsg.includes('Lock broken') || errMsg.includes('aborted')) {
+                  lastErr = result.error;
+                  continue;
+                }
+                return result;
+              }
+              return result;
             } catch (err) {
-              // AbortError esetén próbáljunk újra rövid várakozással
-              if (err.name === 'AbortError' && i < retries) {
-                await new Promise(r => setTimeout(r, 100));
+              lastErr = err;
+              if (err.name === 'AbortError' || (err.message || '').includes('Lock broken')) {
                 continue;
               }
               return { error: err };
             }
           }
+          return { error: lastErr || { message: 'lekérés sikertelen retry után' } };
         };
 
-        const [compResult, competitionsResult, parentsResult, provResult] = await Promise.allSettled([
-          safeQuery(() => supabase
-            .from('competitors')
-            .select('id', { count: 'exact', head: true })
-            .then(({ count, error }) => ({ count: count ?? 0, error }))
-          ),
-          safeQuery(() => supabase
-            .from('competitions')
-            .select('id', { count: 'exact', head: true })
-            .gte('end_date', new Date().toISOString().split('T')[0])
-            .then(({ count, error }) => ({ count: count ?? 0, error }))
-          ),
-          safeQuery(() => supabase
-            .from('profiles')
-            .select('id', { count: 'exact', head: true })
-            .in('role', ['szulo', 'szulo_admin'])
-            .then(({ count, error }) => ({ count: count ?? 0, error }))
-          ),
-          safeQuery(() => supabase
-            .from('competitors')
-            .select('*')
-            .eq('is_provisional', true)
-            .eq('is_active', true)
-            .order('full_name')
-            .then(({ data, error }) => ({ data: data ?? [], error }))
-          )
-        ]);
-
-        const comp = compResult.status === 'fulfilled' ? compResult.value : { count: 0, error: { message: 'lekérés sikertelen' } };
-        const competitions = competitionsResult.status === 'fulfilled' ? competitionsResult.value : { count: 0, error: { message: 'lekérés sikertelen' } };
-        const parents = parentsResult.status === 'fulfilled' ? parentsResult.value : { count: 0, error: { message: 'lekérés sikertelen' } };
-        const prov = provResult.status === 'fulfilled' ? provResult.value : { data: [], error: { message: 'lekérés sikertelen' } };
+        // SEQUENTIAL lekérdezés - egyik a másik után, ne támadjon össze a Supabase auth
+        const compResult = await safeQuery(() => supabase
+          .from('competitors')
+          .select('id', { count: 'exact', head: true })
+          .then(({ count, error }) => ({ count: count ?? 0, error }))
+        );
         
         if (!mounted) return;
         
-        setStats({
-          competitors: comp.count,
-          competitions: competitions.count,
-          parents: parents.count,
-          provisional: prov.data.length
-        });
-        setProvisionalCompetitors(prov.data);
+        const competitionsResult = await safeQuery(() => supabase
+          .from('competitions')
+          .select('id', { count: 'exact', head: true })
+          .gte('end_date', new Date().toISOString().split('T')[0])
+          .then(({ count, error }) => ({ count: count ?? 0, error }))
+        );
         
+        if (!mounted) return;
+        
+        const parentsResult = await safeQuery(() => supabase
+          .from('profiles')
+          .select('id', { count: 'exact', head: true })
+          .in('role', ['szulo', 'szulo_admin'])
+          .then(({ count, error }) => ({ count: count ?? 0, error }))
+        );
+        
+        if (!mounted) return;
+        
+        const provResult = await safeQuery(() => supabase
+          .from('competitors')
+          .select('*')
+          .eq('is_provisional', true)
+          .eq('is_active', true)
+          .order('full_name')
+          .then(({ data, error }) => ({ data: data ?? [], error }))
+        );
+        
+        if (!mounted) return;
+        
+        // Csak akkor frissítjük az állapotot, ha a query sikeres volt (NEM nullázunk hibára!)
+        setStats(prev => ({
+          competitors: compResult.error ? (prev?.competitors ?? null) : compResult.count,
+          competitions: competitionsResult.error ? (prev?.competitions ?? null) : competitionsResult.count,
+          parents: parentsResult.error ? (prev?.parents ?? null) : parentsResult.count,
+          provisional: provResult.error ? (prev?.provisional ?? 0) : (provResult.data?.length ?? 0)
+        }));
+        
+        if (!provResult.error) {
+          setProvisionalCompetitors(provResult.data);
+        }
+        
+        // Csak NEM-transient hibák jelennek meg
         const errors = [];
         const isTransientError = (err) => 
           err && err.message && (
             err.message.includes('AbortError') || 
             err.message.includes('Lock broken') ||
+            err.message.includes('aborted') ||
             err.message.includes('lekérés sikertelen')
           );
         
-        if (comp.error && !isTransientError(comp.error)) errors.push('Versenyzők: ' + comp.error.message);
-        if (competitions.error && !isTransientError(competitions.error)) errors.push('Versenyek: ' + competitions.error.message);
-        if (parents.error && !isTransientError(parents.error)) errors.push('Szülők: ' + parents.error.message);
+        if (compResult.error && !isTransientError(compResult.error)) errors.push('Versenyzők: ' + compResult.error.message);
+        if (competitionsResult.error && !isTransientError(competitionsResult.error)) errors.push('Versenyek: ' + competitionsResult.error.message);
+        if (parentsResult.error && !isTransientError(parentsResult.error)) errors.push('Szülők: ' + parentsResult.error.message);
+        
         if (errors.length > 0) setError(errors.join(' · '));
         else setError(null);
       } catch (err) {
-        // AbortError nem mutatjuk a felhasználónak — átmeneti hiba
-        if (mounted && err.name !== 'AbortError' && !err.message?.includes('Lock broken')) {
+        // AbortError NEM mutatjuk a felhasználónak
+        if (mounted && err.name !== 'AbortError' && !(err.message || '').includes('Lock broken')) {
           setError('Statisztikák betöltése sikertelen: ' + err.message);
         }
       }
@@ -975,7 +1001,10 @@ function DashboardView() {
           {/* HERO doboz: soron következő verseny */}
           <NextCompetitionHero />
           
-          <h3 className="font-semibold text-lg mb-3 mt-2" style={{ color: COLORS.blueDark }}>
+          {/* Klub szlogen kiemelve */}
+          <SloganHero />
+          
+          <h3 className="font-semibold text-lg mb-3 mt-6" style={{ color: COLORS.blueDark }}>
             Klub áttekintés
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
