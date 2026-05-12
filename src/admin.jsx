@@ -3327,16 +3327,32 @@ function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
         `)
         .eq('competitor_id', competitorId);
 
-      // 3. Csapat-eredmények (a versenyzőhöz kapcsolódóan)
-      const { data: teamData } = await supabase
+      // 3. Csapat-eredmények - 2 lépéses lekérdezés
+      // 1) team_id-k megtalálása
+      const { data: memberData, error: memberErr } = await supabase
         .from('competition_team_members')
-        .select(`
-          team:team_id (
-            name, placement, score, apparatuses,
-            competition:competition_id (id, name, start_date, importance, is_finalized)
-          )
-        `)
+        .select('team_id')
         .eq('competitor_id', competitorId);
+      
+      if (memberErr) console.error('Member query hiba:', memberErr);
+      
+      const teamIds = (memberData || []).map(m => m.team_id).filter(Boolean);
+      let teamData = [];
+      
+      if (teamIds.length > 0) {
+        // 2) csapatok lekérdezése a verseny adatokkal együtt
+        const { data: teamsRaw, error: teamErr } = await supabase
+          .from('competition_teams')
+          .select(`
+            id, name, placement, competition_id,
+            competition:competition_id (id, name, start_date, importance, is_finalized)
+          `)
+          .in('id', teamIds);
+        
+        if (teamErr) console.error('Csapat query hiba:', teamErr);
+        teamData = teamsRaw || [];
+        console.log('Csapat-eredmények talált:', teamData.length, teamData);
+      }
 
       // 4. Korábbi (historical) eredmények
       const { data: historyData } = await supabase
@@ -3388,9 +3404,8 @@ function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
         }
       });
 
-      // Csapat-eredmények (csapat eredmény bárhonnan, akár nem-lezárt versenyből is)
-      (teamData || []).forEach(t => {
-        const team = t.team;
+      // Csapat-eredmények feldolgozása
+      teamData.forEach(team => {
         const comp = team?.competition;
         if (!team || !comp) return;
         const year = parseInt(comp.start_date?.slice(0, 4), 10);
@@ -3404,7 +3419,7 @@ function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
         if (team.placement) {
           compMap.get(key).items.push({
             type: 'team', label: `Csapat (${team.name})`,
-            placement: team.placement, score: team.score
+            placement: team.placement, score: null
           });
         }
       });
