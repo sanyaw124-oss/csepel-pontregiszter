@@ -1004,6 +1004,9 @@ function DashboardView({ setActiveView }) {
           {/* HERO doboz: soron következő verseny */}
           <NextCompetitionHero />
           
+          {/* Születésnapok (8 nap előtte + 8 nap utána) */}
+          <BirthdayWidget supabase={supabase} />
+          
           {/* Közelgő események — 14 napon belüli klub-események (max 5) */}
           <div className="mb-4">
             <UpcomingEventsWidget 
@@ -1127,6 +1130,143 @@ function DashboardView({ setActiveView }) {
 // ═══════════════════════════════════════════════════════════════════
 // NEXT COMPETITION HERO — soron következő verseny kiemelt doboza
 // ═══════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════
+// BIRTHDAY WIDGET — születésnapok 8 nap előtte + 8 nap utána
+// ═══════════════════════════════════════════════════════════════════
+
+function BirthdayWidget({ supabase }) {
+  const [birthdays, setBirthdays] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from('competitors')
+          .select('id, full_name, nickname, birth_date')
+          .eq('is_active', true)
+          .eq('is_provisional', false)
+          .not('birth_date', 'is', null);
+        
+        if (!active) return;
+        
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const currentYear = today.getFullYear();
+        
+        const items = [];
+        (data || []).forEach(c => {
+          if (!c.birth_date) return;
+          const birth = new Date(c.birth_date);
+          const month = birth.getMonth();
+          const day = birth.getDate();
+          
+          let bd = new Date(currentYear, month, day);
+          bd.setHours(0, 0, 0, 0);
+          let diff = Math.round((bd - today) / (1000 * 60 * 60 * 24));
+          
+          if (diff < -8) {
+            bd = new Date(currentYear + 1, month, day);
+            bd.setHours(0, 0, 0, 0);
+            diff = Math.round((bd - today) / (1000 * 60 * 60 * 24));
+          }
+          
+          if (diff >= -8 && diff <= 8) {
+            const yearsOld = bd.getFullYear() - birth.getFullYear();
+            items.push({
+              id: c.id,
+              name: c.nickname 
+                ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}`
+                : c.full_name,
+              diff,
+              yearsOld,
+              dateStr: `${String(month + 1).padStart(2, '0')}.${String(day).padStart(2, '0')}`
+            });
+          }
+        });
+        
+        items.sort((a, b) => {
+          if (a.diff === 0 && b.diff !== 0) return -1;
+          if (b.diff === 0 && a.diff !== 0) return 1;
+          if (a.diff >= 0 && b.diff < 0) return -1;
+          if (b.diff >= 0 && a.diff < 0) return 1;
+          if (a.diff >= 0 && b.diff >= 0) return a.diff - b.diff;
+          return b.diff - a.diff;
+        });
+        
+        if (active) setBirthdays(items);
+      } catch (err) {
+        console.error('BirthdayWidget:', err);
+        if (active) setBirthdays([]);
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase]);
+
+  if (loading) return null;
+  if (!birthdays || birthdays.length === 0) return null;
+
+  const hasToday = birthdays.some(b => b.diff === 0);
+  
+  const diffLabel = (b) => {
+    if (b.diff === 0) return `MA ${b.yearsOld} éves lett 🎉`;
+    if (b.diff === 1) return `HOLNAP ${b.yearsOld} éves lesz`;
+    if (b.diff === -1) return `Tegnap ${b.yearsOld} éves lett`;
+    if (b.diff > 0) return `${b.diff} nap múlva ${b.yearsOld} éves lesz`;
+    return `${Math.abs(b.diff)} napja ${b.yearsOld} éves lett`;
+  };
+
+  return (
+    <div 
+      className="rounded-xl p-4 mb-4 shadow-sm relative overflow-hidden"
+      style={{ 
+        background: hasToday 
+          ? 'linear-gradient(135deg, #FCE7F3 0%, #FEF3C7 50%, #DBEAFE 100%)' 
+          : 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
+        border: '1px solid #fbbf24'
+      }}
+    >
+      {/* Háttér torta-illusztráció (ChatGPT-vel rajzolt egyedi RG-s kép) */}
+      <img 
+        src="/birthday-cake.png" 
+        alt=""
+        className="absolute right-2 top-1 opacity-50 select-none pointer-events-none"
+        style={{ width: '96px', height: '96px', objectFit: 'contain' }}
+      />
+      
+      <div className="flex items-center gap-2 mb-2 relative">
+        <span className="text-xl">🎂</span>
+        <h3 className="font-semibold" style={{ color: '#92400e' }}>
+          {hasToday ? 'Boldog születésnapot! 🎉' : 'Születésnapok'}
+        </h3>
+      </div>
+      
+      <div className="space-y-1.5 relative">
+        {birthdays.map(b => (
+          <div 
+            key={b.id} 
+            className="flex items-center gap-2 text-sm flex-wrap"
+            style={{ 
+              fontWeight: b.diff === 0 ? 600 : 400,
+              color: b.diff === 0 ? '#BE123C' : b.diff < 0 ? '#9CA3AF' : '#78350F'
+            }}
+          >
+            <span className="text-base flex-shrink-0">
+              {b.diff === 0 ? '🎉' : b.diff < 0 ? '🌸' : '⭐'}
+            </span>
+            <span className="font-medium">{b.name}</span>
+            <span className="text-xs opacity-90">— {diffLabel(b)}</span>
+            <span className="text-xs opacity-60">({b.dateStr})</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function NextCompetitionHero() {
   const [comp, setComp] = useState(null);
