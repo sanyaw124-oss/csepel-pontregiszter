@@ -8,7 +8,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, MapPin, Plus, ArrowLeft, Save, Loader, AlertCircle,
-  ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus
+  ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award
 } from 'lucide-react';
 import { ScoringView } from './scoring';
 import { CompetitionTeamsView } from './teams';
@@ -458,7 +458,8 @@ function CompetitionEditor({ supabase, competition, canManage, userRole, onClose
   const tabs = [
     { id: 'basics', label: 'Alapadatok', icon: Calendar },
     { id: 'days', label: 'Napok és kategóriák', icon: Trophy, disabled: isNew && !current },
-    { id: 'teams', label: 'Klub-csapatok', icon: UsersIcon, disabled: isNew && !current }
+    { id: 'teams', label: 'Klub-csapatok', icon: UsersIcon, disabled: isNew && !current },
+    { id: 'csepeli', label: 'Csepeli összesítő', icon: Award, disabled: isNew && !current }
   ];
 
   // Ha a JSON-import view aktív (meglévő versenyhez)
@@ -537,6 +538,14 @@ function CompetitionEditor({ supabase, competition, canManage, userRole, onClose
                 supabase={supabase}
                 userRole={userRole}
                 competitionId={current.id}
+              />
+            )}
+            {tab === 'csepeli' && current && (
+              <CsepeliSummaryTab
+                supabase={supabase}
+                userRole={userRole}
+                competition={current}
+                onCompetitionChange={(updated) => setCurrent(updated)}
               />
             )}
           </div>
@@ -2667,6 +2676,509 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
         </PrimaryButton>
         <SecondaryButton onClick={onClose}>Mégse</SecondaryButton>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSEPELI ÖSSZESÍTŐ TAB (v0.9.11)
+// Csak a csepeli versenyzők, kategóriánként csoportosítva
+// Csak helyezés kötelező, pontok opcionálisak
+// Versenyzőnként mentés. Verseny lezárása csak admin/edző által.
+// ═══════════════════════════════════════════════════════════════════
+
+function CsepeliSummaryTab({ supabase, userRole, competition, onCompetitionChange }) {
+  const [groupedEntries, setGroupedEntries] = useState({});
+  const [results, setResults] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [savingId, setSavingId] = useState(null);
+  const [editValues, setEditValues] = useState({});
+  const [successMsg, setSuccessMsg] = useState(null);
+
+  const canFinalize = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
+  const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
+  const isFinalized = competition?.is_finalized;
+
+  // ─── Adatok betöltése ─────────────────────────────────────────
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      // 1. Verseny napjai + kategóriái + startlista (csak csepeliek)
+      const { data: days, error: dErr } = await supabase
+        .from('competition_days')
+        .select(`
+          id, day_number, date,
+          categories:competition_categories (
+            id, kategoria, korosztaly, type, apparatuses, time_range,
+            entries:startlist_entries (
+              id, start_order, competitor_id, apparatus,
+              competitor:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
+            )
+          )
+        `)
+        .eq('competition_id', competition.id)
+        .order('day_number');
+      if (dErr) throw dErr;
+
+      // Csak az egyéni kategóriák, és csak csepeli versenyzők
+      const grouped = {}; // categoryKey → { category, entries: [] }
+      (days || []).forEach(day => {
+        (day.categories || [])
+          .filter(c => c.type !== 'csapat')
+          .forEach(cat => {
+            const csepeliEntries = (cat.entries || [])
+              .filter(e => e.competitor_id)
+              .sort((a, b) => (a.start_order || 0) - (b.start_order || 0));
+            
+            if (csepeliEntries.length > 0) {
+              const key = `${cat.kategoria}__${cat.korosztaly}__${cat.id}`;
+              grouped[key] = {
+                category: cat,
+                day: day,
+                entries: csepeliEntries
+              };
+            }
+          });
+      });
+
+      // 2. Eredmények lekérdezése
+      const allEntryIds = [];
+      Object.values(grouped).forEach(g => {
+        g.entries.forEach(e => allEntryIds.push(e.id));
+      });
+
+      let resultsMap = {};
+      if (allEntryIds.length > 0) {
+        const { data: resData, error: rErr } = await supabase
+          .from('results')
+          .select('*')
+          .in('startlist_entry_id', allEntryIds);
+        if (rErr) throw rErr;
+        (resData || []).forEach(r => {
+          resultsMap[r.startlist_entry_id] = r;
+        });
+      }
+
+      setGroupedEntries(grouped);
+      setResults(resultsMap);
+      
+      // Edit values inicializálása
+      const initEdit = {};
+      Object.values(grouped).forEach(g => {
+        g.entries.forEach(e => {
+          const r = resultsMap[e.id];
+          initEdit[e.id] = {
+            placement: r?.placement ?? '',
+            score_db: r?.score_db ?? '',
+            score_da: r?.score_da ?? '',
+            score_d: r?.score_d ?? '',
+            score_a: r?.score_a ?? '',
+            score_e: r?.score_e ?? '',
+            score_p: r?.score_p ?? '',
+            score_total: r?.score_total ?? '',
+            notes: r?.notes ?? ''
+          };
+        });
+      });
+      setEditValues(initEdit);
+    } catch (err) {
+      console.error('CsepeliSummary load error:', err);
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, competition.id]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // ─── Egy versenyző mentése ────────────────────────────────────
+  const handleSaveEntry = async (entry) => {
+    setSavingId(entry.id);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      const vals = editValues[entry.id];
+      
+      // Validáció: legalább a helyezés kötelező
+      if (!vals.placement || vals.placement === '') {
+        throw new Error('A helyezés kötelező mező!');
+      }
+      const placement = parseInt(vals.placement, 10);
+      if (isNaN(placement) || placement < 1) {
+        throw new Error('A helyezés pozitív egész szám kell legyen.');
+      }
+
+      // Pontok validálása (opcionális)
+      const parseOpt = (val, name, max) => {
+        if (val === '' || val === null) return null;
+        const n = parseFloat(val);
+        if (isNaN(n)) throw new Error(`${name}: szám kell`);
+        if (n < 0) throw new Error(`${name}: nem lehet negatív`);
+        if (max && n > max) throw new Error(`${name}: max ${max}`);
+        return n;
+      };
+
+      const scoreDb = parseOpt(vals.score_db, 'DB', null);
+      const scoreDa = parseOpt(vals.score_da, 'DA', null);
+      let scoreD = parseOpt(vals.score_d, 'D', null);
+      if (scoreD === null && (scoreDb !== null || scoreDa !== null)) {
+        scoreD = (scoreDb || 0) + (scoreDa || 0);
+      }
+      const scoreA = parseOpt(vals.score_a, 'A', 10);
+      const scoreE = parseOpt(vals.score_e, 'E', 10);
+      const scoreP = parseOpt(vals.score_p, 'P', null);
+      let scoreTotal = parseOpt(vals.score_total, 'Total', null);
+      
+      // Ha total nincs de a többi van, számoljuk
+      if (scoreTotal === null && (scoreD !== null || scoreA !== null || scoreE !== null)) {
+        scoreTotal = Math.round(((scoreD || 0) + (scoreA || 0) + (scoreE || 0) - (scoreP || 0)) * 1000) / 1000;
+      }
+
+      const existing = results[entry.id];
+      
+      const payload = {
+        startlist_entry_id: entry.id,
+        apparatus: entry.apparatus,
+        placement,
+        score_db: scoreDb,
+        score_da: scoreDa,
+        score_d: scoreD,
+        score_a: scoreA,
+        score_e: scoreE,
+        score_p: scoreP,
+        score_total: scoreTotal,
+        notes: vals.notes || null,
+        modified_at: new Date().toISOString()
+      };
+
+      if (existing) {
+        const { error: updErr } = await supabase
+          .from('results')
+          .update(payload)
+          .eq('id', existing.id);
+        if (updErr) throw updErr;
+      } else {
+        payload.is_provisional = true;
+        const { error: insErr } = await supabase
+          .from('results')
+          .insert(payload);
+        if (insErr) throw insErr;
+      }
+
+      setSuccessMsg(`Mentve: ${entry.competitor.full_name}`);
+      await loadData();
+      setTimeout(() => setSuccessMsg(null), 2500);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  // ─── Verseny lezárása / újranyitása ───────────────────────────
+  const handleFinalize = async () => {
+    if (!canFinalize) return;
+    
+    const allEntries = Object.values(groupedEntries).flatMap(g => g.entries);
+    const withPlacement = allEntries.filter(e => results[e.id]?.placement);
+    const withoutPlacement = allEntries.length - withPlacement.length;
+    
+    let msg = `${withPlacement.length} / ${allEntries.length} csepeli versenyzőnek van rögzített helyezése.\n`;
+    if (withoutPlacement > 0) {
+      msg += `\n${withoutPlacement} versenyzőnek MÉG NINCS helyezése. Tényleg lezárod a versenyt?\n`;
+    }
+    msg += '\nLezárás után csak edző és admin módosíthat. Folytatod?';
+    
+    if (!window.confirm(msg)) return;
+    
+    try {
+      const userResp = await supabase.auth.getUser();
+      const userId = userResp.data?.user?.id;
+      
+      // Eredmények véglegesítése
+      const resultIds = Object.values(results).filter(r => r).map(r => r.id);
+      if (resultIds.length > 0) {
+        await supabase
+          .from('results')
+          .update({
+            is_provisional: false,
+            finalized_by: userId,
+            finalized_at: new Date().toISOString()
+          })
+          .in('id', resultIds);
+      }
+      
+      // Verseny lezárása
+      const { error: compErr } = await supabase
+        .from('competitions')
+        .update({ is_finalized: true })
+        .eq('id', competition.id);
+      if (compErr) throw compErr;
+      
+      setSuccessMsg('Verseny sikeresen lezárva!');
+      if (onCompetitionChange) {
+        onCompetitionChange({ ...competition, is_finalized: true });
+      }
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleReopen = async () => {
+    if (!canFinalize) return;
+    if (!window.confirm('Visszanyitod a versenyt? A pontok ismét ideiglenes állapotba kerülnek.')) return;
+    
+    try {
+      const resultIds = Object.values(results).filter(r => r).map(r => r.id);
+      if (resultIds.length > 0) {
+        await supabase
+          .from('results')
+          .update({ is_provisional: true, finalized_by: null, finalized_at: null })
+          .in('id', resultIds);
+      }
+      
+      const { error: compErr } = await supabase
+        .from('competitions')
+        .update({ is_finalized: false })
+        .eq('id', competition.id);
+      if (compErr) throw compErr;
+      
+      setSuccessMsg('Verseny újranyitva.');
+      if (onCompetitionChange) {
+        onCompetitionChange({ ...competition, is_finalized: false });
+      }
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  // ─── RENDER ───────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  const groupKeys = Object.keys(groupedEntries);
+  const allEntries = Object.values(groupedEntries).flatMap(g => g.entries);
+  const withPlacement = allEntries.filter(e => results[e.id]?.placement).length;
+
+  if (groupKeys.length === 0) {
+    return (
+      <div className="text-center py-12 text-gray-500">
+        <Award className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+        <div>Még nincs csepeli versenyző a startlistában.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Fejléc */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center gap-3 mb-3 flex-wrap">
+          <Award className="w-5 h-5" style={{ color: COLORS.red }} />
+          <h2 className="text-lg font-semibold flex-1" style={{ color: COLORS.red }}>
+            Csepeli versenyzők összesítője
+          </h2>
+          {isFinalized ? (
+            <span className="px-3 py-1.5 rounded-md text-sm font-medium" style={{ backgroundColor: '#D1FAE5', color: '#15803D' }}>
+              ✓ Verseny lezárva
+            </span>
+          ) : (
+            <span className="px-3 py-1.5 rounded-md text-sm font-medium" style={{ backgroundColor: '#FEF3C7', color: '#92400E' }}>
+              ⏳ Ideiglenes
+            </span>
+          )}
+        </div>
+        <div className="text-sm text-gray-600">
+          {withPlacement} / {allEntries.length} csepeli versenyzőnek van rögzített helyezése
+        </div>
+        <div className="text-xs text-gray-500 mt-1">
+          💡 Csak a <strong>helyezés</strong> kötelező. Pontok opcionálisak. Az eredmények csak a verseny lezárása után jelennek meg az Áttekintésen.
+        </div>
+      </div>
+
+      {/* Üzenetek */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+      {successMsg && (
+        <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex items-center gap-2 text-sm text-green-700">
+          <Check className="w-4 h-4 flex-shrink-0" />
+          <span>{successMsg}</span>
+        </div>
+      )}
+
+      {/* Kategóriánkénti csoportok */}
+      {groupKeys.map(key => {
+        const group = groupedEntries[key];
+        const cat = group.category;
+        return (
+          <div key={key} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex items-center justify-between flex-wrap gap-2">
+              <div>
+                <div className="font-semibold text-sm">{cat.kategoria} · {cat.korosztaly}</div>
+                <div className="text-xs text-gray-500">
+                  {group.entries.length} csepeli · {cat.time_range || 'nincs időpont'}
+                </div>
+              </div>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {group.entries.map(entry => (
+                <CsepeliSummaryRow
+                  key={entry.id}
+                  entry={entry}
+                  values={editValues[entry.id] || {}}
+                  onChange={(field, value) => setEditValues(prev => ({
+                    ...prev,
+                    [entry.id]: { ...prev[entry.id], [field]: value }
+                  }))}
+                  onSave={() => handleSaveEntry(entry)}
+                  saving={savingId === entry.id}
+                  hasResult={!!results[entry.id]}
+                  isFinalized={isFinalized}
+                  canEdit={canEdit && (!isFinalized || canFinalize)}
+                />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Alsó akciók */}
+      {canFinalize && (
+        <div className="bg-white rounded-lg border-2 p-4 sticky bottom-4 shadow-lg"
+             style={{ borderColor: isFinalized ? '#15803D' : COLORS.red }}>
+          {isFinalized ? (
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm flex-1" style={{ color: '#15803D' }}>
+                ✓ A verseny le van zárva. Az eredmények véglegesek és megjelennek az Áttekintésen.
+              </span>
+              <button
+                onClick={handleReopen}
+                className="px-4 py-2 rounded border border-gray-300 text-sm hover:bg-gray-50"
+              >
+                <Edit2 className="w-4 h-4 inline mr-1" />
+                Visszanyitás
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="text-sm flex-1" style={{ color: COLORS.red }}>
+                ⏳ A verseny még nincs lezárva. {withPlacement < allEntries.length && `(${allEntries.length - withPlacement} versenyzőnek nincs helyezése.)`}
+              </span>
+              <button
+                onClick={handleFinalize}
+                className="px-4 py-2 rounded text-white text-sm font-medium"
+                style={{ backgroundColor: '#15803D' }}
+              >
+                <Check className="w-4 h-4 inline mr-1" />
+                Verseny lezárása
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CsepeliSummaryRow — egy versenyző sora az összesítőben
+// ═══════════════════════════════════════════════════════════════════
+
+function CsepeliSummaryRow({ entry, values, onChange, onSave, saving, hasResult, isFinalized, canEdit }) {
+  const competitor = entry.competitor;
+  const name = competitor?.nickname 
+    ? `${competitor.full_name.split(' ')[0]} "${competitor.nickname}" ${competitor.full_name.split(' ').slice(1).join(' ')}`
+    : competitor?.full_name;
+  
+  const apparatusLabel = entry.apparatus 
+    ? (APPARATUS_LABELS[entry.apparatus] || entry.apparatus) 
+    : 'Választott';
+
+  return (
+    <div className="p-3" style={{ backgroundColor: hasResult ? '#FCE7F3' : 'transparent' }}>
+      <div className="flex items-center gap-3 mb-2 flex-wrap">
+        <span className="w-8 text-center text-sm font-medium text-gray-500">
+          {entry.start_order}.
+        </span>
+        <div className="flex-1 min-w-0">
+          <div className="font-medium text-sm" style={{ color: COLORS.red }}>
+            ★ {name}
+          </div>
+          <div className="text-xs text-gray-500">
+            {apparatusLabel}
+          </div>
+        </div>
+        {hasResult && values.placement && (
+          <div className="text-base font-bold" style={{ 
+            color: parseInt(values.placement) === 1 ? '#B45309' 
+              : parseInt(values.placement) === 2 ? '#6B7280' 
+              : parseInt(values.placement) === 3 ? '#92400E' : COLORS.primary 
+          }}>
+            {values.placement}. hely
+          </div>
+        )}
+      </div>
+      
+      {canEdit && (
+        <div className="ml-11 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-1.5 mt-2">
+          <SmallInput label="Helyezés *" value={values.placement} onChange={v => onChange('placement', v)} type="number" min="1" />
+          <SmallInput label="DB" value={values.score_db} onChange={v => onChange('score_db', v)} type="number" step="0.001" />
+          <SmallInput label="DA" value={values.score_da} onChange={v => onChange('score_da', v)} type="number" step="0.001" />
+          <SmallInput label="D" value={values.score_d} onChange={v => onChange('score_d', v)} type="number" step="0.001" />
+          <SmallInput label="A" value={values.score_a} onChange={v => onChange('score_a', v)} type="number" step="0.001" max="10" />
+          <SmallInput label="E" value={values.score_e} onChange={v => onChange('score_e', v)} type="number" step="0.001" max="10" />
+          <SmallInput label="P" value={values.score_p} onChange={v => onChange('score_p', v)} type="number" step="0.001" />
+          <SmallInput label="Total" value={values.score_total} onChange={v => onChange('score_total', v)} type="number" step="0.001" />
+        </div>
+      )}
+      
+      {canEdit && (
+        <div className="ml-11 mt-2 flex items-center gap-2 flex-wrap">
+          <input
+            type="text"
+            value={values.notes || ''}
+            onChange={(e) => onChange('notes', e.target.value)}
+            placeholder="Megjegyzés (opcionális)"
+            className="flex-1 min-w-[180px] px-2 py-1 text-xs border border-gray-300 rounded"
+          />
+          <button
+            onClick={onSave}
+            disabled={saving}
+            className="px-3 py-1.5 rounded text-white text-xs font-medium disabled:opacity-50"
+            style={{ backgroundColor: COLORS.blue }}
+          >
+            {saving ? <Loader className="w-3 h-3 animate-spin inline" /> : <Save className="w-3 h-3 inline mr-1" />}
+            {hasResult ? 'Módosítás' : 'Mentés'}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SmallInput({ label, value, onChange, ...rest }) {
+  return (
+    <div>
+      <label className="text-xs text-gray-600 block mb-0.5">{label}</label>
+      <input
+        {...rest}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full px-1.5 py-1 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+      />
     </div>
   );
 }
