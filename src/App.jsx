@@ -967,6 +967,16 @@ function DashboardView({ setActiveView }) {
         </div>
       )}
 
+      {/* HERO + Születésnap + Események - MINDENKINEK */}
+      <NextCompetitionHero />
+      <BirthdayWidget supabase={supabase} />
+      <div className="mb-4">
+        <UpcomingEventsWidget 
+          supabase={supabase}
+          onOpenEvents={() => setActiveView('events')}
+        />
+      </div>
+
       {/* ÚJ: szülő/szülő-admin saját gyerekek */}
       {isParentLike && (
         <div className="mb-6">
@@ -1008,9 +1018,8 @@ function DashboardView({ setActiveView }) {
         </div>
       )}
 
-      {/* Admin/edző számára: statisztikák */}
-      {isAdminLike && (
-        <>
+      {/* Klub áttekintés - MINDENKINEK (admin, edző, szülő) */}
+      <>
           <h3 className="font-semibold text-lg mb-3 mt-2" style={{ color: COLORS.blueDark }}>
             Klub áttekintés
           </h3>
@@ -1030,44 +1039,43 @@ function DashboardView({ setActiveView }) {
           <div className="mt-4">
             <ClubRankingsWidget />
           </div>
-          
-          {/* Ideiglenes profilok jelzés */}
-          {stats.provisional > 0 && provisionalCompetitors && (
-            <div className="mt-4 border-2 rounded-lg overflow-hidden" style={{ borderColor: '#f59e0b' }}>
-              <div className="px-3 py-2 text-sm font-semibold flex items-center gap-2"
-                   style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
-                <AlertCircle className="w-4 h-4" />
-                Ideiglenes profilok ({stats.provisional}) — admin/edző ellenőrzésére várnak
-              </div>
-              <div className="space-y-1 p-2 bg-amber-50">
-                {provisionalCompetitors.slice(0, 5).map(c => {
-                  const age = c.birth_year ? (new Date().getFullYear() - c.birth_year) : null;
-                  return (
-                    <div key={c.id} className="bg-white border rounded p-2 flex items-center justify-between"
-                         style={{ borderColor: '#fbbf24' }}>
-                      <div>
-                        <div className="font-medium text-sm" style={{ color: COLORS.blueDark }}>
-                          {c.nickname 
-                            ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
-                            : c.full_name}
-                        </div>
-                        <div className="text-xs text-gray-500">
-                          {c.kategoria} · {c.korosztaly}{age ? ` · ${age} éves` : ''}
-                        </div>
-                      </div>
-                      <span className="text-xs text-amber-700">⚠ Ideiglenes</span>
+      </>
+
+      {/* Ideiglenes profilok - csak admin */}
+      {isAdminLike && stats.provisional > 0 && provisionalCompetitors && (
+        <div className="mt-4 border-2 rounded-lg overflow-hidden" style={{ borderColor: '#f59e0b' }}>
+          <div className="px-3 py-2 text-sm font-semibold flex items-center gap-2"
+               style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
+            <AlertCircle className="w-4 h-4" />
+            Ideiglenes profilok ({stats.provisional}) — admin/edző ellenőrzésére várnak
+          </div>
+          <div className="space-y-1 p-2 bg-amber-50">
+            {provisionalCompetitors.slice(0, 5).map(c => {
+              const age = c.birth_year ? (new Date().getFullYear() - c.birth_year) : null;
+              return (
+                <div key={c.id} className="bg-white border rounded p-2 flex items-center justify-between"
+                     style={{ borderColor: '#fbbf24' }}>
+                  <div>
+                    <div className="font-medium text-sm" style={{ color: COLORS.blueDark }}>
+                      {c.nickname 
+                        ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
+                        : c.full_name}
                     </div>
-                  );
-                })}
-                {provisionalCompetitors.length > 5 && (
-                  <div className="text-xs text-amber-700 italic px-1">
-                    ... és {provisionalCompetitors.length - 5} további a Versenyzők menüben
+                    <div className="text-xs text-gray-500">
+                      {c.kategoria} · {c.korosztaly}{age ? ` · ${age} éves` : ''}
+                    </div>
                   </div>
-                )}
+                  <span className="text-xs text-amber-700">⚠ Ideiglenes</span>
+                </div>
+              );
+            })}
+            {provisionalCompetitors.length > 5 && (
+              <div className="text-xs text-amber-700 italic px-1">
+                ... és {provisionalCompetitors.length - 5} további a Versenyzők menüben
               </div>
-            </div>
-          )}
-        </>
+            )}
+          </div>
+        </div>
       )}
 
       {/* Admin info dobozok - csak admin/szülő-admin */}
