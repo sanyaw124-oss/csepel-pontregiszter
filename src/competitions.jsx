@@ -10,6 +10,8 @@ import {
   Calendar, MapPin, Plus, ArrowLeft, Save, Loader, AlertCircle,
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus
 } from 'lucide-react';
+import { ScoringView } from './scoring';
+import { CompetitionTeamsView } from './teams';
 
 // ═══════════════════════════════════════════════════════════════════
 // COLORS
@@ -208,6 +210,7 @@ export function CompetitionsView({ supabase, userRole, dataReloadKey }) {
         supabase={supabase}
         competition={editing === 'new' ? null : editing}
         canManage={canManage}
+        userRole={userRole}
         onClose={() => setEditing(null)}
       />
     );
@@ -446,7 +449,7 @@ function CompetitionCard({ competition, onClick }) {
 // COMPETITION EDITOR (egyetlen verseny szerkesztése)
 // ═══════════════════════════════════════════════════════════════════
 
-function CompetitionEditor({ supabase, competition, canManage, onClose }) {
+function CompetitionEditor({ supabase, competition, canManage, userRole, onClose }) {
   const isNew = !competition;
   const [tab, setTab] = useState('basics');
   const [current, setCurrent] = useState(competition);
@@ -454,7 +457,8 @@ function CompetitionEditor({ supabase, competition, canManage, onClose }) {
   
   const tabs = [
     { id: 'basics', label: 'Alapadatok', icon: Calendar },
-    { id: 'days', label: 'Napok és kategóriák', icon: Trophy, disabled: isNew && !current }
+    { id: 'days', label: 'Napok és kategóriák', icon: Trophy, disabled: isNew && !current },
+    { id: 'teams', label: 'Klub-csapatok', icon: UsersIcon, disabled: isNew && !current }
   ];
 
   // Ha a JSON-import view aktív (meglévő versenyhez)
@@ -525,6 +529,14 @@ function CompetitionEditor({ supabase, competition, canManage, onClose }) {
                 supabase={supabase}
                 competitionId={current.id}
                 canManage={canManage}
+                userRole={userRole}
+              />
+            )}
+            {tab === 'teams' && current && (
+              <CompetitionTeamsView
+                supabase={supabase}
+                userRole={userRole}
+                competitionId={current.id}
               />
             )}
           </div>
@@ -834,7 +846,7 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
 // DAYS TAB (versenynapok és kategóriák)
 // ═══════════════════════════════════════════════════════════════════
 
-function DaysTab({ supabase, competitionId, canManage }) {
+function DaysTab({ supabase, competitionId, canManage, userRole }) {
   const [days, setDays] = useState(null);
   const [error, setError] = useState(null);
   const [openCategory, setOpenCategory] = useState(null);  // ÚJ: nyitott kategória startlistája
@@ -879,6 +891,7 @@ function DaysTab({ supabase, competitionId, canManage }) {
         supabase={supabase}
         category={openCategory}
         canManage={canManage}
+        userRole={userRole}
         onClose={() => { setOpenCategory(null); load(); }}
       />
     );
@@ -1330,11 +1343,12 @@ function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
 // STARTLIST VIEW (egy kategória startlistája)
 // ═══════════════════════════════════════════════════════════════════
 
-function StartlistView({ supabase, category, canManage, onClose }) {
+function StartlistView({ supabase, category, canManage, userRole, onClose }) {
   const [entries, setEntries] = useState(null);
   const [competitors, setCompetitors] = useState([]);
   const [error, setError] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);  // null | 'new' | entry
+  const [viewMode, setViewMode] = useState('startlist');  // 'startlist' | 'scoring'
   
   const isTeam = category.type === 'csapat';
   
@@ -1397,6 +1411,19 @@ function StartlistView({ supabase, category, canManage, onClose }) {
   const csepeliCount = (entries || []).filter(e => e.competitor_id).length;
   const externalCount = (entries || []).filter(e => !e.competitor_id).length;
   
+  // Ha pontozás módban vagyunk, mutassuk a ScoringView-t
+  if (viewMode === 'scoring' && !isTeam) {
+    return (
+      <ScoringView
+        supabase={supabase}
+        userRole={userRole}
+        category={category}
+        onBack={() => setViewMode('startlist')}
+        onChange={() => load()}
+      />
+    );
+  }
+  
   return (
     <div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1413,6 +1440,16 @@ function StartlistView({ supabase, category, canManage, onClose }) {
             <span>Szerek: {(category.apparatuses || []).map(a => APPARATUS_LABELS[a] || a).join(', ') || '—'}</span>
           </div>
         </div>
+        {!isTeam && entries && entries.length > 0 && (
+          <button
+            onClick={() => setViewMode('scoring')}
+            className="px-3 py-2 rounded text-white font-medium text-sm flex items-center gap-2"
+            style={{ backgroundColor: COLORS.blue }}
+          >
+            <Trophy className="w-4 h-4" />
+            Pontozás
+          </button>
+        )}
       </div>
       
       <ErrorBox>{error}</ErrorBox>
