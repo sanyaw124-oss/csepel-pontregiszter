@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Calendar, Settings, LogOut, User,
   Check, AlertCircle, Eye, EyeOff,
-  Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight, MessageCircle,
+  Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight, MessageCircle, Lock,
   BarChart3, Loader, Wifi, WifiOff, RefreshCw
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
@@ -11,6 +11,7 @@ import { AdminView, CompetitorsView as CompetitorsViewComponent, ParentProfileVi
 import { CompetitionsView } from './competitions';
 import { TrainingView } from './training';
 import { EventsView, UpcomingEventsWidget } from './events';
+import { CoachNotesView } from './coach-notes';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -652,6 +653,7 @@ const NAV_ITEMS = [
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
+  { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.SZULO] },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN] }
 ];
 
@@ -751,6 +753,7 @@ function AppShell() {
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
+        {activeView === 'coach-notes' && <CoachNotesView supabase={supabase} userRole={profile.role} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
