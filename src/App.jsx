@@ -791,34 +791,54 @@ function DashboardView() {
     
     const loadStats = async () => {
       try {
-        const competitorsPromise = supabase
-          .from('competitors')
-          .select('id', { count: 'exact', head: true })
-          .then(({ count, error }) => ({ count: count ?? 0, error }));
-          
-        const competitionsPromise = supabase
-          .from('competitions')
-          .select('id', { count: 'exact', head: true })
-          .gte('end_date', new Date().toISOString().split('T')[0])
-          .then(({ count, error }) => ({ count: count ?? 0, error }));
-        
-        const parentsPromise = supabase
-          .from('profiles')
-          .select('id', { count: 'exact', head: true })
-          .in('role', ['szulo', 'szulo_admin'])
-          .then(({ count, error }) => ({ count: count ?? 0, error }));
-        
-        const provisionalPromise = supabase
-          .from('competitors')
-          .select('*')
-          .eq('is_provisional', true)
-          .eq('is_active', true)
-          .order('full_name')
-          .then(({ data, error }) => ({ data: data ?? [], error }));
-        
-        const [comp, competitions, parents, prov] = await Promise.all([
-          competitorsPromise, competitionsPromise, parentsPromise, provisionalPromise
+        // Helper: biztonságos lekérdezés AbortError védelemmel + retry
+        const safeQuery = async (queryFn, retries = 1) => {
+          for (let i = 0; i <= retries; i++) {
+            try {
+              return await queryFn();
+            } catch (err) {
+              // AbortError esetén próbáljunk újra rövid várakozással
+              if (err.name === 'AbortError' && i < retries) {
+                await new Promise(r => setTimeout(r, 100));
+                continue;
+              }
+              return { error: err };
+            }
+          }
+        };
+
+        const [compResult, competitionsResult, parentsResult, provResult] = await Promise.allSettled([
+          safeQuery(() => supabase
+            .from('competitors')
+            .select('id', { count: 'exact', head: true })
+            .then(({ count, error }) => ({ count: count ?? 0, error }))
+          ),
+          safeQuery(() => supabase
+            .from('competitions')
+            .select('id', { count: 'exact', head: true })
+            .gte('end_date', new Date().toISOString().split('T')[0])
+            .then(({ count, error }) => ({ count: count ?? 0, error }))
+          ),
+          safeQuery(() => supabase
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .in('role', ['szulo', 'szulo_admin'])
+            .then(({ count, error }) => ({ count: count ?? 0, error }))
+          ),
+          safeQuery(() => supabase
+            .from('competitors')
+            .select('*')
+            .eq('is_provisional', true)
+            .eq('is_active', true)
+            .order('full_name')
+            .then(({ data, error }) => ({ data: data ?? [], error }))
+          )
         ]);
+
+        const comp = compResult.status === 'fulfilled' ? compResult.value : { count: 0, error: { message: 'lekérés sikertelen' } };
+        const competitions = competitionsResult.status === 'fulfilled' ? competitionsResult.value : { count: 0, error: { message: 'lekérés sikertelen' } };
+        const parents = parentsResult.status === 'fulfilled' ? parentsResult.value : { count: 0, error: { message: 'lekérés sikertelen' } };
+        const prov = provResult.status === 'fulfilled' ? provResult.value : { data: [], error: { message: 'lekérés sikertelen' } };
         
         if (!mounted) return;
         
@@ -831,13 +851,23 @@ function DashboardView() {
         setProvisionalCompetitors(prov.data);
         
         const errors = [];
-        if (comp.error) errors.push('Versenyzők: ' + comp.error.message);
-        if (competitions.error) errors.push('Versenyek: ' + competitions.error.message);
-        if (parents.error) errors.push('Szülők: ' + parents.error.message);
+        const isTransientError = (err) => 
+          err && err.message && (
+            err.message.includes('AbortError') || 
+            err.message.includes('Lock broken') ||
+            err.message.includes('lekérés sikertelen')
+          );
+        
+        if (comp.error && !isTransientError(comp.error)) errors.push('Versenyzők: ' + comp.error.message);
+        if (competitions.error && !isTransientError(competitions.error)) errors.push('Versenyek: ' + competitions.error.message);
+        if (parents.error && !isTransientError(parents.error)) errors.push('Szülők: ' + parents.error.message);
         if (errors.length > 0) setError(errors.join(' · '));
         else setError(null);
       } catch (err) {
-        if (mounted) setError('Statisztikák betöltése sikertelen: ' + err.message);
+        // AbortError nem mutatjuk a felhasználónak — átmeneti hiba
+        if (mounted && err.name !== 'AbortError' && !err.message?.includes('Lock broken')) {
+          setError('Statisztikák betöltése sikertelen: ' + err.message);
+        }
       }
     };
 
