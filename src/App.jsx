@@ -975,10 +975,7 @@ function DashboardView() {
           {/* HERO doboz: soron következő verseny */}
           <NextCompetitionHero />
           
-          {/* Klub szlogen kiemelve */}
-          <SloganHero />
-          
-          <h3 className="font-semibold text-lg mb-3 mt-6" style={{ color: COLORS.blueDark }}>
+          <h3 className="font-semibold text-lg mb-3 mt-2" style={{ color: COLORS.blueDark }}>
             Klub áttekintés
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
