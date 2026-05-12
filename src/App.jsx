@@ -1225,44 +1225,81 @@ function BirthdayWidget({ supabase }) {
       className="rounded-xl p-4 mb-4 shadow-sm relative overflow-hidden"
       style={{ 
         background: hasToday 
-          ? 'linear-gradient(135deg, #FCE7F3 0%, #FEF3C7 50%, #DBEAFE 100%)' 
-          : 'linear-gradient(135deg, #FEF3C7 0%, #FDE68A 100%)',
-        border: '1px solid #fbbf24'
+          ? 'linear-gradient(135deg, #FBCFE8 0%, #FEF3C7 50%, #BFDBFE 100%)' 
+          : 'linear-gradient(135deg, #FEF3C7 0%, #FED7AA 100%)',
+        border: '2px solid #fbbf24'
       }}
     >
-      {/* Háttér torta-illusztráció (ChatGPT-vel rajzolt egyedi RG-s kép) */}
-      <img 
-        src="/birthday-cake.png" 
-        alt=""
-        className="absolute right-2 top-1 opacity-50 select-none pointer-events-none"
-        style={{ width: '96px', height: '96px', objectFit: 'contain' }}
-      />
+      {/* Háttér confetti dekoráció (csak ha MA) */}
+      {hasToday && (
+        <>
+          <div className="absolute top-2 right-20 text-2xl opacity-60 pointer-events-none select-none">🎈</div>
+          <div className="absolute bottom-2 right-32 text-xl opacity-50 pointer-events-none select-none">✨</div>
+          <div className="absolute top-12 right-4 text-lg opacity-50 pointer-events-none select-none">🎊</div>
+        </>
+      )}
       
-      <div className="flex items-center gap-2 mb-2 relative">
-        <span className="text-xl">🎂</span>
-        <h3 className="font-semibold" style={{ color: '#92400e' }}>
-          {hasToday ? 'Boldog születésnapot! 🎉' : 'Születésnapok'}
-        </h3>
-      </div>
-      
-      <div className="space-y-1.5 relative">
-        {birthdays.map(b => (
-          <div 
-            key={b.id} 
-            className="flex items-center gap-2 text-sm flex-wrap"
-            style={{ 
-              fontWeight: b.diff === 0 ? 600 : 400,
-              color: b.diff === 0 ? '#BE123C' : b.diff < 0 ? '#9CA3AF' : '#78350F'
-            }}
-          >
-            <span className="text-base flex-shrink-0">
-              {b.diff === 0 ? '🎉' : b.diff < 0 ? '🌸' : '⭐'}
-            </span>
-            <span className="font-medium">{b.name}</span>
-            <span className="text-xs opacity-90">— {diffLabel(b)}</span>
-            <span className="text-xs opacity-60">({b.dateStr})</span>
+      <div className="flex items-center gap-4 relative">
+        {/* Torta-kép (ChatGPT-vel rajzolt RG-s illusztráció) */}
+        <img 
+          src="/birthday-cake.png" 
+          alt=""
+          className="flex-shrink-0 select-none pointer-events-none"
+          style={{ width: '96px', height: '96px', objectFit: 'contain' }}
+        />
+        
+        {/* Szöveges tartalom */}
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold mb-2 text-lg" style={{ color: '#831843' }}>
+            {hasToday ? '🎉 Boldog születésnapot! 🎉' : '🎂 Születésnapok'}
+          </h3>
+          
+          <div className="space-y-1.5">
+            {birthdays.map((b, idx) => {
+              // Színes paletták: körforgó vidám színek
+              const colors = [
+                { bg: '#FCE7F3', text: '#9D174D', emoji: '🌸' },  // rózsaszín
+                { bg: '#DBEAFE', text: '#1E40AF', emoji: '⭐' },  // kék
+                { bg: '#D1FAE5', text: '#065F46', emoji: '🌟' },  // zöld
+                { bg: '#FEF3C7', text: '#92400E', emoji: '✨' },  // sárga
+                { bg: '#EDE9FE', text: '#5B21B6', emoji: '💫' },  // lila
+                { bg: '#FFEDD5', text: '#9A3412', emoji: '🌈' }   // narancs
+              ];
+              const palette = colors[idx % colors.length];
+              const isToday = b.diff === 0;
+              const isPast = b.diff < 0;
+              
+              return (
+                <div 
+                  key={b.id} 
+                  className="rounded-lg px-2.5 py-1.5 flex items-center gap-2 flex-wrap text-sm"
+                  style={{ 
+                    backgroundColor: isToday ? '#FFFFFF' : isPast ? '#F9FAFB' : palette.bg,
+                    border: isToday ? '2px solid #BE123C' : '1px solid rgba(0,0,0,0.05)',
+                    opacity: isPast ? 0.75 : 1
+                  }}
+                >
+                  <span className="text-lg flex-shrink-0">
+                    {isToday ? '🎂' : isPast ? '🌸' : palette.emoji}
+                  </span>
+                  <span 
+                    className="font-semibold"
+                    style={{ color: isToday ? '#BE123C' : isPast ? '#6B7280' : palette.text }}
+                  >
+                    {b.name}
+                  </span>
+                  <span 
+                    className="text-xs"
+                    style={{ color: isToday ? '#BE123C' : isPast ? '#9CA3AF' : palette.text, opacity: isToday ? 1 : 0.85 }}
+                  >
+                    — {diffLabel(b)}
+                  </span>
+                  <span className="text-xs opacity-50 ml-auto">{b.dateStr}</span>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        </div>
       </div>
     </div>
   );
