@@ -226,6 +226,7 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
       <CompetitorForm
         supabase={supabase}
         competitor={editing === 'new' ? null : editing}
+        userRole="admin"
         onSaved={() => { setEditing(null); load(); }}
         onCancel={() => setEditing(null)}
       />
@@ -328,7 +329,7 @@ function CompetitorRow({ competitor, onEdit }) {
   );
 }
 
-function CompetitorForm({ supabase, competitor, onSaved, onCancel }) {
+function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
   const isNew = !competitor;
   const [form, setForm] = useState(() => {
     if (competitor) {
