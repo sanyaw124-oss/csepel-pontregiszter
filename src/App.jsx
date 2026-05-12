@@ -783,6 +783,7 @@ function DashboardView() {
         const competitionsPromise = supabase
           .from('competitions')
           .select('id', { count: 'exact', head: true })
+          .gte('end_date', new Date().toISOString().split('T')[0])
           .then(({ count, error }) => ({ count: count ?? 0, error }));
         
         const parentsPromise = supabase
@@ -930,7 +931,7 @@ function DashboardView() {
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
             <StatCard icon={Users} label="Versenyzők" value={stats.competitors} accent="blue" />
-            <StatCard icon={Calendar} label="Versenyek" value={stats.competitions} accent="red" />
+            <StatCard icon={Calendar} label="Aktív versenyek" value={stats.competitions} accent="red" />
             <StatCard icon={Heart} label="Szülő fiókok" value={stats.parents} accent="blue" />
           </div>
           
