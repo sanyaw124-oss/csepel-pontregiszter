@@ -985,16 +985,23 @@ function DashboardView({ setActiveView }) {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {myChildren.map(c => (
-                <div key={c.id} className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
+                <button 
+                  key={c.id}
+                  onClick={() => setActiveView('profile')}
+                  className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm text-left hover:shadow-md transition-shadow"
+                >
                   <div className="font-semibold" style={{ color: COLORS.blueDark }}>
-                    {c.nickname 
+                    ★ {c.nickname 
                       ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
                       : c.full_name}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
                     {c.kategoria} · {c.korosztaly} · született {c.birth_year}
                   </div>
-                </div>
+                  <div className="text-xs text-blue-600 mt-2">
+                    Profil megnyitása →
+                  </div>
+                </button>
               ))}
             </div>
           )}
@@ -1004,20 +1011,6 @@ function DashboardView({ setActiveView }) {
       {/* Admin/edző számára: statisztikák */}
       {isAdminLike && (
         <>
-          {/* HERO doboz: soron következő verseny */}
-          <NextCompetitionHero />
-          
-          {/* Születésnapok (8 nap előtte + 8 nap utána) */}
-          <BirthdayWidget supabase={supabase} />
-          
-          {/* Közelgő események — 14 napon belüli klub-események (max 5) */}
-          <div className="mb-4">
-            <UpcomingEventsWidget 
-              supabase={supabase}
-              onOpenEvents={() => setActiveView('events')}
-            />
-          </div>
-          
           <h3 className="font-semibold text-lg mb-3 mt-2" style={{ color: COLORS.blueDark }}>
             Klub áttekintés
           </h3>
@@ -1077,6 +1070,9 @@ function DashboardView({ setActiveView }) {
         </>
       )}
 
+      {/* Admin info dobozok - csak admin/szülő-admin */}
+      {isAdminLike && (
+        <>
       <div 
         className="mt-6 rounded-lg p-4 flex gap-3 border"
         style={{ 
@@ -1126,6 +1122,8 @@ function DashboardView({ setActiveView }) {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
