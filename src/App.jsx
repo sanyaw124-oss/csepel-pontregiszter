@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Calendar, Settings, LogOut, User,
   Check, AlertCircle, Eye, EyeOff,
-  Shield, Crown, Award, BookOpen, Heart, Star, Trophy,
+  Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight,
   BarChart3, Loader, Wifi, WifiOff, RefreshCw
 } from 'lucide-react';
 import { CSEPEL_SC_LOGO, CSEPEL_RG_LOGO } from './logos';
@@ -1279,17 +1279,25 @@ function RecentSuccessesWidget() {
 function ClubPrideWidget() {
   const [items, setItems] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [currentIdx, setCurrentIdx] = useState(0);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const { data } = await supabase
+        // Bejegyzések + kapcsolt versenyzők
+        const { data: prides } = await supabase
           .from('club_pride')
-          .select('*')
+          .select(`
+            *,
+            competitors:club_pride_competitors(
+              display_order,
+              competitor:competitors(id, full_name, nickname)
+            )
+          `)
           .eq('is_active', true)
           .order('display_order');
-        if (active) setItems(data || []);
+        if (active) setItems(prides || []);
       } catch (err) {
         console.error('ClubPride:', err);
         if (active) setItems([]);
@@ -1300,48 +1308,131 @@ function ClubPrideWidget() {
     return () => { active = false; };
   }, []);
 
+  // Auto-váltás 6 másodpercenként, ha több mint 1 elem van
+  useEffect(() => {
+    if (!items || items.length <= 1) return;
+    const timer = setInterval(() => {
+      setCurrentIdx(prev => (prev + 1) % items.length);
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [items]);
+
+  const formatCompName = (c) => {
+    if (!c) return '';
+    if (c.nickname) {
+      const parts = c.full_name.split(' ');
+      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
+    }
+    return c.full_name;
+  };
+
+  const current = items && items.length > 0 ? items[currentIdx] : null;
+  const competitors = current?.competitors
+    ?.map(c => c.competitor)
+    .filter(Boolean)
+    .sort((a, b) => (a?.full_name || '').localeCompare(b?.full_name || '', 'hu')) || [];
+
   return (
     <div 
-      className="rounded-xl p-4 shadow-sm"
+      className="rounded-xl p-4 shadow-sm relative"
       style={{ 
         background: 'linear-gradient(135deg, #fef9c3 0%, #fde68a 100%)',
-        border: '1px solid #f59e0b'
+        border: '1px solid #f59e0b',
+        minHeight: '160px'
       }}
     >
       <div className="flex items-center gap-2 mb-3">
         <Star className="w-4 h-4" style={{ color: '#92400e' }} />
-        <h3 className="font-semibold text-sm" style={{ color: '#92400e' }}>
+        <h3 className="font-semibold text-sm flex-1" style={{ color: '#92400e' }}>
           ⭐ Klub büszkesége
         </h3>
+        {items && items.length > 1 && (
+          <span className="text-xs text-amber-700">
+            {currentIdx + 1} / {items.length}
+          </span>
+        )}
       </div>
       
       {loading && (
-        <div className="text-center py-2"><Loader className="w-4 h-4 animate-spin text-amber-400 inline" /></div>
+        <div className="text-center py-6"><Loader className="w-4 h-4 animate-spin text-amber-400 inline" /></div>
       )}
       
       {!loading && items && items.length === 0 && (
-        <div className="text-xs text-amber-800 italic">
+        <div className="text-xs text-amber-800 italic py-2">
           Még nincs felvett klubbüszkeség.
         </div>
       )}
       
-      {!loading && items && items.length > 0 && (
-        <div className="space-y-2">
-          {items.map(item => (
-            <div key={item.id} className="text-sm">
-              <div className="font-semibold text-amber-900 flex items-center gap-1.5">
-                {item.icon && <span>{item.icon}</span>}
-                <span>{item.title}</span>
-              </div>
-              {item.description && (
-                <div className="text-xs text-amber-800 mt-0.5 leading-snug">
-                  {item.description}
-                </div>
-              )}
+      {!loading && current && (
+        <div className="text-sm" style={{ animation: 'fadeIn 0.5s ease-in' }}>
+          <div className="font-semibold text-amber-900 flex items-center gap-1.5 text-base">
+            {current.icon && <span>{current.icon}</span>}
+            <span>{current.title}</span>
+          </div>
+          {current.description && (
+            <div className="text-xs text-amber-800 mt-1 leading-snug">
+              {current.description}
             </div>
-          ))}
+          )}
+          {competitors.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {competitors.map(c => (
+                <span 
+                  key={c.id} 
+                  className="inline-flex items-center gap-1 bg-white/70 px-2 py-0.5 rounded text-xs font-medium"
+                  style={{ color: '#92400e', border: '1px solid #fbbf24' }}
+                >
+                  ★ {formatCompName(c)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
+      
+      {/* Léptető gombok és indikátorok */}
+      {items && items.length > 1 && (
+        <>
+          <button
+            onClick={() => setCurrentIdx(prev => (prev - 1 + items.length) % items.length)}
+            className="absolute left-1 top-1/2 -translate-y-1/2 bg-white/70 hover:bg-white rounded-full p-1 shadow"
+            style={{ color: '#92400e' }}
+            aria-label="Előző"
+          >
+            <ArrowLeft className="w-3 h-3" />
+          </button>
+          <button
+            onClick={() => setCurrentIdx(prev => (prev + 1) % items.length)}
+            className="absolute right-1 top-1/2 -translate-y-1/2 bg-white/70 hover:bg-white rounded-full p-1 shadow"
+            style={{ color: '#92400e' }}
+            aria-label="Következő"
+          >
+            <ChevronRight className="w-3 h-3" />
+          </button>
+          <div className="absolute bottom-2 left-0 right-0 flex justify-center gap-1.5">
+            {items.map((_, idx) => (
+              <button
+                key={idx}
+                onClick={() => setCurrentIdx(idx)}
+                className="rounded-full transition-all"
+                style={{
+                  width: idx === currentIdx ? '16px' : '6px',
+                  height: '6px',
+                  backgroundColor: idx === currentIdx ? '#92400e' : '#fbbf24'
+                }}
+                aria-label={`${idx + 1}. bejegyzés`}
+              />
+            ))}
+          </div>
+        </>
+      )}
+      
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   );
 }

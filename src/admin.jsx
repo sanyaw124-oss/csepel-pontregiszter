@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Users, UserPlus, Edit2, Plus, Check, AlertCircle, Heart, Award,
   Save, ArrowLeft, ChevronRight, Loader, Search, Copy, Trophy, BookOpen, Clock, Trash2, X,
+  Star, ArrowUp, ArrowDown,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
 
@@ -147,7 +148,8 @@ export function AdminView({ supabase, userRole, dataReloadKey }) {
     { id: 'competitors', label: 'Versenyzők', icon: Users },
     { id: 'parents', label: 'Szülők', icon: Heart },
     { id: 'staff', label: 'Edzők', icon: Award },
-    { id: 'links', label: 'Kapcsolatok', icon: ChevronRight }
+    { id: 'links', label: 'Kapcsolatok', icon: ChevronRight },
+    { id: 'pride', label: 'Klub büszkesége', icon: Star }
   ];
 
   return (
@@ -182,6 +184,7 @@ export function AdminView({ supabase, userRole, dataReloadKey }) {
           {tab === 'parents' && <AdminParents supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
           {tab === 'staff' && <AdminStaff supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
           {tab === 'links' && <AdminLinks supabase={supabase} dataReloadKey={dataReloadKey} />}
+          {tab === 'pride' && <AdminClubPride supabase={supabase} />}
         </div>
       </div>
     </div>
@@ -2847,6 +2850,420 @@ function ApparatusResultRow({ label, placement, score, onPlacementChange, onScor
         placeholder="pont"
         className="w-20 px-1.5 py-0.5 text-xs border border-gray-300 rounded"
       />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ADMIN KLUB BÜSZKESÉGE (v0.9.17)
+// Bejegyzések szerkesztése + versenyző-kapcsolatok
+// ═══════════════════════════════════════════════════════════════════
+
+function AdminClubPride({ supabase }) {
+  const [items, setItems] = useState(null);
+  const [allCompetitors, setAllCompetitors] = useState([]);
+  const [editing, setEditing] = useState(null); // null | 'new' | item
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const { data: prides, error: err } = await supabase
+        .from('club_pride')
+        .select(`
+          *,
+          competitors:club_pride_competitors(
+            id, display_order,
+            competitor:competitors(id, full_name, nickname)
+          )
+        `)
+        .order('display_order');
+      if (err) throw err;
+      
+      const { data: comps } = await supabase
+        .from('competitors')
+        .select('id, full_name, nickname')
+        .eq('is_active', true)
+        .order('full_name');
+      
+      setItems(prides || []);
+      setAllCompetitors(comps || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggleActive = async (item) => {
+    try {
+      await supabase
+        .from('club_pride')
+        .update({ is_active: !item.is_active })
+        .eq('id', item.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const moveItem = async (item, direction) => {
+    if (!items) return;
+    const idx = items.findIndex(i => i.id === item.id);
+    const newIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (newIdx < 0 || newIdx >= items.length) return;
+    
+    const other = items[newIdx];
+    try {
+      await supabase.from('club_pride').update({ display_order: other.display_order }).eq('id', item.id);
+      await supabase.from('club_pride').update({ display_order: item.display_order }).eq('id', other.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  const handleDelete = async (item) => {
+    if (!window.confirm(`Biztos törlöd? "${item.title}"`)) return;
+    try {
+      await supabase.from('club_pride').delete().eq('id', item.id);
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  };
+
+  if (editing !== null) {
+    return (
+      <ClubPrideForm
+        supabase={supabase}
+        item={editing === 'new' ? null : editing}
+        allCompetitors={allCompetitors}
+        currentMaxOrder={items ? Math.max(0, ...items.map(i => i.display_order || 0)) : 0}
+        onSaved={() => { setEditing(null); load(); }}
+        onCancel={() => setEditing(null)}
+      />
+    );
+  }
+
+  return (
+    <div>
+      <div className="flex justify-between items-center mb-3 flex-wrap gap-2">
+        <span className="text-sm text-gray-600">{items?.length || 0} bejegyzés</span>
+        <PrimaryButton onClick={() => setEditing('new')}>
+          <Plus className="w-4 h-4" /> Új bejegyzés
+        </PrimaryButton>
+      </div>
+
+      <ErrorBox>{error}</ErrorBox>
+
+      <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800 mb-3">
+        💡 A klub büszkesége bejegyzések az Áttekintés oldalon, sárga dobozban jelennek meg, váltakozva (6 másodpercenként). Itt szerkesztheted, sorrendezheted, és ki/be kapcsolhatod őket.
+      </div>
+
+      {items?.length === 0 && (
+        <div className="text-center text-gray-500 py-8 text-sm">Még nincs felvett bejegyzés.</div>
+      )}
+
+      <div className="space-y-2">
+        {(items || []).map((item, idx) => (
+          <div 
+            key={item.id} 
+            className="border rounded-lg p-3"
+            style={{ 
+              borderColor: COLORS.gray200,
+              backgroundColor: item.is_active ? 'white' : '#f9fafb',
+              opacity: item.is_active ? 1 : 0.6
+            }}
+          >
+            <div className="flex items-start justify-between gap-2 flex-wrap">
+              <div className="flex-1 min-w-0">
+                <div className="font-semibold flex items-center gap-1.5" style={{ color: '#92400e' }}>
+                  {item.icon && <span>{item.icon}</span>}
+                  <span>{item.title}</span>
+                  {!item.is_active && (
+                    <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded text-gray-600">Inaktív</span>
+                  )}
+                </div>
+                {item.description && (
+                  <div className="text-xs text-gray-600 mt-1">{item.description}</div>
+                )}
+                {item.competitors && item.competitors.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {item.competitors.map(c => c.competitor && (
+                      <span 
+                        key={c.competitor.id}
+                        className="inline-flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded text-xs"
+                        style={{ color: '#92400e', border: '1px solid #fbbf24' }}
+                      >
+                        ★ {c.competitor.nickname 
+                          ? `${c.competitor.full_name.split(' ')[0]} "${c.competitor.nickname}"` 
+                          : c.competitor.full_name}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-1 flex-wrap">
+                <button 
+                  onClick={() => moveItem(item, 'up')}
+                  disabled={idx === 0}
+                  className="p-1.5 rounded border border-gray-300 disabled:opacity-30 hover:bg-gray-50"
+                  title="Felfelé"
+                >
+                  <ArrowUp className="w-3.5 h-3.5" />
+                </button>
+                <button 
+                  onClick={() => moveItem(item, 'down')}
+                  disabled={idx === items.length - 1}
+                  className="p-1.5 rounded border border-gray-300 disabled:opacity-30 hover:bg-gray-50"
+                  title="Lefelé"
+                >
+                  <ArrowDown className="w-3.5 h-3.5" />
+                </button>
+                <button 
+                  onClick={() => toggleActive(item)}
+                  className="p-1.5 rounded border border-gray-300 hover:bg-gray-50"
+                  title={item.is_active ? 'Inaktiválás' : 'Aktiválás'}
+                >
+                  {item.is_active 
+                    ? <Eye className="w-3.5 h-3.5 text-green-600" /> 
+                    : <EyeOff className="w-3.5 h-3.5 text-gray-400" />}
+                </button>
+                <button 
+                  onClick={() => setEditing(item)}
+                  className="p-1.5 rounded border border-blue-300 hover:bg-blue-50"
+                  title="Szerkesztés"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                </button>
+                <button 
+                  onClick={() => handleDelete(item)}
+                  className="p-1.5 rounded border border-red-300 hover:bg-red-50"
+                  title="Törlés"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── ClubPride bejegyzés szerkesztő űrlap ──────────────────────────
+
+function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSaved, onCancel }) {
+  const [form, setForm] = useState({
+    title: item?.title ?? '',
+    description: item?.description ?? '',
+    icon: item?.icon ?? '⭐',
+    is_active: item?.is_active ?? true,
+    competitor_ids: item?.competitors?.map(c => c.competitor?.id).filter(Boolean) ?? []
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [search, setSearch] = useState('');
+
+  const EMOJI_OPTIONS = ['⭐', '🌟', '✨', '🏆', '🥇', '🥈', '🥉', '🎖️', '💪', '🌸', '🇭🇺', '👑', '💖', '🎉', '🔥'];
+
+  const filteredCompetitors = allCompetitors.filter(c => {
+    if (!search) return true;
+    return c.full_name.toLowerCase().includes(search.toLowerCase()) ||
+           (c.nickname || '').toLowerCase().includes(search.toLowerCase());
+  });
+
+  const toggleCompetitor = (compId) => {
+    setForm(prev => ({
+      ...prev,
+      competitor_ids: prev.competitor_ids.includes(compId)
+        ? prev.competitor_ids.filter(id => id !== compId)
+        : [...prev.competitor_ids, compId]
+    }));
+  };
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (!form.title.trim()) throw new Error('A cím kötelező!');
+
+      const payload = {
+        title: form.title.trim(),
+        description: form.description || null,
+        icon: form.icon || null,
+        is_active: form.is_active,
+        modified_at: new Date().toISOString()
+      };
+
+      let prideId;
+      if (item) {
+        prideId = item.id;
+        const { error: updErr } = await supabase
+          .from('club_pride')
+          .update(payload)
+          .eq('id', item.id);
+        if (updErr) throw updErr;
+        
+        // Régi versenyző-kapcsolatok törlése
+        await supabase.from('club_pride_competitors').delete().eq('pride_id', prideId);
+      } else {
+        payload.display_order = (currentMaxOrder || 0) + 1;
+        const { data: created, error: insErr } = await supabase
+          .from('club_pride')
+          .insert(payload)
+          .select()
+          .single();
+        if (insErr) throw insErr;
+        prideId = created.id;
+      }
+
+      // Új versenyző-kapcsolatok beillesztése
+      if (form.competitor_ids.length > 0) {
+        const compsPayload = form.competitor_ids.map((cid, idx) => ({
+          pride_id: prideId,
+          competitor_id: cid,
+          display_order: idx
+        }));
+        const { error: cErr } = await supabase
+          .from('club_pride_competitors')
+          .insert(compsPayload);
+        if (cErr) throw cErr;
+      }
+
+      onSaved();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-lg p-4 border-2" style={{ borderColor: '#f59e0b', backgroundColor: '#fffbeb' }}>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onCancel} className="p-1 hover:bg-amber-100 rounded">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h3 className="font-semibold flex-1" style={{ color: '#92400e' }}>
+          {item ? 'Bejegyzés szerkesztése' : 'Új klub büszkesége bejegyzés'}
+        </h3>
+      </div>
+
+      <div className="space-y-3">
+        <Field label="Cím *">
+          <Input
+            value={form.title}
+            onChange={(e) => setForm({ ...form, title: e.target.value })}
+            placeholder="Pl. Magyar válogatott versenyzők"
+          />
+        </Field>
+
+        <Field label="Leírás (opcionális)">
+          <textarea
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+            placeholder="Pl. A csepeli klub büszkesége — 3 lányunk a magyar válogatottban!"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 text-sm"
+            style={{ minHeight: '60px', borderColor: COLORS.gray200 }}
+          />
+        </Field>
+
+        <Field label="Ikon / Emoji">
+          <div className="flex flex-wrap gap-1.5">
+            {EMOJI_OPTIONS.map(e => (
+              <button
+                key={e}
+                onClick={() => setForm({ ...form, icon: e })}
+                className="text-xl p-2 rounded border transition-all"
+                style={{
+                  borderColor: form.icon === e ? '#f59e0b' : COLORS.gray200,
+                  backgroundColor: form.icon === e ? '#fef3c7' : 'white',
+                  boxShadow: form.icon === e ? '0 0 0 2px #fbbf24' : 'none'
+                }}
+              >
+                {e}
+              </button>
+            ))}
+            <input
+              type="text"
+              value={form.icon}
+              onChange={(e) => setForm({ ...form, icon: e.target.value })}
+              placeholder="vagy egyéni"
+              maxLength="4"
+              className="w-20 px-2 py-1 text-sm border rounded"
+              style={{ borderColor: COLORS.gray200 }}
+            />
+          </div>
+        </Field>
+
+        <Field label={`Kapcsolt versenyzők (${form.competitor_ids.length} kiválasztva)`}>
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Keresés név alapján..."
+          />
+          <div className="mt-2 max-h-48 overflow-y-auto border rounded p-1" style={{ borderColor: COLORS.gray200 }}>
+            {filteredCompetitors.length === 0 ? (
+              <div className="text-xs text-gray-400 p-2">Nincs találat.</div>
+            ) : (
+              filteredCompetitors.map(c => {
+                const checked = form.competitor_ids.includes(c.id);
+                const name = c.nickname 
+                  ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}`
+                  : c.full_name;
+                return (
+                  <label
+                    key={c.id}
+                    className="flex items-center gap-2 px-2 py-1.5 hover:bg-amber-50 rounded cursor-pointer text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleCompetitor(c.id)}
+                      style={{ accentColor: '#f59e0b' }}
+                    />
+                    <span style={{ color: checked ? '#92400e' : COLORS.gray700, fontWeight: checked ? 600 : 400 }}>
+                      ★ {name}
+                    </span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </Field>
+
+        <Field label="Aktív">
+          <label className="flex items-center gap-2 text-sm cursor-pointer">
+            <input
+              type="checkbox"
+              checked={form.is_active}
+              onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
+              style={{ accentColor: '#f59e0b' }}
+            />
+            <span>{form.is_active ? 'Megjelenik az Áttekintésen' : 'Rejtve (admin oldalon szerkeszthető)'}</span>
+          </label>
+        </Field>
+
+        {error && (
+          <div className="text-xs text-red-600 bg-red-50 p-2 rounded">{error}</div>
+        )}
+
+        <div className="flex gap-2 pt-2">
+          <button
+            onClick={save}
+            disabled={saving}
+            className="px-4 py-2 rounded text-white text-sm font-medium disabled:opacity-50"
+            style={{ backgroundColor: '#f59e0b' }}
+          >
+            {saving ? <Loader className="w-4 h-4 animate-spin inline" /> : <Save className="w-4 h-4 inline mr-1" />}
+            Mentés
+          </button>
+          <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
+        </div>
+      </div>
     </div>
   );
 }
