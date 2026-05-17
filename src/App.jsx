@@ -804,7 +804,7 @@ function AppShell() {
           <CompetitorTreasureView supabase={supabase} profile={profile} />
         )}
 
-        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} parentUserId={profile.id} />}
+        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
@@ -825,7 +825,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.37 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.38 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>

@@ -1635,7 +1635,7 @@ function AdminLinks({ supabase, dataReloadKey }) {
 // COMPETITORS PUBLIC VIEW (a Versenyzők navfül-höz)
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorsView({ supabase, userRole, dataReloadKey, parentUserId }) {
+export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
   const [viewing, setViewing] = useState(null);  // melyik versenyző profilját nézzük
@@ -1643,35 +1643,19 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey, parentUserI
   // Edzők és adminok kapnak szerkesztési jogot
   const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
 
-  // v0.9.37: szülő szerepkörben CSAK a saját gyereke(i) látsszanak
-  // Sándor 1. pontja: "versenyzők oldalon csak saját gyerek látszik"
-  const isParentOnly = userRole === 'szulo'; // szulo_admin az admin-ként látja mind
+  // v0.9.38: a Versenyzők menü mindenkinek MINDEN klub-tagot mutat
+  // (Sándor 2026.05.17: "versenyzők oldalon minden klubtagot látnia kellene")
+  // Csak a Profil menüben (ParentProfileView) szűrünk saját gyerekre.
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      // 1) Szülő esetén előbb lekérjük a parent_child_links-et
-      let allowedIds = null;
-      if (isParentOnly && parentUserId) {
-        const { data: links } = await supabase
-          .from('parent_child_links')
-          .select('competitor_id')
-          .eq('parent_user_id', parentUserId);
-        allowedIds = (links || []).map(l => l.competitor_id);
-        if (allowedIds.length === 0) {
-          if (!cancelled) setCompetitors([]);
-          return;
-        }
-      }
+      const { data } = await supabase
+        .from('competitors')
+        .select('*')
+        .eq('is_active', true);
 
-      // 2) Lekérdezzük a versenyzőket (szülő: csak a saját gyerek(ek)et)
-      let query = supabase.from('competitors').select('*').eq('is_active', true);
-      if (allowedIds) {
-        query = query.in('id', allowedIds);
-      }
-      const { data } = await query;
-
-      // 3) Magyar abc rendezés (becenév-elsődleges) - PG byte-alap helyett JS-ben
+      // Magyar abc rendezés (becenév-elsődleges) - PG byte-alap helyett JS-ben
       const sorted = (data || []).sort((a, b) => {
         const aKey = (a.nickname || a.full_name || '').trim();
         const bKey = (b.nickname || b.full_name || '').trim();
@@ -1681,7 +1665,7 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey, parentUserI
       if (!cancelled) setCompetitors(sorted);
     })();
     return () => { cancelled = true; };
-  }, [supabase, dataReloadKey, isParentOnly, parentUserId]);
+  }, [supabase, dataReloadKey]);
 
   // Ha valakit nézünk, mutassuk a publikus profilját
   if (viewing) {
