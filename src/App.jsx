@@ -12,6 +12,7 @@ import { CompetitionsView } from './competitions';
 import { TrainingView } from './training';
 import { EventsView, UpcomingEventsWidget } from './events';
 import { CoachNotesView } from './coach-notes';
+import CompetitorDashboard from './competitor-dashboard';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -741,12 +742,15 @@ function AppShell() {
       </nav>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
-        {activeView === 'dashboard' && <DashboardView setActiveView={setActiveView} />}
+        {activeView === 'dashboard' && profile.role === 'versenyzo' && (
+          <CompetitorDashboard supabase={supabase} profile={profile} setActiveView={setActiveView} />
+        )}
+        {activeView === 'dashboard' && profile.role !== 'versenyzo' && <DashboardView setActiveView={setActiveView} />}
         {activeView === 'profile' && hasParentRights(profile.role) && (
           <ParentProfileView supabase={supabase} parentUserId={profile.id} userRole={profile.role} dataReloadKey={dataReloadKey} />
         )}
         {activeView === 'profile' && profile.role === 'versenyzo' && (
-          <PlaceholderView title="Profil" message="A 4. fázisban készül el — saját eredmények, fejlődési grafikon." />
+          <CompetitorDashboard supabase={supabase} profile={profile} setActiveView={setActiveView} />
         )}
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
