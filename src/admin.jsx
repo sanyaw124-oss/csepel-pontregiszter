@@ -2066,7 +2066,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
 // Megjelenik a versenyző adatlapján: minden csapat ahol részt vett
 // ═══════════════════════════════════════════════════════════════════
 
-function CompetitorTeamResults({ supabase, competitorId }) {
+export function CompetitorTeamResults({ supabase, competitorId }) {
   const [teams, setTeams] = useState(null);
   const [error, setError] = useState(null);
 
@@ -2353,7 +2353,7 @@ const VERSENY_BESOROLAS_LIST = [
   { value: 'egyeb', label: 'Egyéb' }
 ];
 
-function CompetitorHistoricalResults({ supabase, competitorId, userRole }) {
+export function CompetitorHistoricalResults({ supabase, competitorId, userRole }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | item
@@ -3358,7 +3358,7 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
 // 3 forrásból gyűjti: results + competition_teams + historical_results
 // ═══════════════════════════════════════════════════════════════════
 
-function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
+export function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
   const [year, setYear] = useState('all'); // 'all' | year (int)
   const [availableYears, setAvailableYears] = useState([]);
   const [stats, setStats] = useState(null);

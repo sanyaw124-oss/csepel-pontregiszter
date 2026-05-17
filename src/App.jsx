@@ -965,15 +965,22 @@ function DashboardView({ setActiveView }) {
     };
   }, [dataReloadKey, isParentLike, profile.id]);
 
+  const isVersenyzo = profile.role === 'versenyzo';
+
   return (
     <div>
-      <h2 className="text-2xl font-bold mb-1" style={{ color: COLORS.blueDark }}>
-        Üdv, {profile.full_name}!
-      </h2>
-      <p className="text-gray-600 mb-6">
-        {ROLE_LABELS[profile.role]}
-        {profile.titulus ? ` · ${profile.titulus}` : ''}
-      </p>
+      {/* Üdvözlés - NEM versenyzőnek (versenyzőnek a MySelfBlock-on belül van) */}
+      {!isVersenyzo && (
+        <>
+          <h2 className="text-2xl font-bold mb-1" style={{ color: COLORS.blueDark }}>
+            Üdv, {profile.full_name}!
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {ROLE_LABELS[profile.role]}
+            {profile.titulus ? ` · ${profile.titulus}` : ''}
+          </p>
+        </>
+      )}
 
       {error && (
         <div className="rounded-lg p-3 mb-4 text-sm flex gap-2 border"
@@ -984,7 +991,7 @@ function DashboardView({ setActiveView }) {
       )}
 
       {/* SAJÁT BLOKK - CSAK VERSENYZŐNEK (rózsaszín-lila, RG-s, vidám) */}
-      {profile.role === 'versenyzo' && (
+      {isVersenyzo && (
         <MySelfBlock supabase={supabase} profile={profile} />
       )}
 

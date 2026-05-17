@@ -212,7 +212,7 @@ function MySelfBlock({ supabase, profile }) {
 
   if (!competitor) {
     return (
-      <div className="rounded-2xl p-4 mb-4 bg-amber-50 border-2 border-amber-300 text-center max-w-2xl mx-auto">
+      <div className="rounded-2xl p-4 mb-4 bg-amber-50 border-2 border-amber-300 text-center mx-auto w-full">
         <AlertCircle className="w-8 h-8 mx-auto text-amber-600 mb-2" />
         <div className="text-sm font-bold text-amber-900">Még nem találtunk hozzád versenyző profilt!</div>
         <div className="text-xs text-amber-800 mt-1">Szólj az admin-nak.</div>
@@ -236,7 +236,7 @@ function MySelfBlock({ supabase, profile }) {
   })();
 
   return (
-    <div className="rounded-3xl p-4 mb-6 max-w-2xl mx-auto" style={{
+    <div className="rounded-3xl p-4 mb-6 mx-auto w-full" style={{
       background: 'linear-gradient(135deg, #FCE4EC 0%, #EDE9FE 100%)'
     }}>
       {/* Üdvözlés napszak szerint */}
