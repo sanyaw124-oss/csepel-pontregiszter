@@ -27,14 +27,14 @@ const RG_AVATARS = [
 ];
 
 // Napszak szerinti üdvözlések
-function getGreeting(nickname) {
+function getGreeting(name) {
   const hour = new Date().getHours();
-  const name = nickname || 'csillagom';
-  if (hour < 10) return { text: `Jó reggelt ${name}!`, emoji: '🌅' };
-  if (hour < 14) return { text: `Szia ${name}!`, emoji: '🌸' };
-  if (hour < 18) return { text: `Szia ${name}, hogy vagy?`, emoji: '☀️' };
-  if (hour < 22) return { text: `Jó estét ${name}!`, emoji: '🌙' };
-  return { text: `Szia ${name}!`, emoji: '✨' };
+  const displayName = name || 'csapattársam';
+  if (hour < 10) return { text: `Jó reggelt ${displayName}!`, emoji: '🌅' };
+  if (hour < 14) return { text: `Szia ${displayName}!`, emoji: '🌸' };
+  if (hour < 18) return { text: `Szia ${displayName}, hogy vagy?`, emoji: '☀️' };
+  if (hour < 22) return { text: `Jó estét ${displayName}!`, emoji: '🌙' };
+  return { text: `Szia ${displayName}!`, emoji: '✨' };
 }
 
 // Motiváló idézetek (RG-s, nem táncos!)
@@ -97,8 +97,31 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
 
     const load = async () => {
       try {
-        if (!profile?.competitor_id) {
-          // Nincs hozzárendelt versenyző profil — csak az alap üdvözlés látszik
+        let competitorId = profile?.competitor_id;
+        
+        // FALLBACK: ha nincs competitor_id, próbáljuk meg a profile.full_name alapján
+        if (!competitorId && profile?.full_name) {
+          const fallbackRes = await safeQuery(() =>
+            supabase
+              .from('competitors')
+              .select('id')
+              .eq('full_name', profile.full_name)
+              .eq('is_active', true)
+              .limit(1)
+              .maybeSingle()
+          );
+          if (fallbackRes.data?.id) {
+            competitorId = fallbackRes.data.id;
+            // Mentsük le a kapcsolatot a profiles-ben hogy legközelebb gyorsabb legyen
+            await supabase
+              .from('profiles')
+              .update({ competitor_id: competitorId })
+              .eq('id', profile.id);
+          }
+        }
+
+        if (!competitorId) {
+          // Még mindig nincs — semmit nem tudunk mutatni
           if (mounted) setLoading(false);
           return;
         }
@@ -108,7 +131,7 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
           supabase
             .from('competitors')
             .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji')
-            .eq('id', profile.competitor_id)
+            .eq('id', competitorId)
             .maybeSingle()
         );
         if (compRes.data && mounted) {
@@ -121,7 +144,7 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
           supabase
             .from('results')
             .select('placement, competition_day_id, kategoria_id, total, created_at')
-            .eq('competitor_id', profile.competitor_id)
+            .eq('competitor_id', competitorId)
             .eq('is_finalized', true)
             .not('placement', 'is', null)
             .order('created_at', { ascending: false })
@@ -178,7 +201,7 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
           supabase
             .from('training_attendance')
             .select('id, session_id, training_sessions!inner(date, session_type)')
-            .eq('competitor_id', profile.competitor_id)
+            .eq('competitor_id', competitorId)
             .gte('training_sessions.date', yearStart)
         );
         if (attendRes.data && mounted) {
@@ -221,7 +244,7 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
               .select('id, full_name, nickname, avatar_emoji')
               .eq('kategoria', compRes.data.kategoria)
               .eq('is_active', true)
-              .neq('id', profile.competitor_id)
+              .neq('id', competitorId)
               .limit(10)
           );
           if (teamRes.data && mounted) setTeammates(teamRes.data);
@@ -254,16 +277,16 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
 
     load();
     return () => { mounted = false; };
-  }, [supabase, profile?.competitor_id]);
+  }, [supabase, profile?.competitor_id, profile?.id, profile?.full_name]);
 
   // Avatar mentés
   const saveAvatar = async (emoji) => {
     setSelectedAvatar(emoji);
-    if (profile?.competitor_id) {
+    if (competitor?.id) {
       await supabase
         .from('competitors')
         .update({ avatar_emoji: emoji })
-        .eq('id', profile.competitor_id);
+        .eq('id', competitor.id);
     }
   };
 
@@ -281,7 +304,21 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
   // Csillag tábla a edzésszámhoz (max 50 csillag)
   const stars = '⭐'.repeat(Math.min(trainingCount, 50));
 
-  const greeting = getGreeting(competitor?.nickname);
+  // Üdvözlés név
+  // Sorrend: 1) competitor.nickname (becenév), 2) competitor full_name első része,
+  //          3) profile full_name első része, 4) "csapattársam"
+  let greetingName = competitor?.nickname;
+  if (!greetingName && competitor?.full_name) {
+    // Magyar névsorrend: "Völgyesi Noémi" → "Noémi"
+    const parts = competitor.full_name.trim().split(/\s+/);
+    greetingName = parts[parts.length - 1];
+  }
+  if (!greetingName && profile?.full_name) {
+    const parts = profile.full_name.trim().split(/\s+/);
+    greetingName = parts[parts.length - 1];
+  }
+  greetingName = greetingName || 'csapattársam';
+  const greeting = getGreeting(greetingName);
   const quote = getTodaysQuote();
 
   if (loading) {
@@ -309,6 +346,19 @@ export default function CompetitorDashboard({ supabase, profile, setActiveView }
           "Ügyesen, Okosan, Mosoly"
         </div>
       </div>
+
+      {/* Ha nincs hozzákapcsolt versenyző profile */}
+      {!competitor && (
+        <div className="rounded-2xl p-4 mb-4 bg-amber-50 border-2 border-amber-300 text-center">
+          <div className="text-3xl mb-2">⚠️</div>
+          <div className="text-sm font-bold text-amber-900 mb-1">
+            Még nem találtunk hozzád versenyző profilt!
+          </div>
+          <div className="text-xs text-amber-800">
+            Szólj az admin-nak, hogy kapcsolja össze a fiókodat a versenyzői profiloddal.
+          </div>
+        </div>
+      )}
 
       {/* 1. ÜDVÖZLÉS NAPSZAK SZERINT */}
       <div className="text-center mb-6">
