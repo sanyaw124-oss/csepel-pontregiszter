@@ -1630,18 +1630,49 @@ function AdminLinks({ supabase, dataReloadKey }) {
 // COMPETITORS PUBLIC VIEW (a Versenyzők navfül-höz)
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorsView({ supabase, dataReloadKey }) {
+export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
+  const [editing, setEditing] = useState(null);
+  const [viewing, setViewing] = useState(null); // publikus nézethez (szülő/versenyző)
 
-  useEffect(() => {
+  // Edzők és adminok kapnak szerkesztési jogot
+  const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
+
+  const load = useCallback(() => {
     supabase
       .from('competitors')
       .select('*')
       .eq('is_active', true)
       .order('full_name')
       .then(({ data }) => setCompetitors(data || []));
-  }, [supabase, dataReloadKey]);
+  }, [supabase]);
+
+  useEffect(() => { load(); }, [load, dataReloadKey]);
+
+  // Ha szerkesztőben vagyunk (admin/edző) → CompetitorForm
+  if (editing) {
+    return (
+      <CompetitorForm
+        supabase={supabase}
+        competitor={editing}
+        onSaved={() => { setEditing(null); load(); }}
+        onCancel={() => setEditing(null)}
+        userRole={userRole}
+      />
+    );
+  }
+
+  // Ha publikus nézetben (szülő/versenyző)
+  if (viewing) {
+    return (
+      <PublicCompetitorProfile
+        supabase={supabase}
+        competitor={viewing}
+        onClose={() => setViewing(null)}
+      />
+    );
+  }
 
   if (competitors === null) {
     return <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
@@ -1660,6 +1691,15 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
   // Csoportosítás: ideiglenes vs végleges
   const provisional = filtered.filter(c => c.is_provisional);
   const finalized = filtered.filter(c => !c.is_provisional);
+
+  // Kattintáskor: edzőnek szerkesztő, másnak publikus
+  const handleClick = (c) => {
+    if (canEdit) {
+      setEditing(c);
+    } else {
+      setViewing(c);
+    }
+  };
 
   return (
     <div>
@@ -1698,13 +1738,13 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
 
           <div className="text-sm text-gray-600 mb-3">
             {filtered.length} / {competitors.length} versenyző
-            {provisional.length > 0 && (
+            {provisional.length > 0 && canEdit && (
               <span className="ml-2 text-amber-700">· {provisional.length} ideiglenes</span>
             )}
           </div>
 
-          {/* Ideiglenes profilok szekció */}
-          {provisional.length > 0 && (
+          {/* Ideiglenes profilok szekció - csak admin/edző látja */}
+          {canEdit && provisional.length > 0 && (
             <div className="mb-4 border-2 rounded-lg overflow-hidden" style={{ borderColor: '#f59e0b' }}>
               <div className="px-3 py-2 text-sm font-semibold flex items-center gap-2"
                    style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
@@ -1715,8 +1755,9 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
                 {provisional.map(c => {
                   const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
                   return (
-                    <div key={c.id} className="bg-white border rounded p-2"
-                         style={{ borderColor: '#fbbf24' }}>
+                    <div key={c.id} className="bg-white border rounded p-2 cursor-pointer hover:shadow-md transition-shadow"
+                         style={{ borderColor: '#fbbf24' }}
+                         onClick={() => handleClick(c)}>
                       <div className="font-semibold" style={{ color: COLORS.blueDark }}>
                         {formatCompetitorName(c)} <span className="text-xs text-amber-700 font-normal">⚠ Ideiglenes</span>
                       </div>
@@ -1730,18 +1771,25 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
             </div>
           )}
 
-          {/* Végleges profilok */}
+          {/* Végleges profilok - mindenki kattinthat */}
           <div className="space-y-2">
             {finalized.map(c => {
               const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
               return (
-                <div key={c.id} className="bg-white border rounded-lg p-3 shadow-sm"
-                     style={{ borderColor: COLORS.gray200 }}>
-                  <div className="font-semibold" style={{ color: COLORS.blueDark }}>
-                    {formatCompetitorName(c)}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {c.kategoria} · {c.korosztaly} · {age} éves
+                <div key={c.id}
+                     className="bg-white border rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
+                     style={{ borderColor: COLORS.gray200 }}
+                     onClick={() => handleClick(c)}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="font-semibold" style={{ color: COLORS.blueDark }}>
+                        {formatCompetitorName(c)}
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {c.kategoria} · {c.korosztaly} · {age} éves
+                      </div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-gray-300" />
                   </div>
                 </div>
               );
@@ -1749,6 +1797,297 @@ export function CompetitorsView({ supabase, dataReloadKey }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PUBLIC COMPETITOR PROFILE — v0.9.25 ÚJ
+// Mindenki látja: alap adatok + minden eredmény (1-8 színes kiemelés)
+// ═══════════════════════════════════════════════════════════════════
+
+function PublicCompetitorProfile({ supabase, competitor, onClose }) {
+  const [results, setResults] = useState(null);
+  const [aaResults, setAaResults] = useState(null);
+  const [historicalResults, setHistoricalResults] = useState(null);
+  const [teamResults, setTeamResults] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      // 1) Egyéni szer-eredmények (csak lezárt versenyek)
+      const { data: resData } = await supabase
+        .from('results')
+        .select(`
+          id, placement, apparatus, score_total,
+          startlist_entry:startlist_entries!inner(
+            competitor_id,
+            competition_category:competition_categories!inner(
+              competition_day:competition_days!inner(
+                competition_id,
+                competition:competitions!inner(id, name, start_date, is_finalized)
+              )
+            )
+          )
+        `)
+        .eq('startlist_entry.competitor_id', competitor.id);
+
+      // 2) Összetett eredmények
+      const { data: aaData } = await supabase
+        .from('all_around_results')
+        .select(`
+          id, placement, score_total,
+          competition_category:competition_categories!inner(
+            competition_day:competition_days!inner(
+              competition_id,
+              competition:competitions!inner(id, name, start_date, is_finalized)
+            )
+          )
+        `)
+        .eq('competitor_id', competitor.id);
+
+      // 3) Történeti eredmények
+      const { data: histData } = await supabase
+        .from('historical_results')
+        .select('*')
+        .eq('competitor_id', competitor.id)
+        .order('competition_date', { ascending: false });
+
+      // 4) Csapat-eredmények (2 lépésben)
+      const { data: memberData } = await supabase
+        .from('competition_team_members')
+        .select('team_id')
+        .eq('competitor_id', competitor.id);
+
+      const teamIds = (memberData || []).map(m => m.team_id).filter(Boolean);
+      let teamData = [];
+      if (teamIds.length > 0) {
+        const { data: teamsRaw } = await supabase
+          .from('competition_teams')
+          .select(`
+            id, name, placement, competition_id,
+            competition:competition_id (id, name, start_date, is_finalized)
+          `)
+          .in('id', teamIds);
+        teamData = (teamsRaw || []).filter(t => t.competition?.is_finalized);
+      }
+
+      // Szűrés finalized-re
+      const filterFinalized = (arr, path) => {
+        return (arr || []).filter(r => {
+          const c = path === 'individual' 
+            ? r.startlist_entry?.competition_category?.competition_day?.competition
+            : r.competition_category?.competition_day?.competition;
+          return c?.is_finalized;
+        });
+      };
+
+      setResults(filterFinalized(resData, 'individual'));
+      setAaResults(filterFinalized(aaData, 'aa'));
+      setHistoricalResults(histData || []);
+      setTeamResults(teamData);
+    } catch (err) {
+      setError(err.message);
+      setResults([]);
+      setAaResults([]);
+      setHistoricalResults([]);
+      setTeamResults([]);
+    }
+  }, [supabase, competitor.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
+  const loading = results === null || aaResults === null || historicalResults === null || teamResults === null;
+
+  // Helyezés alapján kiemelés szín
+  const placementStyle = (place) => {
+    if (!place) return { backgroundColor: '#f9fafb', color: '#6b7280' };
+    if (place === 1) return { backgroundColor: '#fef3c7', color: '#92400e', borderColor: '#f59e0b' };
+    if (place === 2) return { backgroundColor: '#f3f4f6', color: '#374151', borderColor: '#9ca3af' };
+    if (place === 3) return { backgroundColor: '#fed7aa', color: '#9a3412', borderColor: '#fb923c' };
+    if (place <= 8) return { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#60a5fa' };
+    return { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' };
+  };
+
+  const placementIcon = (place) => {
+    if (place === 1) return '🥇';
+    if (place === 2) return '🥈';
+    if (place === 3) return '🥉';
+    if (place && place <= 8) return '⭐';
+    return '';
+  };
+
+  // Összes eredmény egy listában (dátum szerint csökkenő)
+  const allResults = [];
+  
+  (results || []).forEach(r => {
+    const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
+    if (comp) {
+      allResults.push({
+        id: `live-i-${r.id}`,
+        type: 'egyeni',
+        date: comp.start_date,
+        competition: comp.name,
+        detail: r.apparatus || '',
+        placement: r.placement,
+        score: r.score_total
+      });
+    }
+  });
+  
+  (aaResults || []).forEach(r => {
+    const comp = r.competition_category?.competition_day?.competition;
+    if (comp) {
+      allResults.push({
+        id: `live-aa-${r.id}`,
+        type: 'osszetett',
+        date: comp.start_date,
+        competition: comp.name,
+        detail: 'Összetett',
+        placement: r.placement,
+        score: r.score_total
+      });
+    }
+  });
+  
+  (teamResults || []).forEach(t => {
+    if (t.competition) {
+      allResults.push({
+        id: `team-${t.id}`,
+        type: 'csapat',
+        date: t.competition.start_date,
+        competition: t.competition.name,
+        detail: `Csapat (${t.name})`,
+        placement: t.placement,
+        score: null
+      });
+    }
+  });
+  
+  (historicalResults || []).forEach(h => {
+    allResults.push({
+      id: `hist-${h.id}`,
+      type: 'historical',
+      date: h.competition_date,
+      competition: h.competition_name,
+      detail: h.apparatus || (h.score_osszetett ? 'Összetett' : ''),
+      placement: h.placement,
+      score: h.score_total || h.score_osszetett
+    });
+  });
+  
+  // Rendezés dátum szerint csökkenően
+  allResults.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  return (
+    <div>
+      {/* Fejléc */}
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <h3 className="text-xl font-semibold" style={{ color: COLORS.blueDark }}>
+          {formatCompetitorName(competitor)}
+        </h3>
+      </div>
+
+      {/* Alap adatok */}
+      <div className="bg-white rounded-lg border p-4 mb-4" style={{ borderColor: COLORS.gray200 }}>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+          <div>
+            <div className="text-xs text-gray-500">Kategória</div>
+            <div className="font-semibold" style={{ color: COLORS.blueDark }}>{competitor.kategoria}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Korosztály</div>
+            <div className="font-semibold" style={{ color: COLORS.blueDark }}>{competitor.korosztaly}</div>
+          </div>
+          <div>
+            <div className="text-xs text-gray-500">Életkor</div>
+            <div className="font-semibold" style={{ color: COLORS.blueDark }}>{age} éves</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Eredmények */}
+      <div className="bg-white rounded-lg border p-4" style={{ borderColor: COLORS.gray200 }}>
+        <h4 className="font-semibold mb-3 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+          <Trophy className="w-5 h-5" />
+          Eredmények
+          {!loading && allResults.length > 0 && (
+            <span className="text-xs font-normal text-gray-500">({allResults.length})</span>
+          )}
+        </h4>
+
+        {error && (
+          <div className="text-sm text-red-600 mb-3">Hiba: {error}</div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-6">
+            <Loader className="w-5 h-5 animate-spin mx-auto text-gray-400" />
+          </div>
+        ) : allResults.length === 0 ? (
+          <div className="text-center py-6 text-sm text-gray-500 italic">
+            Még nincsenek eredmények.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {allResults.map(r => {
+              const style = placementStyle(r.placement);
+              const icon = placementIcon(r.placement);
+              const isTop = r.placement && r.placement <= 8;
+              return (
+                <div key={r.id}
+                     className={`border rounded-lg p-3 ${isTop ? 'border-2' : 'border'}`}
+                     style={style}>
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      {icon && <span className="text-lg">{icon}</span>}
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold truncate">{r.competition}</div>
+                        <div className="text-xs opacity-75 flex items-center gap-1.5 flex-wrap mt-0.5">
+                          <span>{r.date ? new Date(r.date).toLocaleDateString('hu-HU') : ''}</span>
+                          {r.detail && (
+                            <>
+                              <span>·</span>
+                              <span className="capitalize">{r.detail}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 text-right">
+                      {r.placement && (
+                        <div>
+                          <div className="text-xl font-bold">{r.placement}.</div>
+                          <div className="text-xs opacity-75">hely</div>
+                        </div>
+                      )}
+                      {r.score != null && r.score > 0 && (
+                        <div>
+                          <div className="text-sm font-semibold">{Number(r.score).toFixed(2)}</div>
+                          <div className="text-xs opacity-75">pont</div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Lábléc - szín jelmagyarázat */}
+      <div className="mt-4 text-xs text-gray-500 flex flex-wrap gap-3 items-center">
+        <span>🥇 1.</span>
+        <span>🥈 2.</span>
+        <span>🥉 3.</span>
+        <span>⭐ 4-8. (Top 8)</span>
+      </div>
     </div>
   );
 }
