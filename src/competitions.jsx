@@ -1448,7 +1448,10 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
             style={{ backgroundColor: COLORS.blue }}
           >
             <Trophy className="w-4 h-4" />
-            {userRole === 'versenyzo' || userRole === 'szulo' ? 'Eredmények' : 'Pontozás'}
+            {/* v0.9.37: szülő AKTÍV versenyen pontozhat; a scoring.jsx canEdit
+               logikája gondoskodik arról hogy lezárt versenynél már csak edző tud
+               módosítani. Versenyző mindig csak nézi. */}
+            {userRole === 'versenyzo' ? 'Eredmények' : 'Pontozás'}
           </button>
         )}
       </div>
@@ -3072,11 +3075,18 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       {categoryKeys.map(catId => {
         const group = groupedByCategoryAndCompetitor[catId];
         const cat = group.category;
-        const compIds = Object.keys(group.competitors).sort((a, b) => {
-          const nA = group.competitors[a].competitor.full_name;
-          const nB = group.competitors[b].competitor.full_name;
-          return nA.localeCompare(nB, 'hu');
-        });
+        // v0.9.37: CRASH JAVÍTÁS - korábban null.full_name TypeError-ral kifagyott
+        // szülő profillal (RLS miatt egyes versenyzők competitor: null).
+        // Most: 1) kiszűrjük az érvényteleneket, 2) becenév-elsődleges magyar abc rendezés.
+        const compIds = Object.keys(group.competitors)
+          .filter(cid => group.competitors[cid]?.competitor) // null guard
+          .sort((a, b) => {
+            const cA = group.competitors[a].competitor;
+            const cB = group.competitors[b].competitor;
+            const nA = (cA.nickname || cA.full_name || '').trim();
+            const nB = (cB.nickname || cB.full_name || '').trim();
+            return nA.localeCompare(nB, 'hu', { sensitivity: 'base', numeric: true });
+          });
         
         return (
           <div key={catId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">

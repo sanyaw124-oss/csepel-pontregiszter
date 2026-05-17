@@ -108,7 +108,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
       borderRadius: '24px', minHeight: '500px'
     }}>
       <div className="text-center mb-4 pt-3">
-        <div className="text-xl font-bold" style={{ color: '#BE123C' }}>★ Csepel SC RG ★</div>
+        <div className="text-xl font-bold" style={{ color: '#BE123C' }}>★ Csepel RG Klub ★</div>
         <div className="text-sm italic" style={{ color: '#EC4899', fontFamily: 'Caveat, cursive' }}>
           "Ügyesen, Okosan, Mosoly"
         </div>
@@ -222,7 +222,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
         background: 'linear-gradient(135deg, #DDD6FE, #C7D2FE)'
       }}>
         <div className="text-3xl mb-1">⭐</div>
-        <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>Csepel SC RG ★ csapata</div>
+        <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>Csepel RG Klub ★ csapata</div>
         <div className="text-sm italic mt-1" style={{ color: '#BE185D', fontFamily: 'Caveat, cursive' }}>
           "Ügyesen, Okosan, Mosoly"
         </div>

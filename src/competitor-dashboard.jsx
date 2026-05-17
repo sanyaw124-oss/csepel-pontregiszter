@@ -352,7 +352,7 @@ function MySelfBlock({ supabase, profile }) {
           {competitor.kategoria} · {competitor.korosztaly || 'Versenyző'}
           {competitor.birth_year ? ` · ${new Date().getFullYear() - competitor.birth_year} éves` : ''}
         </div>
-        <div className="text-xs text-gray-600 mt-1">Csepel SC RG ★ csapat tagja</div>
+        <div className="text-xs text-gray-600 mt-1">Csepel RG Klub ★ csapat tagja</div>
         <div className="text-xs italic mt-2" style={{ color: '#831843' }}>
           💭 "{getTodaysQuote()}"
         </div>

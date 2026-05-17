@@ -96,6 +96,30 @@ const hasStaffRights = (role) =>
 // Helper: szülő-jogosultság (látja a saját gyerekét)
 const hasParentRights = (role) => role === 'szulo' || role === 'szulo_admin';
 
+// ═══════════════════════════════════════════════════════════════════
+// MAGYAR ABC RENDEZÉS HELPER-ek
+// v0.9.37: korábban a .order('full_name') PostgreSQL byte-szintű
+// rendezést használt, ami magyar betűknél (ő, ű, á, é) ROSSZ sorrendet adott.
+// Mindenhol localeCompare('hu')-t kell használni.
+// Becenév-elsődlegesség: ha van becenév, az alapján rendezünk, különben a full_name alapján.
+// ═══════════════════════════════════════════════════════════════════
+
+const HU_COLLATOR = new Intl.Collator('hu', { sensitivity: 'base', numeric: true });
+
+// Magyar abc sortolás full_name szerint
+const huSortByName = (a, b) => HU_COLLATOR.compare(a?.full_name || '', b?.full_name || '');
+
+// Magyar abc sortolás becenév szerint (ha van), különben full_name szerint
+// Sándor 2026.05.17 döntése: becenév szerinti abc rendezés mindenhol
+const huSortByNickname = (a, b) => {
+  const aKey = (a?.nickname || a?.full_name || '').trim();
+  const bKey = (b?.nickname || b?.full_name || '').trim();
+  return HU_COLLATOR.compare(aKey, bKey);
+};
+
+// Exportáljuk hogy más fájlok is használhassák
+export { HU_COLLATOR, huSortByName, huSortByNickname };
+
 // eslint-disable-next-line no-unused-vars
 // formatCompetitorName helper - a 2. fázisban kerül használatba
 
@@ -110,26 +134,41 @@ function useAuth() {
   const [error, setError] = useState(null);
 
   const loadProfile = useCallback(async (userId) => {
-    try {
-      // 5 másodperc timeout - ha nem jön válasz, hibára megy
+    // v0.9.37: korábban 5s timeout volt + nincs retry, ezért időnként 
+    // (különösen mobil hálózaton) hibára futott. Most: 10s timeout + 1 retry.
+    // Supabase lock-warning ("Lock not released within 5000ms") jelezheti, 
+    // hogy a token refresh zavar a párhuzamos query-vel.
+    const fetchWithTimeout = async (timeoutMs) => {
       const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Profil lekérdezés timeout (5s)')), 5000)
+        setTimeout(() => reject(new Error(`timeout (${timeoutMs / 1000}s)`)), timeoutMs)
       );
-      
       const queryPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single();
-      
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-      
+      return Promise.race([queryPromise, timeoutPromise]);
+    };
+
+    try {
+      let result;
+      try {
+        // 1. próbálkozás: 10s timeout
+        result = await fetchWithTimeout(10000);
+      } catch (firstErr) {
+        // ha timeout vagy hálózati hiba, várunk 500ms-t és retry
+        console.warn('Profil 1. próbálkozás sikertelen, retry...', firstErr.message);
+        await new Promise(r => setTimeout(r, 500));
+        result = await fetchWithTimeout(10000);
+      }
+
+      const { data, error } = result;
       if (error) throw error;
       setProfile(data);
       setError(null);
     } catch (err) {
       console.error('Profil betöltési hiba:', err);
-      setError('Profil betöltése sikertelen: ' + err.message + '. Próbáld a Frissítés gombot vagy töröld a böngésző cache-t.');
+      setError('A profil betöltése nem sikerült. Próbáld a Frissítés gombot, vagy várj egy kis ideig és tölts újra. (Részletek: ' + err.message + ')');
     }
   }, []);
 
@@ -765,7 +804,7 @@ function AppShell() {
           <CompetitorTreasureView supabase={supabase} profile={profile} />
         )}
 
-        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
+        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} parentUserId={profile.id} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
@@ -786,7 +825,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9 · Csepel SC RG · MRGSZ 2025–2028
+          Pontregiszter v0.9.37 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>

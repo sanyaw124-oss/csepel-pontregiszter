@@ -5,6 +5,9 @@ import {
   Star, ArrowUp, ArrowDown, BarChart3, Lock, MessageCircle,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
+// v0.9.37: Fejlődési grafikon importálása - eddig hiányzott, ezért nem jelent meg
+// sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
+import { CompetitorProgressChart } from './progress-chart';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -41,7 +44,12 @@ export function calculateAge(birthDate) {
 // ═══════════════════════════════════════════════════════════════════
 
 export const KATEGORIAK = ['BNK', 'SZK', 'VSK I', 'VSK II'];
-export const KOROSZTALYOK = ['Mini', 'Kisgyermek', 'Gyermek', 'Serdülő', 'Junior', 'Ifjúsági', 'Felnőtt'];
+// v0.9.37: KOROSZTALYOK javítva a DB check constraint-hez igazítva.
+// DB-ben: CHECK (korosztaly = ANY (ARRAY['gyermek', 'serdülő', 'junior', 'felnőtt', 'master']))
+// Korábban a frontend Nagy kezdőbetűset+Mini/Kisgyermek/Ifjúsági értékeket küldött, ami 
+// DB-szinten violáltatta a constraint-et és nem lehetett menteni versenyzőt.
+// Megjelenítésben is kisbetűs — Sándor jóváhagyta (v0.9.37 commit).
+export const KOROSZTALYOK = ['gyermek', 'serdülő', 'junior', 'felnőtt', 'master'];
 
 const COLORS = {
   blue: '#1e3a8a',
@@ -205,10 +213,17 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
     setError(null);
     const { data, error } = await supabase
       .from('competitors')
-      .select('*')
-      .order('full_name');
+      .select('*');
+    // v0.9.37: magyar abc + becenév-elsődleges rendezés (PG byte-alap helyett)
     if (error) setError(error.message);
-    else setCompetitors(data);
+    else {
+      const sorted = (data || []).sort((a, b) => {
+        const aKey = (a.nickname || a.full_name || '').trim();
+        const bKey = (b.nickname || b.full_name || '').trim();
+        return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base', numeric: true });
+      });
+      setCompetitors(sorted);
+    }
   }, [supabase]);
 
   useEffect(() => { load(); }, [load, dataReloadKey]);
@@ -334,10 +349,24 @@ function CompetitorRow({ competitor, onEdit }) {
 
 function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
   const isNew = !competitor;
+  // v0.9.37: korosztály normalizálás - ha a meglévő DB rekord nagy betűs vagy NULL,
+  // állítsuk át a kis betűs verzióra (a Select különben üresen jelenne meg).
+  const normalizeKorosztaly = (val) => {
+    if (!val) return 'serdülő';
+    const lower = String(val).toLowerCase().trim();
+    if (KOROSZTALYOK.includes(lower)) return lower;
+    // Régi értékek mappingje a jelenlegi DB constraint-re
+    const map = { 
+      'mini': 'gyermek', 'kisgyermek': 'gyermek',
+      'ifjúsági': 'junior', 'ifjusagi': 'junior'
+    };
+    return map[lower] || 'serdülő';
+  };
   const [form, setForm] = useState(() => {
     if (competitor) {
       return {
         ...competitor,
+        korosztaly: normalizeKorosztaly(competitor.korosztaly),
         birth_date: competitor.birth_date || '',
         competing_since: competitor.competing_since || ''
       };
@@ -348,7 +377,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       birth_date: '',
       competing_since: '',
       kategoria: 'VSK II',
-      korosztaly: 'serdülő',
+      korosztaly: 'serdülő', // v0.9.37: DB constraint kompatibilis kis betűs érték
       email: '',
       is_active: true,
       is_club_member: true
@@ -610,6 +639,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         {/* Évvégi statisztika - csak meglévő versenyzőnél */}
         {!isNew && competitor?.id && (
           <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+        )}
+
+        {/* v0.9.37: Fejlődési grafikon - eddig hiányzott az edző/admin nézetből! */}
+        {!isNew && competitor?.id && (
+          <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
         )}
 
         {/* Csapat-eredmények - csak meglévő versenyzőnél */}
@@ -1130,7 +1164,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
 function CredentialsPopup({ creds, onClose }) {
   const [copied, setCopied] = useState(false);
   
-  const copyText = `Csepel SC RG Pontregiszter — Belépési adatok\n\nNév: ${creds.name}\nEmail: ${creds.email}\nJelszó: ${creds.password}\n\nLink: https://csepel-pontregiszter.vercel.app\n\nKérjük első belépéskor változtasd meg a jelszót!`;
+  const copyText = `Csepel RG Klub Pontregiszter — Belépési adatok\n\nNév: ${creds.name}\nEmail: ${creds.email}\nJelszó: ${creds.password}\n\nLink: https://csepel-pontregiszter.vercel.app\n\nKérjük első belépéskor változtasd meg a jelszót!`;
 
   const copy = () => {
     navigator.clipboard.writeText(copyText);
@@ -1601,7 +1635,7 @@ function AdminLinks({ supabase, dataReloadKey }) {
 // COMPETITORS PUBLIC VIEW (a Versenyzők navfül-höz)
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
+export function CompetitorsView({ supabase, userRole, dataReloadKey, parentUserId }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
   const [viewing, setViewing] = useState(null);  // melyik versenyző profilját nézzük
@@ -1609,14 +1643,45 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
   // Edzők és adminok kapnak szerkesztési jogot
   const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
 
+  // v0.9.37: szülő szerepkörben CSAK a saját gyereke(i) látsszanak
+  // Sándor 1. pontja: "versenyzők oldalon csak saját gyerek látszik"
+  const isParentOnly = userRole === 'szulo'; // szulo_admin az admin-ként látja mind
+
   useEffect(() => {
-    supabase
-      .from('competitors')
-      .select('*')
-      .eq('is_active', true)
-      .order('full_name')
-      .then(({ data }) => setCompetitors(data || []));
-  }, [supabase, dataReloadKey]);
+    let cancelled = false;
+    (async () => {
+      // 1) Szülő esetén előbb lekérjük a parent_child_links-et
+      let allowedIds = null;
+      if (isParentOnly && parentUserId) {
+        const { data: links } = await supabase
+          .from('parent_child_links')
+          .select('competitor_id')
+          .eq('parent_user_id', parentUserId);
+        allowedIds = (links || []).map(l => l.competitor_id);
+        if (allowedIds.length === 0) {
+          if (!cancelled) setCompetitors([]);
+          return;
+        }
+      }
+
+      // 2) Lekérdezzük a versenyzőket (szülő: csak a saját gyerek(ek)et)
+      let query = supabase.from('competitors').select('*').eq('is_active', true);
+      if (allowedIds) {
+        query = query.in('id', allowedIds);
+      }
+      const { data } = await query;
+
+      // 3) Magyar abc rendezés (becenév-elsődleges) - PG byte-alap helyett JS-ben
+      const sorted = (data || []).sort((a, b) => {
+        const aKey = (a.nickname || a.full_name || '').trim();
+        const bKey = (b.nickname || b.full_name || '').trim();
+        return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base', numeric: true });
+      });
+
+      if (!cancelled) setCompetitors(sorted);
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, dataReloadKey, isParentOnly, parentUserId]);
 
   // Ha valakit nézünk, mutassuk a publikus profilját
   if (viewing) {
@@ -1773,11 +1838,14 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, onBack }) {
         <div className="text-sm text-gray-500">
           {competitor.kategoria} · {competitor.korosztaly} · {age} éves
         </div>
-        <div className="text-xs text-gray-400 mt-1">Csepel SC RG ★ csapat tagja</div>
+        <div className="text-xs text-gray-400 mt-1">Csepel RG Klub ★ csapat tagja</div>
       </div>
 
       {/* Érem-összesítő évvégi statisztika */}
       <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+
+      {/* v0.9.37: Fejlődési grafikon - eddig hiányzott a publikus profilból! */}
+      <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
 
       {/* Csapat-eredmények */}
       <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
@@ -1819,13 +1887,19 @@ export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
     const { data: comps, error: compsErr } = await supabase
       .from('competitors')
       .select('*')
-      .in('id', childIds)
-      .order('full_name');
+      .in('id', childIds);
+    // v0.9.37: PostgreSQL .order() byte-alapú, magyar betűkkel rossz sorrendet ad.
+    // Becenév-elsődleges magyar abc rendezést a JS-ben csináljuk.
     
     if (compsErr) {
       setError(compsErr.message);
     } else {
-      setChildren(comps || []);
+      const sorted = (comps || []).sort((a, b) => {
+        const aKey = (a.nickname || a.full_name || '').trim();
+        const bKey = (b.nickname || b.full_name || '').trim();
+        return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base', numeric: true });
+      });
+      setChildren(sorted);
     }
   }, [supabase, parentUserId]);
 
@@ -1898,13 +1972,25 @@ export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
 }
 
 function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
+  // v0.9.37: korosztály normalizálás - ha a meglévő DB rekord régi nagy betűs vagy NULL,
+  // állítsuk át a jelenlegi kis betűs verzióra (különben Save-nél constraint violation).
+  const normalizeKorosztaly = (val) => {
+    if (!val) return 'serdülő';
+    const lower = String(val).toLowerCase().trim();
+    if (KOROSZTALYOK.includes(lower)) return lower;
+    const map = { 
+      'mini': 'gyermek', 'kisgyermek': 'gyermek',
+      'ifjúsági': 'junior', 'ifjusagi': 'junior'
+    };
+    return map[lower] || 'serdülő';
+  };
   const [form, setForm] = useState({
     full_name: competitor.full_name,
     nickname: competitor.nickname || '',
     birth_date: competitor.birth_date || '',
     competing_since: competitor.competing_since || '',
     kategoria: competitor.kategoria,
-    korosztaly: competitor.korosztaly,
+    korosztaly: normalizeKorosztaly(competitor.korosztaly),
     email: competitor.email || ''
   });
   const [saving, setSaving] = useState(false);
@@ -1957,84 +2043,29 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         </h2>
       </div>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3 shadow-sm"
-           style={{ borderColor: COLORS.gray200 }}>
-        <Field label="Teljes név *">
-          <Input
-            type="text"
-            value={form.full_name}
-            onChange={(e) => setForm({...form, full_name: e.target.value})}
-          />
-        </Field>
+      {/* ════════════════════════════════════════════════════════
+          v0.9.37 ÁTRENDEZÉS: érdekes részek FELÜLRE 
+          (érmek, grafikon, eredmények, edzések, megjegyzések),
+          személyes adatok ALULRA (egyszer beállítjuk és kész).
+          A regresszió oka: korábbi módosítás visszaírta a sorrendet.
+          ════════════════════════════════════════════════════════ */}
 
-        <Field label="Becenév" hint='Megjelenítés: Vezetéknév "Becenév" Keresztnév'>
-          <Input
-            type="text"
-            value={form.nickname}
-            onChange={(e) => setForm({...form, nickname: e.target.value})}
-          />
-        </Field>
+      <div className="space-y-3">
+        {/* === FELÜL: ÉRDEKES RÉSZEK === */}
 
-        <Field label="Születési dátum *">
-          <Input
-            type="date"
-            value={form.birth_date}
-            onChange={(e) => setForm({...form, birth_date: e.target.value})}
-            max={new Date().toISOString().split('T')[0]}
-            min="2000-01-01"
-          />
-        </Field>
-
-        <Field label="Versenyez óta (opcionális)">
-          <Input
-            type="date"
-            value={form.competing_since}
-            onChange={(e) => setForm({...form, competing_since: e.target.value})}
-            max={new Date().toISOString().split('T')[0]}
-            min={form.birth_date || '2000-01-01'}
-          />
-          <div className="text-xs text-gray-500 mt-1">
-            Mióta versenyez aktívan
-          </div>
-        </Field>
-
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Kategória">
-            <Select value={form.kategoria} onChange={(e) => setForm({...form, kategoria: e.target.value})}>
-              {KATEGORIAK.map(k => <option key={k}>{k}</option>)}
-            </Select>
-          </Field>
-          <Field label="Korosztály">
-            <Select value={form.korosztaly} onChange={(e) => setForm({...form, korosztaly: e.target.value})}>
-              {KOROSZTALYOK.map(k => <option key={k}>{k}</option>)}
-            </Select>
-          </Field>
-        </div>
-        <div className="text-xs text-gray-500 -mt-1">
-          A kategória/korosztály változás automatikusan rögzítésre kerül a fejlődési előzményben.
-        </div>
-
-        <Field label="Email (opcionális)">
-          <Input
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({...form, email: e.target.value})}
-          />
-        </Field>
-
-        {/* Évvégi statisztika */}
+        {/* Évvégi statisztika - érmek évre bontva */}
         {competitor?.id && (
           <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+        )}
+
+        {/* Fejlődési grafikon - v0.9.37: korábban hiányzott szülőnél */}
+        {competitor?.id && (
+          <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
         )}
 
         {/* Csapat-eredmények */}
         {competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
-        )}
-
-        {/* Edzői privát megjegyzések - szülő csak olvashat */}
-        {competitor?.id && (
-          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole="szulo" />
         )}
 
         {/* Korábbi eredmények */}
@@ -2047,14 +2078,90 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
         )}
 
-        <ErrorBox>{error}</ErrorBox>
+        {/* Edzői privát megjegyzések - szülő csak olvashat */}
+        {competitor?.id && (
+          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole="szulo" />
+        )}
 
-        <div className="flex gap-2 pt-2">
-          <PrimaryButton onClick={save} disabled={saving}>
-            {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            Mentés
-          </PrimaryButton>
-          <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
+        {/* === ALUL: SZEMÉLYES ADATOK (egyszer állítjuk be) === */}
+        <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-3 shadow-sm mt-4"
+             style={{ borderColor: COLORS.gray200 }}>
+          <h3 className="text-sm font-bold text-gray-700 pb-2 border-b border-gray-100">
+            Személyes adatok
+          </h3>
+
+          <Field label="Teljes név *">
+            <Input
+              type="text"
+              value={form.full_name}
+              onChange={(e) => setForm({...form, full_name: e.target.value})}
+            />
+          </Field>
+
+          <Field label="Becenév" hint='Megjelenítés: Vezetéknév "Becenév" Keresztnév'>
+            <Input
+              type="text"
+              value={form.nickname}
+              onChange={(e) => setForm({...form, nickname: e.target.value})}
+            />
+          </Field>
+
+          <Field label="Születési dátum *">
+            <Input
+              type="date"
+              value={form.birth_date}
+              onChange={(e) => setForm({...form, birth_date: e.target.value})}
+              max={new Date().toISOString().split('T')[0]}
+              min="2000-01-01"
+            />
+          </Field>
+
+          <Field label="Versenyez óta (opcionális)">
+            <Input
+              type="date"
+              value={form.competing_since}
+              onChange={(e) => setForm({...form, competing_since: e.target.value})}
+              max={new Date().toISOString().split('T')[0]}
+              min={form.birth_date || '2000-01-01'}
+            />
+            <div className="text-xs text-gray-500 mt-1">
+              Mióta versenyez aktívan
+            </div>
+          </Field>
+
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Kategória">
+              <Select value={form.kategoria} onChange={(e) => setForm({...form, kategoria: e.target.value})}>
+                {KATEGORIAK.map(k => <option key={k}>{k}</option>)}
+              </Select>
+            </Field>
+            <Field label="Korosztály">
+              <Select value={form.korosztaly} onChange={(e) => setForm({...form, korosztaly: e.target.value})}>
+                {KOROSZTALYOK.map(k => <option key={k}>{k}</option>)}
+              </Select>
+            </Field>
+          </div>
+          <div className="text-xs text-gray-500 -mt-1">
+            A kategória/korosztály változás automatikusan rögzítésre kerül a fejlődési előzményben.
+          </div>
+
+          <Field label="Email (opcionális)">
+            <Input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({...form, email: e.target.value})}
+            />
+          </Field>
+
+          <ErrorBox>{error}</ErrorBox>
+
+          <div className="flex gap-2 pt-2">
+            <PrimaryButton onClick={save} disabled={saving}>
+              {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Mentés
+            </PrimaryButton>
+            <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
+          </div>
         </div>
       </div>
     </div>

@@ -129,7 +129,9 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   const [showRankings, setShowRankings] = useState(false);
 
   const canFinalizeOrEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
-  const canInputProvisional = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
+  // v0.9.37: szülő pontozhat AKTÍV versenyen is (verseny közben segítségként).
+  // Verseny lezárása után már csak edző írhat. Sándor 2026.05.17 #6.
+  const canInputProvisional = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo', 'szulo'].includes(userRole);
 
   // ─── Adatok betöltése ─────────────────────────────────────────
   const loadData = useCallback(async () => {
