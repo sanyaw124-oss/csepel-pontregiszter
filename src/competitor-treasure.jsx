@@ -131,7 +131,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
   const greetingName = competitor?.nickname || competitor?.full_name?.split(' ').slice(-1)[0] || '';
 
   return (
-    <div className="max-w-md mx-auto px-4 py-4" style={{
+    <div className="max-w-3xl mx-auto px-4 py-4" style={{
       background: 'linear-gradient(135deg, #FEF3C7 0%, #FCE4EC 100%)',
       borderRadius: '24px', minHeight: '500px'
     }}>

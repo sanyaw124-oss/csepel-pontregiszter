@@ -1448,7 +1448,7 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
             style={{ backgroundColor: COLORS.blue }}
           >
             <Trophy className="w-4 h-4" />
-            Pontozás
+            {userRole === 'versenyzo' || userRole === 'szulo' ? 'Eredmények' : 'Pontozás'}
           </button>
         )}
       </div>

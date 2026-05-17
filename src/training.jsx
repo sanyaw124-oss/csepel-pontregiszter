@@ -143,7 +143,7 @@ function MyTrainingsView({ supabase, profile }) {
   if (loading) return <div className="py-12 text-center"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
 
   return (
-    <div className="max-w-md mx-auto space-y-3">
+    <div className="max-w-3xl mx-auto space-y-3">
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-3 mb-3">
           <BookOpen className="w-5 h-5 text-gray-700" />

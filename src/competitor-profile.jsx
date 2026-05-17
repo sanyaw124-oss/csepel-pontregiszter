@@ -27,6 +27,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
   const [competitor, setCompetitor] = useState(null);
   const [teammates, setTeammates] = useState([]);
   const [selectedAvatar, setSelectedAvatar] = useState('🦄');
+  const [showAvatarPicker, setShowAvatarPicker] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
 
   const saveAvatar = async (emoji) => {
     setSelectedAvatar(emoji);
+    setShowAvatarPicker(false);  // bezárjuk a választót
     if (competitor?.id) {
       await supabase.from('competitors').update({ avatar_emoji: emoji }).eq('id', competitor.id);
     }
@@ -101,7 +103,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
   }
 
   return (
-    <div className="max-w-md mx-auto px-4 py-4" style={{
+    <div className="max-w-3xl mx-auto px-4 py-4" style={{
       background: 'linear-gradient(135deg, #FDF2F8 0%, #EDE9FE 100%)',
       borderRadius: '24px', minHeight: '500px'
     }}>
@@ -124,11 +126,10 @@ export default function CompetitorProfileView({ supabase, profile }) {
         </div>
       )}
 
-      {/* 13. NAGY AVATAR + NÉV */}
+      {/* 13. NAGY AVATAR + NÉV + VÁLTÁS GOMB */}
       {competitor && (
         <div className="rounded-2xl p-5 mb-4 bg-white text-center border-2" style={{ borderColor: '#FBCFE8' }}>
           <div className="text-7xl mb-2">{selectedAvatar}</div>
-          <div className="text-xs text-gray-500 mb-2">(válassz lent a 36-ból másikat!)</div>
           <div className="text-xl font-bold" style={{ color: '#831843' }}>
             {competitor.nickname ? `"${competitor.nickname}"` : competitor.full_name}
           </div>
@@ -139,14 +140,27 @@ export default function CompetitorProfileView({ supabase, profile }) {
             {competitor.kategoria} · {competitor.korosztaly || 'Versenyző'}
             {competitor.birth_year ? ` · ${new Date().getFullYear() - competitor.birth_year} éves` : ''}
           </div>
+          
+          {/* Avatar változtatás gomb */}
+          <button
+            onClick={() => setShowAvatarPicker(!showAvatarPicker)}
+            className="mt-3 px-4 py-2 rounded-full text-xs font-bold transition"
+            style={{
+              background: showAvatarPicker ? '#FCE4EC' : 'linear-gradient(135deg, #EC4899, #BE185D)',
+              color: showAvatarPicker ? '#BE185D' : 'white',
+              border: showAvatarPicker ? '2px solid #EC4899' : 'none'
+            }}
+          >
+            {showAvatarPicker ? '✕ Bezár' : '🎨 Avatar változtatása'}
+          </button>
         </div>
       )}
 
-      {/* 14. HANGULAT-VÁLASZTÓ (36 avatar) */}
-      {competitor && (
-        <div className="rounded-2xl p-4 mb-3 bg-white">
+      {/* 14. HANGULAT-VÁLASZTÓ (36 avatar) — CSAK akkor ha showAvatarPicker */}
+      {competitor && showAvatarPicker && (
+        <div className="rounded-2xl p-4 mb-3 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
           <div className="text-xs text-gray-500 mb-3 text-center font-bold">
-            VÁLASZD KI A KEDVENC HANGULATOD!
+            VÁLASZD KI A KEDVENC AVATARODAT!
           </div>
           <div className="grid grid-cols-6 gap-1">
             {RG_AVATARS.map(emoji => (

@@ -1,12 +1,28 @@
 // ═══════════════════════════════════════════════════════════════════
-// COMPETITOR DASHBOARD — Versenyzői ÁTTEKINTÉS oldal
-// 8 modul Petra+Ori IGENJEI alapján
-// v0.9.32 (2026.05.17)
+// COMPETITOR DASHBOARD — Versenyzői ÁTTEKINTÉS
+// v0.9.35 (2026.05.17 este) — teljes szélesség, közös elemek a szülővel
+// 
+// Tartalom (Sándor jóváhagyott terve):
+// - Saját üdvözlés napszak szerint ("Szia Ori! 🌸")
+// - Saját rózsaszín-lila "Csak az enyém" blokk:
+//   - Saját szülinap countdown
+//   - Saját éremfal
+//   - Edzéseim csillagok + streak
+//   - Fejlődsz kis kártya
+//   - Magamról kártya (RG idézet)
+// - HERO doboz (mint szülőnek)
+// - Klubtársak születésnapjai (BirthdayWidget mint szülőnek)
+// - Klub üzenőfal hírek (UpcomingEventsWidget)
+// - Klub áttekintés statisztika
+// - Legutóbbi csepeli sikerek
+// - Klub büszkesége slideshow
+// - Helyezések táblázat
 // ═══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
-import { Lock, Loader, AlertCircle } from 'lucide-react';
+import { Loader, AlertCircle } from 'lucide-react';
 
+// HELPER
 function getGreeting(name) {
   const hour = new Date().getHours();
   const displayName = name || 'csapattársam';
@@ -52,11 +68,13 @@ const safeQuery = async (queryFn) => {
   return { data: null, error: { message: 'Lekérdezés sikertelen' } };
 };
 
-export default function CompetitorDashboard({ supabase, profile }) {
+// ─────────────────────────────────────────────────────────────────
+// "SAJÁT" ÚN. SZEMÉLYES BLOKK — csak a versenyzőnek
+// ─────────────────────────────────────────────────────────────────
+function MySelfBlock({ supabase, profile }) {
   const [competitor, setCompetitor] = useState(null);
   const [stats, setStats] = useState(null);
   const [recentResult, setRecentResult] = useState(null);
-  const [nextCompetition, setNextCompetition] = useState(null);
   const [trainingCount, setTrainingCount] = useState(0);
   const [weekStreak, setWeekStreak] = useState(0);
   const [progressTrend, setProgressTrend] = useState(null);
@@ -64,11 +82,9 @@ export default function CompetitorDashboard({ supabase, profile }) {
 
   useEffect(() => {
     let mounted = true;
-
     const load = async () => {
       try {
         let competitorId = profile?.competitor_id;
-        
         if (!competitorId && profile?.full_name) {
           const fb = await safeQuery(() =>
             supabase.from('competitors').select('id')
@@ -79,7 +95,6 @@ export default function CompetitorDashboard({ supabase, profile }) {
             await supabase.from('profiles').update({ competitor_id: competitorId }).eq('id', profile.id);
           }
         }
-
         if (!competitorId) { if (mounted) setLoading(false); return; }
 
         const compRes = await safeQuery(() =>
@@ -89,36 +104,32 @@ export default function CompetitorDashboard({ supabase, profile }) {
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
 
-        // EREDMÉNYEK: results-en NINCS competitor_id! 
-        // Kapcsolat: startlist_entries.competitor_id → results.startlist_entry_id
+        // EREDMÉNYEK startlist_entries-en át
         const entriesRes = await safeQuery(() =>
           supabase.from('startlist_entries')
             .select(`
-              id, 
-              competition_category_id,
+              id,
               competition_categories(
-                competition_day_id,
-                competition_days(date, competitions(name))
+                competition_days(competitions(name))
               )
             `)
             .eq('competitor_id', competitorId)
         );
-        
+
         let allResults = [];
         if (entriesRes.data && entriesRes.data.length > 0 && mounted) {
           const entryIds = entriesRes.data.map(e => e.id);
           const entryMap = {};
           entriesRes.data.forEach(e => { entryMap[e.id] = e; });
-          
+
           const resultsRes = await safeQuery(() =>
             supabase.from('results')
-              .select('startlist_entry_id, placement, score_total, apparatus, created_at, is_provisional')
+              .select('startlist_entry_id, placement, score_total, created_at, is_provisional')
               .in('startlist_entry_id', entryIds)
               .eq('is_provisional', false)
               .not('placement', 'is', null)
               .order('created_at', { ascending: false })
           );
-          
           if (resultsRes.data) {
             allResults = resultsRes.data.map(r => ({
               ...r,
@@ -135,39 +146,22 @@ export default function CompetitorDashboard({ supabase, profile }) {
 
           const topResult = allResults.find(r => r.placement <= 3);
           if (topResult) {
-            const competitionName = topResult.entry?.competition_categories?.competition_days?.competitions?.name || 'verseny';
             setRecentResult({
               placement: topResult.placement,
-              competitionName,
+              competitionName: topResult.entry?.competition_categories?.competition_days?.competitions?.name || 'verseny',
             });
           }
 
           if (allResults.length >= 2) {
-            const lastTwo = allResults.slice(0, 2);
-            if (lastTwo[0].score_total && lastTwo[1].score_total) {
-              const diff = lastTwo[0].score_total - lastTwo[1].score_total;
+            const [a, b] = allResults;
+            if (a.score_total && b.score_total) {
+              const diff = a.score_total - b.score_total;
               setProgressTrend({ diff: Math.round(diff * 100) / 100, positive: diff > 0 });
             }
           }
         }
 
-        const today = new Date().toISOString().split('T')[0];
-        const compsRes = await safeQuery(() =>
-          supabase.from('competition_days')
-            .select('date, competitions(name)')
-            .gte('date', today)
-            .order('date', { ascending: true })
-            .limit(1)
-        );
-        if (compsRes.data?.[0] && mounted) {
-          const day = compsRes.data[0];
-          const daysUntil = Math.ceil((new Date(day.date) - new Date()) / (1000 * 60 * 60 * 24));
-          setNextCompetition({
-            name: day.competitions?.name || 'Verseny',
-            daysUntil: Math.max(0, daysUntil)
-          });
-        }
-
+        // EDZÉSEK
         const yearStart = `${new Date().getFullYear()}-01-01`;
         const attendRes = await safeQuery(() =>
           supabase.from('training_attendance')
@@ -203,81 +197,56 @@ export default function CompetitorDashboard({ supabase, profile }) {
           setWeekStreak(streak);
         }
       } catch (err) {
-        console.error('CompetitorDashboard:', err);
+        console.error('MySelfBlock:', err);
       } finally {
         if (mounted) setLoading(false);
       }
     };
-
     load();
     return () => { mounted = false; };
   }, [supabase, profile?.competitor_id, profile?.id, profile?.full_name]);
 
   if (loading) {
+    return <div className="py-4 text-center"><Loader className="w-6 h-6 animate-spin mx-auto text-pink-400" /></div>;
+  }
+
+  if (!competitor) {
     return (
-      <div className="max-w-md mx-auto py-8 text-center">
-        <Loader className="w-8 h-8 animate-spin mx-auto text-pink-400" />
+      <div className="rounded-2xl p-4 mb-4 bg-amber-50 border-2 border-amber-300 text-center max-w-2xl mx-auto">
+        <AlertCircle className="w-8 h-8 mx-auto text-amber-600 mb-2" />
+        <div className="text-sm font-bold text-amber-900">Még nem találtunk hozzád versenyző profilt!</div>
+        <div className="text-xs text-amber-800 mt-1">Szólj az admin-nak.</div>
       </div>
     );
   }
 
-  // BECENÉV PRIORITÁS!
-  const greetingName = competitor?.nickname || competitor?.full_name?.split(' ').slice(-1)[0] || 'csapattársam';
+  const greetingName = competitor.nickname || competitor.full_name?.split(' ').slice(-1)[0] || 'csapattársam';
   const greeting = getGreeting(greetingName);
   const stars = '⭐'.repeat(Math.min(trainingCount, 50));
 
+  // Szülinap countdown
+  const birthdayCountdown = (() => {
+    if (!competitor.birth_date) return null;
+    const today = new Date();
+    const birth = new Date(competitor.birth_date);
+    const thisYearBirth = new Date(today.getFullYear(), birth.getMonth(), birth.getDate());
+    if (thisYearBirth < today) thisYearBirth.setFullYear(today.getFullYear() + 1);
+    const days = Math.ceil((thisYearBirth - today) / (1000 * 60 * 60 * 24));
+    return { days, date: thisYearBirth };
+  })();
+
   return (
-    <div className="max-w-md mx-auto px-4 py-4" style={{
-      background: 'linear-gradient(135deg, #FCE4EC 0%, #EDE9FE 100%)',
-      borderRadius: '24px',
-      minHeight: '500px'
+    <div className="rounded-3xl p-4 mb-6 max-w-2xl mx-auto" style={{
+      background: 'linear-gradient(135deg, #FCE4EC 0%, #EDE9FE 100%)'
     }}>
-      <div className="text-center mb-4 pt-3">
-        <div className="text-xl font-bold" style={{ color: '#BE123C' }}>★ Csepel SC RG ★</div>
-        <div className="text-sm italic" style={{ color: '#EC4899', fontFamily: 'Caveat, cursive' }}>
-          "Ügyesen, Okosan, Mosoly"
-        </div>
-      </div>
-
-      {!competitor && (
-        <div className="rounded-2xl p-4 mb-4 bg-amber-50 border-2 border-amber-300 text-center">
-          <AlertCircle className="w-8 h-8 mx-auto text-amber-600 mb-2" />
-          <div className="text-sm font-bold text-amber-900 mb-1">
-            Még nem találtunk hozzád versenyző profilt!
-          </div>
-          <div className="text-xs text-amber-800">
-            Szólj az admin-nak, hogy kapcsolja össze a fiókodat.
-          </div>
-        </div>
-      )}
-
-      {/* 1. ÜDVÖZLÉS NAPSZAK SZERINT */}
-      <div className="text-center mb-5">
-        <div className="text-xs text-gray-500 mb-1">
-          {new Date().toLocaleDateString('hu-HU', { weekday: 'long', month: 'long', day: 'numeric' })}
-        </div>
+      {/* Üdvözlés napszak szerint */}
+      <div className="text-center mb-4">
         <div className="text-2xl font-bold" style={{ color: '#BE185D' }}>
           {greeting.text} <span className="text-xl">{greeting.emoji}</span>
         </div>
       </div>
 
-      {/* 2. SORON KÖV. VERSENY COUNTDOWN */}
-      {nextCompetition && (
-        <div className="rounded-2xl p-4 mb-3 text-white text-center" style={{
-          background: 'linear-gradient(135deg, #F59E0B 0%, #EC4899 100%)'
-        }}>
-          <div className="text-xs opacity-90 mb-1">SORON KÖVETKEZŐ VERSENY</div>
-          <div className="text-lg font-bold mb-2">🏆 {nextCompetition.name}</div>
-          <div className="text-4xl font-bold leading-none">{nextCompetition.daysUntil}</div>
-          <div className="text-xs opacity-90 mt-1">
-            {nextCompetition.daysUntil === 0 ? 'MA! ⏰' :
-             nextCompetition.daysUntil === 1 ? 'holnap! ⏰' :
-             'nap múlva ⏰'}
-          </div>
-        </div>
-      )}
-
-      {/* 3+4. ÉREMFAL + LEGUTÓBBI SIKER */}
+      {/* Saját éremfal */}
       {stats && stats.osszes > 0 && (
         <div className="rounded-2xl p-4 mb-3 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
           <div className="text-center font-bold mb-3" style={{ color: '#BE185D' }}>🏅 Saját éremfalad</div>
@@ -312,7 +281,27 @@ export default function CompetitorDashboard({ supabase, profile }) {
         </div>
       )}
 
-      {/* 5+6. EDZÉSEIM CSILLAGOK + HETI STREAK */}
+      {/* Saját szülinap countdown */}
+      {birthdayCountdown && (
+        <div className="rounded-2xl p-4 mb-3 flex items-center gap-3" style={{
+          background: 'linear-gradient(135deg, #FEF3C7, #FED7AA)'
+        }}>
+          <div className="text-5xl">🎂</div>
+          <div>
+            <div className="text-sm font-bold" style={{ color: '#92400E' }}>Az én szülinapomig...</div>
+            <div className="text-3xl font-bold leading-none" style={{ color: '#92400E' }}>
+              {birthdayCountdown.days === 0 ? '🎉 MA! 🎉' : `${birthdayCountdown.days} nap!`}
+            </div>
+            {birthdayCountdown.days > 0 && (
+              <div className="text-xs" style={{ color: '#B45309' }}>
+                {birthdayCountdown.date.toLocaleDateString('hu-HU', { month: 'long', day: 'numeric' })} ✨
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Edzéseim csillagok + streak */}
       {trainingCount > 0 && (
         <div className="rounded-2xl p-4 mb-3 bg-white border-2" style={{ borderColor: '#FCD34D' }}>
           <div className="text-sm font-bold mb-2" style={{ color: '#92400E' }}>💪 Edzéseim idén</div>
@@ -335,7 +324,7 @@ export default function CompetitorDashboard({ supabase, profile }) {
         </div>
       )}
 
-      {/* 7. FEJLŐDSZ KIS KÁRTYA */}
+      {/* Fejlődsz kis kártya */}
       {progressTrend && progressTrend.positive && (
         <div className="rounded-2xl p-3 mb-3 bg-white border-2 flex items-center gap-3"
              style={{ borderColor: '#C7D2FE' }}>
@@ -351,33 +340,26 @@ export default function CompetitorDashboard({ supabase, profile }) {
         </div>
       )}
 
-      {/* 8. MAGAMRÓL KÁRTYA */}
-      {competitor && (
-        <div className="rounded-2xl p-4 mb-3 text-center" style={{
-          background: 'linear-gradient(135deg, #DDD6FE 0%, #C7D2FE 100%)'
-        }}>
-          <div className="text-3xl mb-1">🎀</div>
-          <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>
-            {competitor.nickname ? `"${competitor.nickname}" ` : ''}{competitor.full_name}
-          </div>
-          <div className="text-xs" style={{ color: '#5B21B6' }}>
-            {competitor.kategoria} · {competitor.korosztaly || 'Versenyző'}
-            {competitor.birth_year ? ` · ${new Date().getFullYear() - competitor.birth_year} éves` : ''}
-          </div>
-          <div className="text-xs text-gray-600 mt-1">Csepel SC RG ★ csapat tagja</div>
-        </div>
-      )}
-
-      {/* RG IDÉZET (csak RG-s!) */}
-      <div className="rounded-2xl p-3 mb-3 text-center" style={{
-        background: 'linear-gradient(135deg, #FCE7F3, #FBCFE8)'
+      {/* Magamról kártya */}
+      <div className="rounded-2xl p-4 text-center" style={{
+        background: 'linear-gradient(135deg, #DDD6FE 0%, #C7D2FE 100%)'
       }}>
-        <div className="text-2xl mb-1">💭</div>
-        <div className="text-xs italic" style={{ color: '#831843' }}>"{getTodaysQuote()}"</div>
+        <div className="text-3xl mb-1">{competitor.avatar_emoji || '🎀'}</div>
+        <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>
+          {competitor.nickname ? `"${competitor.nickname}" ` : ''}{competitor.full_name}
+        </div>
+        <div className="text-xs" style={{ color: '#5B21B6' }}>
+          {competitor.kategoria} · {competitor.korosztaly || 'Versenyző'}
+          {competitor.birth_year ? ` · ${new Date().getFullYear() - competitor.birth_year} éves` : ''}
+        </div>
+        <div className="text-xs text-gray-600 mt-1">Csepel SC RG ★ csapat tagja</div>
+        <div className="text-xs italic mt-2" style={{ color: '#831843' }}>
+          💭 "{getTodaysQuote()}"
+        </div>
       </div>
-
     </div>
   );
 }
 
+export default MySelfBlock;
 export { safeQuery, getGreeting };

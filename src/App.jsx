@@ -12,7 +12,7 @@ import { CompetitionsView } from './competitions';
 import { TrainingView } from './training';
 import { EventsView, UpcomingEventsWidget } from './events';
 import { CoachNotesView } from './coach-notes';
-import CompetitorDashboard from './competitor-dashboard';
+import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
 
@@ -747,10 +747,8 @@ function AppShell() {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {/* Áttekintés: VERSENYZŐ → saját vidám, MÁS → klubos áttekintés */}
-        {activeView === 'dashboard' && profile.role === 'versenyzo' && (
-          <CompetitorDashboard supabase={supabase} profile={profile} />
-        )}
-        {activeView === 'dashboard' && profile.role !== 'versenyzo' && (
+        {/* Áttekintés: MINDENKINEK ugyanaz (versenyzőnek is - személyes blokk felül) */}
+        {activeView === 'dashboard' && (
           <DashboardView setActiveView={setActiveView} />
         )}
 
@@ -983,6 +981,11 @@ function DashboardView({ setActiveView }) {
           <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
           {error}
         </div>
+      )}
+
+      {/* SAJÁT BLOKK - CSAK VERSENYZŐNEK (rózsaszín-lila, RG-s, vidám) */}
+      {profile.role === 'versenyzo' && (
+        <MySelfBlock supabase={supabase} profile={profile} />
       )}
 
       {/* HERO + Születésnap + Események - MINDENKINEK */}

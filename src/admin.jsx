@@ -1604,8 +1604,7 @@ function AdminLinks({ supabase, dataReloadKey }) {
 export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
-  const [editing, setEditing] = useState(null);
-  const [viewing, setViewing] = useState(null);
+  const [viewing, setViewing] = useState(null);  // melyik versenyző profilját nézzük
 
   // Edzők és adminok kapnak szerkesztési jogot
   const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
@@ -1618,6 +1617,18 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
       .order('full_name')
       .then(({ data }) => setCompetitors(data || []));
   }, [supabase, dataReloadKey]);
+
+  // Ha valakit nézünk, mutassuk a publikus profilját
+  if (viewing) {
+    return (
+      <PublicCompetitorProfile
+        supabase={supabase}
+        competitor={viewing}
+        userRole={userRole}
+        onBack={() => setViewing(null)}
+      />
+    );
+  }
 
   if (competitors === null) {
     return <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
@@ -1711,20 +1722,68 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
             {finalized.map(c => {
               const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
               return (
-                <div key={c.id} className="bg-white border rounded-lg p-3 shadow-sm"
-                     style={{ borderColor: COLORS.gray200 }}>
-                  <div className="font-semibold" style={{ color: COLORS.blueDark }}>
+                <button
+                  key={c.id}
+                  onClick={() => setViewing(c)}
+                  className="w-full text-left bg-white border rounded-lg p-3 shadow-sm hover:shadow-md hover:border-blue-300 transition"
+                  style={{ borderColor: COLORS.gray200 }}
+                >
+                  <div className="font-semibold flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+                    {c.avatar_emoji && <span>{c.avatar_emoji}</span>}
                     {formatCompetitorName(c)}
                   </div>
                   <div className="text-xs text-gray-500">
                     {c.kategoria} · {c.korosztaly} · {age} éves
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// PUBLIC COMPETITOR PROFILE — versenyző/szülő/edző látja klubtárs profilját
+// Mutatja: érem-összesítő, csapat-eredmények, korábbi eredmények
+// (de NEM mutatja az edzői privát megjegyzéseket vagy szerkesztési mezőket)
+// ═══════════════════════════════════════════════════════════════════
+function PublicCompetitorProfile({ supabase, competitor, userRole, onBack }) {
+  const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
+  
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onBack} className="p-1 hover:bg-gray-100 rounded">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h3 className="font-semibold" style={{ color: COLORS.blueDark }}>
+          Vissza a versenyzőkhöz
+        </h3>
+      </div>
+
+      {/* Versenyző fejléc */}
+      <div className="bg-white rounded-lg border p-4 mb-3 text-center" style={{ borderColor: COLORS.gray200 }}>
+        <div className="text-5xl mb-2">{competitor.avatar_emoji || '🎀'}</div>
+        <div className="text-lg font-bold" style={{ color: COLORS.blueDark }}>
+          {formatCompetitorName(competitor)}
+        </div>
+        <div className="text-sm text-gray-500">
+          {competitor.kategoria} · {competitor.korosztaly} · {age} éves
+        </div>
+        <div className="text-xs text-gray-400 mt-1">Csepel SC RG ★ csapat tagja</div>
+      </div>
+
+      {/* Érem-összesítő évvégi statisztika */}
+      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+
+      {/* Csapat-eredmények */}
+      <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+
+      {/* Korábbi eredmények - publikus nézet */}
+      <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
     </div>
   );
 }

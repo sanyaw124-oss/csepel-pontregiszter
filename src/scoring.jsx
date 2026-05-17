@@ -462,7 +462,10 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
 
   const isFinalized = category.is_finalized;
   const pontozottCount = Object.values(results).filter(r => r.score_total !== null).length;
-  const canEdit = !isFinalized || canFinalizeOrEdit;
+  // canEdit: csak admin/edző/szülő-admin szerkeszthet, versenyző és szülő SOHA
+  const canEdit = canInputProvisional && (!isFinalized || canFinalizeOrEdit);
+  // Csak nézés mód jelzése
+  const isReadOnly = !canInputProvisional;
 
   return (
     <div className="space-y-4">
