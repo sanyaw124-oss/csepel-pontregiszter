@@ -651,7 +651,7 @@ const NAV_ITEMS = [
   { id: 'profile', label: 'Profil', icon: User, roles: [ROLES.VERSENYZO, ROLES.SZULO, ROLES.SZULO_ADMIN] },
   { id: 'competitors', label: 'Versenyzők', icon: Users, roles: 'all' },
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
-  { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] },
+  { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
   { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.SZULO] },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN] }
@@ -744,7 +744,7 @@ function AppShell() {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {activeView === 'dashboard' && <DashboardView setActiveView={setActiveView} />}
         {activeView === 'profile' && hasParentRights(profile.role) && (
-          <ParentProfileView supabase={supabase} parentUserId={profile.id} dataReloadKey={dataReloadKey} />
+          <ParentProfileView supabase={supabase} parentUserId={profile.id} userRole={profile.role} dataReloadKey={dataReloadKey} />
         )}
         {activeView === 'profile' && profile.role === 'versenyzo' && (
           <PlaceholderView title="Profil" message="A 4. fázisban készül el — saját eredmények, fejlődési grafikon." />

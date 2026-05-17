@@ -1995,29 +1995,29 @@ function PublicCompetitorProfile({ supabase, competitor, onClose }) {
 
       {/* Alap adatok */}
       <div className="bg-white rounded-lg border p-4 mb-4" style={{ borderColor: COLORS.gray200 }}>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
-          <div>
-            <div className="text-xs text-gray-500">Kategória</div>
-            <div className="font-semibold" style={{ color: COLORS.blueDark }}>{competitor.kategoria}</div>
+        <div className="grid grid-cols-3 gap-3">
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-1">Kategória</div>
+            <div className="font-bold text-base" style={{ color: COLORS.blueDark }}>{competitor.kategoria}</div>
           </div>
-          <div>
-            <div className="text-xs text-gray-500">Korosztály</div>
-            <div className="font-semibold" style={{ color: COLORS.blueDark }}>{competitor.korosztaly}</div>
+          <div className="text-center border-l border-r" style={{ borderColor: COLORS.gray200 }}>
+            <div className="text-xs text-gray-500 mb-1">Korosztály</div>
+            <div className="font-bold text-base" style={{ color: COLORS.blueDark }}>{competitor.korosztaly}</div>
           </div>
-          <div>
-            <div className="text-xs text-gray-500">Életkor</div>
-            <div className="font-semibold" style={{ color: COLORS.blueDark }}>{age} éves</div>
+          <div className="text-center">
+            <div className="text-xs text-gray-500 mb-1">Életkor</div>
+            <div className="font-bold text-base" style={{ color: COLORS.blueDark }}>{age} éves</div>
           </div>
         </div>
       </div>
 
       {/* Eredmények */}
       <div className="bg-white rounded-lg border p-4" style={{ borderColor: COLORS.gray200 }}>
-        <h4 className="font-semibold mb-3 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
-          <Trophy className="w-5 h-5" />
+        <h4 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+          <Trophy className="w-6 h-6" />
           Eredmények
           {!loading && allResults.length > 0 && (
-            <span className="text-xs font-normal text-gray-500">({allResults.length})</span>
+            <span className="text-sm font-normal text-gray-500">({allResults.length})</span>
           )}
         </h4>
 
@@ -2034,42 +2034,57 @@ function PublicCompetitorProfile({ supabase, competitor, onClose }) {
             Még nincsenek eredmények.
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {allResults.map(r => {
               const style = placementStyle(r.placement);
               const icon = placementIcon(r.placement);
               const isTop = r.placement && r.placement <= 8;
+              const isMedal = r.placement && r.placement <= 3;
               return (
                 <div key={r.id}
-                     className={`border rounded-lg p-3 ${isTop ? 'border-2' : 'border'}`}
+                     className={`border rounded-lg ${isMedal ? 'border-4 p-4' : isTop ? 'border-2 p-4' : 'border p-3'}`}
                      style={style}>
-                  <div className="flex items-center justify-between gap-2 flex-wrap">
-                    <div className="flex items-center gap-2 min-w-0 flex-1">
-                      {icon && <span className="text-lg">{icon}</span>}
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      {icon && (
+                        <span className={isMedal ? 'text-5xl' : 'text-3xl'}>
+                          {icon}
+                        </span>
+                      )}
                       <div className="min-w-0 flex-1">
-                        <div className="font-semibold truncate">{r.competition}</div>
-                        <div className="text-xs opacity-75 flex items-center gap-1.5 flex-wrap mt-0.5">
+                        <div className={`font-bold ${isMedal ? 'text-lg' : 'text-base'} truncate`}>
+                          {r.competition}
+                        </div>
+                        <div className="text-sm opacity-80 flex items-center gap-1.5 flex-wrap mt-1">
                           <span>{r.date ? new Date(r.date).toLocaleDateString('hu-HU') : ''}</span>
                           {r.detail && (
                             <>
                               <span>·</span>
-                              <span className="capitalize">{r.detail}</span>
+                              <span className="capitalize font-medium">{r.detail}</span>
                             </>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-3 text-right">
+                    <div className="flex items-center gap-4 text-right">
                       {r.placement && (
-                        <div>
-                          <div className="text-xl font-bold">{r.placement}.</div>
-                          <div className="text-xs opacity-75">hely</div>
+                        <div className="text-center">
+                          <div className={`font-extrabold leading-none ${isMedal ? 'text-5xl' : isTop ? 'text-4xl' : 'text-2xl'}`}>
+                            {r.placement}.
+                          </div>
+                          <div className={`opacity-75 mt-1 ${isMedal ? 'text-sm font-semibold' : 'text-xs'}`}>
+                            hely
+                          </div>
                         </div>
                       )}
                       {r.score != null && r.score > 0 && (
-                        <div>
-                          <div className="text-sm font-semibold">{Number(r.score).toFixed(2)}</div>
-                          <div className="text-xs opacity-75">pont</div>
+                        <div className="text-center border-l pl-3" style={{ borderColor: 'currentColor', borderLeftWidth: '2px', borderLeftStyle: 'solid', opacity: 0.7 }}>
+                          <div className={`font-bold leading-none ${isMedal ? 'text-2xl' : 'text-lg'}`}>
+                            {Number(r.score).toFixed(2)}
+                          </div>
+                          <div className={`opacity-75 mt-1 ${isMedal ? 'text-sm' : 'text-xs'}`}>
+                            pont
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2082,11 +2097,11 @@ function PublicCompetitorProfile({ supabase, competitor, onClose }) {
       </div>
 
       {/* Lábléc - szín jelmagyarázat */}
-      <div className="mt-4 text-xs text-gray-500 flex flex-wrap gap-3 items-center">
-        <span>🥇 1.</span>
-        <span>🥈 2.</span>
-        <span>🥉 3.</span>
-        <span>⭐ 4-8. (Top 8)</span>
+      <div className="mt-4 bg-gray-50 rounded-lg p-3 text-sm text-gray-600 flex flex-wrap gap-4 items-center justify-center">
+        <span className="flex items-center gap-1"><span className="text-xl">🥇</span> 1. hely</span>
+        <span className="flex items-center gap-1"><span className="text-xl">🥈</span> 2. hely</span>
+        <span className="flex items-center gap-1"><span className="text-xl">🥉</span> 3. hely</span>
+        <span className="flex items-center gap-1"><span className="text-xl">⭐</span> 4-8. (Top 8)</span>
       </div>
     </div>
   );
@@ -2096,7 +2111,7 @@ function PublicCompetitorProfile({ supabase, competitor, onClose }) {
 // PARENT PROFILE VIEW — szülő látja és szerkesztheti a saját gyerekét
 // ═══════════════════════════════════════════════════════════════════
 
-export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
+export function ParentProfileView({ supabase, parentUserId, userRole, dataReloadKey }) {
   const [children, setChildren] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -2135,13 +2150,16 @@ export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
 
   useEffect(() => { load(); }, [load, dataReloadKey]);
 
+  // v0.9.25: a szülő ugyanazt látja a saját gyerekén mint az edző egy versenyzőn
+  // (CompetitorForm — érem-összesítő fent, fejlődési grafikon, eredmények, szem. adatok lent)
   if (editing) {
     return (
-      <ParentChildEditForm
+      <CompetitorForm
         supabase={supabase}
         competitor={editing}
         onSaved={() => { setEditing(null); load(); }}
         onCancel={() => setEditing(null)}
+        userRole={userRole}
       />
     );
   }
@@ -2185,18 +2203,13 @@ export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
                       <div className="text-xs text-gray-500 mt-1">Inaktív</div>
                     )}
                   </div>
-                  <Edit2 className="w-5 h-5 text-gray-400" />
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
               </div>
             );
           })}
         </div>
       )}
-
-      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">
-        <strong>Megjegyzés:</strong> Kattints egy gyerekre a profil szerkesztéséhez. 
-        Új gyerek hozzárendelését vagy szülők változtatását az adminisztrátortól kérheted.
-      </div>
     </div>
   );
 }
