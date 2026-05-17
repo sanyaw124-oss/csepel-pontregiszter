@@ -5,6 +5,7 @@ import {
   Star, ArrowUp, ArrowDown, BarChart3, Lock, MessageCircle,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
+import { CompetitorProgressChart } from './progress-chart';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -474,6 +475,72 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       </div>
 
       <div className="space-y-3">
+        {/* ═══════════════════════════════════════════════════════════ */}
+        {/* v0.9.25 ÚJ SORREND:                                          */}
+        {/*  1) Ideiglenes figyelmeztetés (ha van)                       */}
+        {/*  2) Érem-összesítő (legfontosabb info)                       */}
+        {/*  3) Fejlődési grafikon (ÚJ)                                  */}
+        {/*  4) Csapat-eredmények                                        */}
+        {/*  5) Korábbi eredmények                                       */}
+        {/*  6) Edzői megjegyzések                                       */}
+        {/*  7) Edzések                                                  */}
+        {/*  8) Személyes adatok (LE - ritkán változik)                  */}
+        {/* ═══════════════════════════════════════════════════════════ */}
+
+        {/* Ideiglenes profil figyelmeztetés */}
+        {!isNew && competitor?.is_provisional && (
+          <div className="rounded-lg p-3 text-sm flex gap-2 border"
+               style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold mb-1">Ideiglenes profil</div>
+              <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Évvégi statisztika - érem-összesítő (legfontosabb info legfelül) */}
+        {!isNew && competitor?.id && (
+          <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+        )}
+
+        {/* Fejlődési grafikon (v0.9.25 ÚJ) */}
+        {!isNew && competitor?.id && (
+          <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Csapat-eredmények */}
+        {!isNew && competitor?.id && (
+          <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Korábbi eredmények (historical) */}
+        {!isNew && competitor?.id && (
+          <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+        )}
+
+        {/* Edzői privát megjegyzések */}
+        {!isNew && competitor?.id && (
+          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+        )}
+
+        {/* Edzések */}
+        {!isNew && competitor?.id && (
+          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* ─────────────────────────────────────────────────────────── */}
+        {/* SZEMÉLYES ADATOK (átrendezve LE - ritkán változik)          */}
+        {/* ─────────────────────────────────────────────────────────── */}
+        {!isNew && competitor?.id && (
+          <div className="pt-2">
+            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
+              <Edit2 className="w-4 h-4" />
+              Személyes adatok
+            </h4>
+          </div>
+        )}
+
         <Field label="Teljes név *">
           <Input
             type="text"
@@ -588,48 +655,10 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           </Field>
         )}
 
-
         {isNew && (
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
             A szülő-gyerek kapcsolatokat a mentés után tudod beállítani — szerkeszd újra a versenyzőt.
           </div>
-        )}
-        
-        {/* Ideiglenes profil figyelmeztetés */}
-        {!isNew && competitor?.is_provisional && (
-          <div className="rounded-lg p-3 text-sm flex gap-2 border"
-               style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="font-semibold mb-1">Ideiglenes profil</div>
-              <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
-            </div>
-          </div>
-        )}
-
-        {/* Évvégi statisztika - csak meglévő versenyzőnél */}
-        {!isNew && competitor?.id && (
-          <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
-        )}
-
-        {/* Csapat-eredmények - csak meglévő versenyzőnél */}
-        {!isNew && competitor?.id && (
-          <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
-        )}
-
-        {/* Edzői privát megjegyzések - csak meglévő versenyzőnél */}
-        {!isNew && competitor?.id && (
-          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole={userRole} />
-        )}
-
-        {/* Korábbi eredmények - csak meglévő versenyzőnél */}
-        {!isNew && competitor?.id && (
-          <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
-        )}
-
-        {/* Edzések - csak meglévő versenyzőnél */}
-        {!isNew && competitor?.id && (
-          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
         )}
 
         <ErrorBox>{error}</ErrorBox>
