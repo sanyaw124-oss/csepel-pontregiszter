@@ -639,6 +639,15 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         )}
 
         {!isNew && (
+          <CompetitorLoginManager
+            supabase={supabase}
+            competitor={competitor}
+            userRole={userRole}
+            onSuccess={() => {}}
+          />
+        )}
+
+        {!isNew && (
           <Field label="Aktív státusz">
             <button
               type="button"
@@ -687,6 +696,355 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// VERSENYZŐI BELÉPÉS — Email + jelszó hozzárendelése a versenyzőhöz
+// v0.9.30: Petra/Ori számára létrehozható saját belépés a CompetitorForm-on belül
+// ═══════════════════════════════════════════════════════════════════
+function CompetitorLoginManager({ supabase, competitor, userRole, onSuccess }) {
+  const [existingProfile, setExistingProfile] = useState(null);  // van-e már belépése?
+  const [loading, setLoading] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Csak admin / szulo_admin használhatja
+  const canManage = userRole === 'admin' || userRole === 'szulo_admin';
+
+  // Versenyző inaktív → letiltjuk a belépés-engedélyezést
+  const isInactive = !competitor?.is_active;
+
+  // Jelszó validáció
+  const validatePassword = (pwd) => {
+    if (!pwd || pwd.length < 6) return 'A jelszó legalább 6 karakter legyen';
+    if (!/\d/.test(pwd)) return 'A jelszó legalább 1 számot tartalmazzon';
+    return null;
+  };
+
+  // Meglévő belépés ellenőrzése
+  const checkExisting = useCallback(async () => {
+    if (!competitor?.id) {
+      setLoading(false);
+      return;
+    }
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, role')
+        .eq('competitor_id', competitor.id)
+        .eq('role', 'versenyzo')
+        .maybeSingle();
+      if (error) throw error;
+      setExistingProfile(data);
+    } catch (err) {
+      console.error('Belépés ellenőrzése sikertelen:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, competitor?.id]);
+
+  useEffect(() => { checkExisting(); }, [checkExisting]);
+
+  // Belépés létrehozása
+  const createLogin = async () => {
+    setError(null); setSuccess(null);
+    if (!email.trim()) { setError('Az email kötelező'); return; }
+    const pwdErr = validatePassword(password);
+    if (pwdErr) { setError(pwdErr); return; }
+    if (isInactive) { setError('Inaktív versenyzőnek nem hozható létre belépés'); return; }
+
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nincs aktív session');
+
+      const response = await fetch(
+        `${supabase.supabaseUrl}/functions/v1/create-user`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            email: email.trim(),
+            full_name: competitor.full_name,
+            role: 'versenyzo',
+            password: password
+          })
+        }
+      );
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Belépés létrehozása sikertelen');
+
+      // Hozzákapcsolás a profiles táblán (a competitor_id mező frissítése)
+      const newUserId = result.user_id || result.user?.id;
+      if (newUserId) {
+        await supabase
+          .from('profiles')
+          .update({ competitor_id: competitor.id })
+          .eq('id', newUserId);
+      }
+
+      setSuccess(`Belépés létrehozva: ${email}`);
+      setEmail(''); setPassword('');
+      await checkExisting();
+      if (onSuccess) onSuccess();
+    } catch (err) {
+      setError('Hiba: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Jelszó megváltoztatása
+  const changePassword = async () => {
+    setError(null); setSuccess(null);
+    const pwdErr = validatePassword(newPassword);
+    if (pwdErr) { setError(pwdErr); return; }
+
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nincs aktív session');
+
+      const response = await fetch(
+        `${supabase.supabaseUrl}/functions/v1/change-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: existingProfile.id,
+            new_password: newPassword
+          })
+        }
+      );
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || 'Jelszó váltás sikertelen');
+
+      setSuccess('Új jelszó beállítva. Add át a versenyzőnek!');
+      setNewPassword('');
+      setShowPasswordChange(false);
+    } catch (err) {
+      setError('Hiba: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Belépés visszavonása (fiók törlése — versenyző MARAD)
+  const deleteLogin = async () => {
+    setError(null); setSuccess(null);
+    setSaving(true);
+    try {
+      // 1. profiles törlése (a competitor_id kapcsolat is törlődik)
+      // Megjegyzés: az auth.users törlését csak service_role-os edge function 
+      // tudja elvégezni. Itt a profiles törlésével "letiltjuk" a belépést úgy,
+      // hogy a profil hiányzik (vagy a competitor_id-t üresre rakjuk).
+      // Egyszerűbb: competitor_id NULL-ra állítva, role változatlanul marad,
+      // de a CompetitorDashboard nem fogja látni az adatokat.
+      // Még jobb: töröljük teljesen a profiles-t és az SQL trigger törli auth-ot.
+      
+      // Direct SQL törlés a profiles táblán
+      const { error: delError } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', existingProfile.id);
+      
+      if (delError) throw delError;
+
+      // Megjegyzés: az auth.users törléséhez Sándornak edge function-t kell csinálnia.
+      // Az SQL trigger most már intézi a competitor inaktiválás esetét.
+
+      setSuccess('Belépés visszavonva. A versenyző adatai megmaradtak.');
+      setExistingProfile(null);
+      setConfirmDelete(false);
+      if (onSuccess) onSuccess();
+    } catch (err) {
+      setError('Hiba: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Ha nem admin/szulo_admin, ne mutassuk
+  if (!canManage) return null;
+  if (loading) return null;
+
+  return (
+    <div className="rounded-lg p-3 border" style={{ backgroundColor: '#FCE4EC', borderColor: '#EC4899' }}>
+      <div className="flex items-center gap-2 mb-2">
+        <Lock className="w-4 h-4" style={{ color: '#BE185D' }} />
+        <div className="font-semibold text-sm" style={{ color: '#BE185D' }}>
+          Versenyzői belépés
+        </div>
+      </div>
+
+      {/* HA MÁR VAN belépése */}
+      {existingProfile ? (
+        <div className="space-y-2">
+          <div className="text-xs text-gray-700 bg-white rounded p-2">
+            <strong>Email:</strong> {existingProfile.email}
+            <br />
+            <span className="text-gray-500">A versenyző bejelentkezhet ezzel az email cimmel.</span>
+          </div>
+
+          {/* JELSZÓ MEGVÁLTOZTATÁSA */}
+          {!showPasswordChange ? (
+            <button
+              onClick={() => setShowPasswordChange(true)}
+              className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5"
+              style={{ borderColor: '#EC4899', color: '#BE185D', backgroundColor: 'white' }}
+            >
+              <Eye className="w-3 h-3" />
+              Új jelszó beállítása
+            </button>
+          ) : (
+            <div className="bg-white border rounded p-2 space-y-2" style={{ borderColor: '#FBCFE8' }}>
+              <div className="text-xs font-medium" style={{ color: '#BE185D' }}>
+                Új jelszó (min. 6 karakter, min. 1 szám):
+              </div>
+              <div className="relative">
+                <input
+                  type={showNewPassword ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="új jelszó"
+                  className="w-full px-3 py-1.5 text-sm border rounded pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPassword(!showNewPassword)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={changePassword}
+                  disabled={saving}
+                  className="px-3 py-1.5 rounded text-xs text-white"
+                  style={{ backgroundColor: '#EC4899' }}
+                >
+                  Mentés
+                </button>
+                <button
+                  onClick={() => { setShowPasswordChange(false); setNewPassword(''); setError(null); }}
+                  className="px-3 py-1.5 rounded text-xs border bg-white"
+                >
+                  Mégse
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* BELÉPÉS VISSZAVONÁSA */}
+          {!confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5 mt-1"
+              style={{ borderColor: '#DC2626', color: '#991B1B', backgroundColor: 'white' }}
+            >
+              <Trash2 className="w-3 h-3" />
+              Belépés visszavonása
+            </button>
+          ) : (
+            <div className="bg-red-50 border border-red-300 rounded p-2 text-xs">
+              <div className="text-red-900 mb-2">
+                Biztosan visszavonod a belépést? A versenyző NEM tud többé bejelentkezni.
+                Az ő adatai megmaradnak.
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={deleteLogin}
+                  disabled={saving}
+                  className="px-3 py-1 rounded text-xs text-white bg-red-600"
+                >
+                  Igen, visszavonom
+                </button>
+                <button
+                  onClick={() => setConfirmDelete(false)}
+                  className="px-3 py-1 rounded text-xs border bg-white"
+                >
+                  Mégse
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        /* NINCS MÉG belépése */
+        <div className="space-y-2">
+          {isInactive && (
+            <div className="text-xs bg-amber-50 border border-amber-300 rounded p-2 text-amber-900">
+              ⚠️ A versenyző inaktív állapotú — előbb aktiválni kell.
+            </div>
+          )}
+          <div className="text-xs text-gray-600 mb-1">
+            Hozz létre belépést, hogy a versenyző mobilról is megtekinthesse saját adatait.
+          </div>
+          <input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="email@példa.hu"
+            disabled={isInactive}
+            className="w-full px-3 py-1.5 text-sm border rounded"
+          />
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="jelszó (min. 6 karakter, min. 1 szám)"
+              disabled={isInactive}
+              className="w-full px-3 py-1.5 text-sm border rounded pr-8"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+          <button
+            onClick={createLogin}
+            disabled={saving || isInactive}
+            className="px-3 py-1.5 rounded text-xs text-white flex items-center gap-1.5 disabled:opacity-50"
+            style={{ backgroundColor: '#EC4899' }}
+          >
+            {saving ? <Loader className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
+            Belépés engedélyezése
+          </button>
+        </div>
+      )}
+
+      {error && (
+        <div className="mt-2 text-xs bg-red-50 border border-red-300 rounded p-2 text-red-900">
+          {error}
+        </div>
+      )}
+      {success && (
+        <div className="mt-2 text-xs bg-green-50 border border-green-300 rounded p-2 text-green-900">
+          {success}
+        </div>
+      )}
     </div>
   );
 }
