@@ -69,14 +69,17 @@ function shiftDate(dateStr, days) {
 
 function formatCompetitorName(c) {
   if (!c) return '';
-  if (c.nickname) {
-    // "Völgyesi Noémi" + nickname "Ori" → "Völgyesi 'Ori' Noémi"
-    const parts = (c.full_name || '').split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
-    }
-  }
-  return c.full_name || '';
+  if (!c.nickname) return c.full_name || '';
+  // v0.9.28: becenév előre, utána a teljes név
+  // pl. "Völgyesi Noémi" + nickname "Ori" → '"Ori" Völgyesi Noémi'
+  return `"${c.nickname}" ${c.full_name || ''}`.trim();
+}
+
+// Rendezési kulcs: becenév először (ha van), különben vezetéknév
+function competitorSortKey(c) {
+  if (!c) return '';
+  if (c.nickname) return c.nickname.toLowerCase();
+  return (c.full_name || '').toLowerCase();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -145,7 +148,12 @@ export function TrainingView({ supabase, userRole, dataReloadKey }) {
         (atts || []).forEach(a => attendIds.add(a.competitor_id));
       }
 
-      setCompetitors(comps || []);
+      // v0.9.28: rendezés becenév szerint (becenév nélküli versenyzőknél vezetéknév)
+      const sortedComps = (comps || []).slice().sort((a, b) => 
+        competitorSortKey(a).localeCompare(competitorSortKey(b), 'hu')
+      );
+
+      setCompetitors(sortedComps);
       setYearlyStats(statsMap);
       setExistingSession(sess);
       setNotes(sess?.notes || '');

@@ -16,11 +16,16 @@ import { CompetitorProgressChart } from './progress-chart';
 export function formatCompetitorName(c) {
   if (!c) return '';
   if (!c.nickname) return c.full_name;
-  const parts = c.full_name.trim().split(' ');
-  if (parts.length === 2) {
-    return `${parts[0]} "${c.nickname}" ${parts[1]}`;
-  }
-  return `${c.full_name} "${c.nickname}"`;
+  // v0.9.28: becenév előre, utána a teljes név
+  // pl. "Völgyesi Noémi" + nickname "Ori" → '"Ori" Völgyesi Noémi'
+  return `"${c.nickname}" ${c.full_name}`;
+}
+
+// Rendezési kulcs: becenév először (ha van), különben vezetéknév
+export function competitorSortKey(c) {
+  if (!c) return '';
+  if (c.nickname) return c.nickname.toLowerCase();
+  return (c.full_name || '').toLowerCase();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1683,6 +1688,9 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
     }
     return true;
   });
+
+  // v0.9.28: rendezés becenév szerint (becenév nélküli versenyzőknél vezetéknév)
+  filtered.sort((a, b) => competitorSortKey(a).localeCompare(competitorSortKey(b), 'hu'));
   
   // Csoportosítás: ideiglenes vs végleges
   const provisional = filtered.filter(c => c.is_provisional);
