@@ -693,7 +693,6 @@ function AppShell() {
             </span>
             <span className="text-gray-500 text-xs sm:text-sm">
               {ROLE_LABELS[profile.role]}
-              {profile.titulus ? ` · ${profile.titulus}` : ''}
             </span>
           </div>
           <div className="flex items-center gap-1">
@@ -956,7 +955,6 @@ function DashboardView({ setActiveView }) {
       </h2>
       <p className="text-gray-600 mb-6">
         {ROLE_LABELS[profile.role]}
-        {profile.titulus ? ` · ${profile.titulus}` : ''}
       </p>
 
       {error && (

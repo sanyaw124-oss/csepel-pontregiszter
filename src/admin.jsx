@@ -1048,8 +1048,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
           </Field>
         )}
 
-        {/* ÚJ: meglévő szülőnél role-váltó (csak admin láthatja) */}
-        {!isNew && canSetSzuloAdmin && (
+        {/* Szerepkör választó: új létrehozáskor is + meglévőnél is (csak admin) */}
+        {canSetSzuloAdmin && (
           <Field 
             label="Szerepkör" 
             hint={form.role === 'szulo_admin' 
@@ -1290,7 +1290,6 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
     full_name: member?.full_name || '',
     email: member?.email || '',
     role: member?.role || 'edzo',
-    titulus: member?.titulus || '',
     password: ''  // ÚJ: manuális jelszó
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -1344,7 +1343,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
               email: (form.email || '').trim(),
               full_name: (form.full_name || '').trim(),
               role: form.role,
-              titulus: (form.titulus || '').trim() || null,
+              titulus: null,
               password: form.password  // ÚJ
             })
           }
@@ -1360,7 +1359,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
           .update({
             full_name: (form.full_name || '').trim(),
             role: form.role,
-            titulus: (form.titulus || '').trim() || null
+            titulus: null
           })
           .eq('id', member.id);
         if (error) throw error;
@@ -1470,17 +1469,14 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
           </Field>
         )}
         
-        <Field label="Szerepkör" hint={form.role === 'szulo_admin' ? 'Admin jog + saját gyerekek látása. A gyerekeket a Szülők fülön rendelheted hozzá.' : null}>
+        <Field label="Szerepkör" hint={form.role === 'szulo_admin' ? 'Admin jog + saját gyerekek látása. A gyerekeket a Szülők fülön rendelheted hozzá.' : (form.role === 'admin' ? 'Teljes admin jog, minden adathoz hozzáfér.' : null)}>
           <Select value={form.role} onChange={(e) => setForm({...form, role: e.target.value})}>
             <option value="vezetoedzo">Vezetőedző</option>
             <option value="edzo">Edző</option>
             <option value="segededzo">Segédedző</option>
+            {canCreateSzuloAdmin && <option value="admin">Admin</option>}
             {canCreateSzuloAdmin && <option value="szulo_admin">Szülő-admin</option>}
           </Select>
-        </Field>
-        <Field label="Titulus (opcionális)">
-          <Input value={form.titulus} onChange={(e) => setForm({...form, titulus: e.target.value})} 
-                 placeholder="pl. balett-edző, koreográfus" />
         </Field>
 
         {/* ÚJ: jelszó módosítása meglévő fióknál */}
