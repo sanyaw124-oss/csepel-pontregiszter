@@ -5,7 +5,6 @@ import {
   Star, ArrowUp, ArrowDown, BarChart3, Lock, MessageCircle,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
-import { CompetitorProgressChart } from './progress-chart';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -16,16 +15,11 @@ import { CompetitorProgressChart } from './progress-chart';
 export function formatCompetitorName(c) {
   if (!c) return '';
   if (!c.nickname) return c.full_name;
-  // v0.9.28: becenév előre, utána a teljes név
-  // pl. "Völgyesi Noémi" + nickname "Ori" → '"Ori" Völgyesi Noémi'
-  return `"${c.nickname}" ${c.full_name}`;
-}
-
-// Rendezési kulcs: becenév először (ha van), különben vezetéknév
-export function competitorSortKey(c) {
-  if (!c) return '';
-  if (c.nickname) return c.nickname.toLowerCase();
-  return (c.full_name || '').toLowerCase();
+  const parts = c.full_name.trim().split(' ');
+  if (parts.length === 2) {
+    return `${parts[0]} "${c.nickname}" ${parts[1]}`;
+  }
+  return `${c.full_name} "${c.nickname}"`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -480,72 +474,6 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       </div>
 
       <div className="space-y-3">
-        {/* ═══════════════════════════════════════════════════════════ */}
-        {/* v0.9.25 ÚJ SORREND:                                          */}
-        {/*  1) Ideiglenes figyelmeztetés (ha van)                       */}
-        {/*  2) Érem-összesítő (legfontosabb info)                       */}
-        {/*  3) Fejlődési grafikon (ÚJ)                                  */}
-        {/*  4) Csapat-eredmények                                        */}
-        {/*  5) Korábbi eredmények                                       */}
-        {/*  6) Edzői megjegyzések                                       */}
-        {/*  7) Edzések                                                  */}
-        {/*  8) Személyes adatok (LE - ritkán változik)                  */}
-        {/* ═══════════════════════════════════════════════════════════ */}
-
-        {/* Ideiglenes profil figyelmeztetés */}
-        {!isNew && competitor?.is_provisional && (
-          <div className="rounded-lg p-3 text-sm flex gap-2 border"
-               style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
-            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-            <div>
-              <div className="font-semibold mb-1">Ideiglenes profil</div>
-              <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
-            </div>
-          </div>
-        )}
-
-        {/* Évvégi statisztika - érem-összesítő (legfontosabb info legfelül) */}
-        {!isNew && competitor?.id && (
-          <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
-        )}
-
-        {/* Fejlődési grafikon (v0.9.25 ÚJ) */}
-        {!isNew && competitor?.id && (
-          <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
-        )}
-
-        {/* Csapat-eredmények */}
-        {!isNew && competitor?.id && (
-          <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
-        )}
-
-        {/* Korábbi eredmények (historical) */}
-        {!isNew && competitor?.id && (
-          <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
-        )}
-
-        {/* Edzői privát megjegyzések */}
-        {!isNew && competitor?.id && (
-          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole={userRole} />
-        )}
-
-        {/* Edzések */}
-        {!isNew && competitor?.id && (
-          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
-        )}
-
-        {/* ─────────────────────────────────────────────────────────── */}
-        {/* SZEMÉLYES ADATOK (átrendezve LE - ritkán változik)          */}
-        {/* ─────────────────────────────────────────────────────────── */}
-        {!isNew && competitor?.id && (
-          <div className="pt-2">
-            <h4 className="font-semibold text-sm mb-2 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
-              <Edit2 className="w-4 h-4" />
-              Személyes adatok
-            </h4>
-          </div>
-        )}
-
         <Field label="Teljes név *">
           <Input
             type="text"
@@ -639,15 +567,6 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         )}
 
         {!isNew && (
-          <CompetitorLoginManager
-            supabase={supabase}
-            competitor={competitor}
-            userRole={userRole}
-            onSuccess={() => {}}
-          />
-        )}
-
-        {!isNew && (
           <Field label="Aktív státusz">
             <button
               type="button"
@@ -669,10 +588,48 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           </Field>
         )}
 
+
         {isNew && (
           <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg">
             A szülő-gyerek kapcsolatokat a mentés után tudod beállítani — szerkeszd újra a versenyzőt.
           </div>
+        )}
+        
+        {/* Ideiglenes profil figyelmeztetés */}
+        {!isNew && competitor?.is_provisional && (
+          <div className="rounded-lg p-3 text-sm flex gap-2 border"
+               style={{ backgroundColor: '#fef3c7', borderColor: '#f59e0b', color: '#92400e' }}>
+            <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+            <div>
+              <div className="font-semibold mb-1">Ideiglenes profil</div>
+              <div>Ez a versenyző gyors importálás során jött létre. Ellenőrizd az adatokat, és ha mindent kitöltöttél, a "Mentés véglegesként" gombbal véglegesítheted.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Évvégi statisztika - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+        )}
+
+        {/* Csapat-eredmények - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* Edzői privát megjegyzések - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+        )}
+
+        {/* Korábbi eredmények - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+        )}
+
+        {/* Edzések - csak meglévő versenyzőnél */}
+        {!isNew && competitor?.id && (
+          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
         )}
 
         <ErrorBox>{error}</ErrorBox>
@@ -696,355 +653,6 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           <SecondaryButton onClick={onCancel}>Mégse</SecondaryButton>
         </div>
       </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// VERSENYZŐI BELÉPÉS — Email + jelszó hozzárendelése a versenyzőhöz
-// v0.9.30: Petra/Ori számára létrehozható saját belépés a CompetitorForm-on belül
-// ═══════════════════════════════════════════════════════════════════
-function CompetitorLoginManager({ supabase, competitor, userRole, onSuccess }) {
-  const [existingProfile, setExistingProfile] = useState(null);  // van-e már belépése?
-  const [loading, setLoading] = useState(true);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
-  const [showPasswordChange, setShowPasswordChange] = useState(false);
-  const [newPassword, setNewPassword] = useState('');
-  const [showNewPassword, setShowNewPassword] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  // Csak admin / szulo_admin használhatja
-  const canManage = userRole === 'admin' || userRole === 'szulo_admin';
-
-  // Versenyző inaktív → letiltjuk a belépés-engedélyezést
-  const isInactive = !competitor?.is_active;
-
-  // Jelszó validáció
-  const validatePassword = (pwd) => {
-    if (!pwd || pwd.length < 6) return 'A jelszó legalább 6 karakter legyen';
-    if (!/\d/.test(pwd)) return 'A jelszó legalább 1 számot tartalmazzon';
-    return null;
-  };
-
-  // Meglévő belépés ellenőrzése
-  const checkExisting = useCallback(async () => {
-    if (!competitor?.id) {
-      setLoading(false);
-      return;
-    }
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, email, full_name, role')
-        .eq('competitor_id', competitor.id)
-        .eq('role', 'versenyzo')
-        .maybeSingle();
-      if (error) throw error;
-      setExistingProfile(data);
-    } catch (err) {
-      console.error('Belépés ellenőrzése sikertelen:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase, competitor?.id]);
-
-  useEffect(() => { checkExisting(); }, [checkExisting]);
-
-  // Belépés létrehozása
-  const createLogin = async () => {
-    setError(null); setSuccess(null);
-    if (!email.trim()) { setError('Az email kötelező'); return; }
-    const pwdErr = validatePassword(password);
-    if (pwdErr) { setError(pwdErr); return; }
-    if (isInactive) { setError('Inaktív versenyzőnek nem hozható létre belépés'); return; }
-
-    setSaving(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Nincs aktív session');
-
-      const response = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/create-user`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            email: email.trim(),
-            full_name: competitor.full_name,
-            role: 'versenyzo',
-            password: password
-          })
-        }
-      );
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Belépés létrehozása sikertelen');
-
-      // Hozzákapcsolás a profiles táblán (a competitor_id mező frissítése)
-      const newUserId = result.user_id || result.user?.id;
-      if (newUserId) {
-        await supabase
-          .from('profiles')
-          .update({ competitor_id: competitor.id })
-          .eq('id', newUserId);
-      }
-
-      setSuccess(`Belépés létrehozva: ${email}`);
-      setEmail(''); setPassword('');
-      await checkExisting();
-      if (onSuccess) onSuccess();
-    } catch (err) {
-      setError('Hiba: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Jelszó megváltoztatása
-  const changePassword = async () => {
-    setError(null); setSuccess(null);
-    const pwdErr = validatePassword(newPassword);
-    if (pwdErr) { setError(pwdErr); return; }
-
-    setSaving(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session) throw new Error('Nincs aktív session');
-
-      const response = await fetch(
-        `${supabase.supabaseUrl}/functions/v1/change-password`,
-        {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${session.access_token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            user_id: existingProfile.id,
-            new_password: newPassword
-          })
-        }
-      );
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Jelszó váltás sikertelen');
-
-      setSuccess('Új jelszó beállítva. Add át a versenyzőnek!');
-      setNewPassword('');
-      setShowPasswordChange(false);
-    } catch (err) {
-      setError('Hiba: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Belépés visszavonása (fiók törlése — versenyző MARAD)
-  const deleteLogin = async () => {
-    setError(null); setSuccess(null);
-    setSaving(true);
-    try {
-      // 1. profiles törlése (a competitor_id kapcsolat is törlődik)
-      // Megjegyzés: az auth.users törlését csak service_role-os edge function 
-      // tudja elvégezni. Itt a profiles törlésével "letiltjuk" a belépést úgy,
-      // hogy a profil hiányzik (vagy a competitor_id-t üresre rakjuk).
-      // Egyszerűbb: competitor_id NULL-ra állítva, role változatlanul marad,
-      // de a CompetitorDashboard nem fogja látni az adatokat.
-      // Még jobb: töröljük teljesen a profiles-t és az SQL trigger törli auth-ot.
-      
-      // Direct SQL törlés a profiles táblán
-      const { error: delError } = await supabase
-        .from('profiles')
-        .delete()
-        .eq('id', existingProfile.id);
-      
-      if (delError) throw delError;
-
-      // Megjegyzés: az auth.users törléséhez Sándornak edge function-t kell csinálnia.
-      // Az SQL trigger most már intézi a competitor inaktiválás esetét.
-
-      setSuccess('Belépés visszavonva. A versenyző adatai megmaradtak.');
-      setExistingProfile(null);
-      setConfirmDelete(false);
-      if (onSuccess) onSuccess();
-    } catch (err) {
-      setError('Hiba: ' + err.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Ha nem admin/szulo_admin, ne mutassuk
-  if (!canManage) return null;
-  if (loading) return null;
-
-  return (
-    <div className="rounded-lg p-3 border" style={{ backgroundColor: '#FCE4EC', borderColor: '#EC4899' }}>
-      <div className="flex items-center gap-2 mb-2">
-        <Lock className="w-4 h-4" style={{ color: '#BE185D' }} />
-        <div className="font-semibold text-sm" style={{ color: '#BE185D' }}>
-          Versenyzői belépés
-        </div>
-      </div>
-
-      {/* HA MÁR VAN belépése */}
-      {existingProfile ? (
-        <div className="space-y-2">
-          <div className="text-xs text-gray-700 bg-white rounded p-2">
-            <strong>Email:</strong> {existingProfile.email}
-            <br />
-            <span className="text-gray-500">A versenyző bejelentkezhet ezzel az email cimmel.</span>
-          </div>
-
-          {/* JELSZÓ MEGVÁLTOZTATÁSA */}
-          {!showPasswordChange ? (
-            <button
-              onClick={() => setShowPasswordChange(true)}
-              className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5"
-              style={{ borderColor: '#EC4899', color: '#BE185D', backgroundColor: 'white' }}
-            >
-              <Eye className="w-3 h-3" />
-              Új jelszó beállítása
-            </button>
-          ) : (
-            <div className="bg-white border rounded p-2 space-y-2" style={{ borderColor: '#FBCFE8' }}>
-              <div className="text-xs font-medium" style={{ color: '#BE185D' }}>
-                Új jelszó (min. 6 karakter, min. 1 szám):
-              </div>
-              <div className="relative">
-                <input
-                  type={showNewPassword ? 'text' : 'password'}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="új jelszó"
-                  className="w-full px-3 py-1.5 text-sm border rounded pr-8"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowNewPassword(!showNewPassword)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                >
-                  {showNewPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                </button>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={changePassword}
-                  disabled={saving}
-                  className="px-3 py-1.5 rounded text-xs text-white"
-                  style={{ backgroundColor: '#EC4899' }}
-                >
-                  Mentés
-                </button>
-                <button
-                  onClick={() => { setShowPasswordChange(false); setNewPassword(''); setError(null); }}
-                  className="px-3 py-1.5 rounded text-xs border bg-white"
-                >
-                  Mégse
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* BELÉPÉS VISSZAVONÁSA */}
-          {!confirmDelete ? (
-            <button
-              onClick={() => setConfirmDelete(true)}
-              className="text-xs px-3 py-1.5 rounded border flex items-center gap-1.5 mt-1"
-              style={{ borderColor: '#DC2626', color: '#991B1B', backgroundColor: 'white' }}
-            >
-              <Trash2 className="w-3 h-3" />
-              Belépés visszavonása
-            </button>
-          ) : (
-            <div className="bg-red-50 border border-red-300 rounded p-2 text-xs">
-              <div className="text-red-900 mb-2">
-                Biztosan visszavonod a belépést? A versenyző NEM tud többé bejelentkezni.
-                Az ő adatai megmaradnak.
-              </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={deleteLogin}
-                  disabled={saving}
-                  className="px-3 py-1 rounded text-xs text-white bg-red-600"
-                >
-                  Igen, visszavonom
-                </button>
-                <button
-                  onClick={() => setConfirmDelete(false)}
-                  className="px-3 py-1 rounded text-xs border bg-white"
-                >
-                  Mégse
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      ) : (
-        /* NINCS MÉG belépése */
-        <div className="space-y-2">
-          {isInactive && (
-            <div className="text-xs bg-amber-50 border border-amber-300 rounded p-2 text-amber-900">
-              ⚠️ A versenyző inaktív állapotú — előbb aktiválni kell.
-            </div>
-          )}
-          <div className="text-xs text-gray-600 mb-1">
-            Hozz létre belépést, hogy a versenyző mobilról is megtekinthesse saját adatait.
-          </div>
-          <input
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="email@példa.hu"
-            disabled={isInactive}
-            className="w-full px-3 py-1.5 text-sm border rounded"
-          />
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="jelszó (min. 6 karakter, min. 1 szám)"
-              disabled={isInactive}
-              className="w-full px-3 py-1.5 text-sm border rounded pr-8"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-            </button>
-          </div>
-          <button
-            onClick={createLogin}
-            disabled={saving || isInactive}
-            className="px-3 py-1.5 rounded text-xs text-white flex items-center gap-1.5 disabled:opacity-50"
-            style={{ backgroundColor: '#EC4899' }}
-          >
-            {saving ? <Loader className="w-3 h-3 animate-spin" /> : <UserPlus className="w-3 h-3" />}
-            Belépés engedélyezése
-          </button>
-        </div>
-      )}
-
-      {error && (
-        <div className="mt-2 text-xs bg-red-50 border border-red-300 rounded p-2 text-red-900">
-          {error}
-        </div>
-      )}
-      {success && (
-        <div className="mt-2 text-xs bg-green-50 border border-green-300 rounded p-2 text-green-900">
-          {success}
-        </div>
-      )}
     </div>
   );
 }
@@ -1411,8 +1019,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
           </Field>
         )}
 
-        {/* Szerepkör választó: új létrehozáskor is + meglévőnél is (csak admin) */}
-        {canSetSzuloAdmin && (
+        {/* ÚJ: meglévő szülőnél role-váltó (csak admin láthatja) */}
+        {!isNew && canSetSzuloAdmin && (
           <Field 
             label="Szerepkör" 
             hint={form.role === 'szulo_admin' 
@@ -1653,6 +1261,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
     full_name: member?.full_name || '',
     email: member?.email || '',
     role: member?.role || 'edzo',
+    titulus: member?.titulus || '',
     password: ''  // ÚJ: manuális jelszó
   });
   const [showPassword, setShowPassword] = useState(false);
@@ -1706,7 +1315,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
               email: (form.email || '').trim(),
               full_name: (form.full_name || '').trim(),
               role: form.role,
-              titulus: null,
+              titulus: (form.titulus || '').trim() || null,
               password: form.password  // ÚJ
             })
           }
@@ -1722,7 +1331,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
           .update({
             full_name: (form.full_name || '').trim(),
             role: form.role,
-            titulus: null
+            titulus: (form.titulus || '').trim() || null
           })
           .eq('id', member.id);
         if (error) throw error;
@@ -1832,14 +1441,17 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
           </Field>
         )}
         
-        <Field label="Szerepkör" hint={form.role === 'szulo_admin' ? 'Admin jog + saját gyerekek látása. A gyerekeket a Szülők fülön rendelheted hozzá.' : (form.role === 'admin' ? 'Teljes admin jog, minden adathoz hozzáfér.' : null)}>
+        <Field label="Szerepkör" hint={form.role === 'szulo_admin' ? 'Admin jog + saját gyerekek látása. A gyerekeket a Szülők fülön rendelheted hozzá.' : null}>
           <Select value={form.role} onChange={(e) => setForm({...form, role: e.target.value})}>
             <option value="vezetoedzo">Vezetőedző</option>
             <option value="edzo">Edző</option>
             <option value="segededzo">Segédedző</option>
-            {canCreateSzuloAdmin && <option value="admin">Admin</option>}
             {canCreateSzuloAdmin && <option value="szulo_admin">Szülő-admin</option>}
           </Select>
+        </Field>
+        <Field label="Titulus (opcionális)">
+          <Input value={form.titulus} onChange={(e) => setForm({...form, titulus: e.target.value})} 
+                 placeholder="pl. balett-edző, koreográfus" />
         </Field>
 
         {/* ÚJ: jelszó módosítása meglévő fióknál */}
@@ -1993,45 +1605,19 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
   const [editing, setEditing] = useState(null);
-  const [viewing, setViewing] = useState(null); // publikus nézethez (szülő/versenyző)
+  const [viewing, setViewing] = useState(null);
 
   // Edzők és adminok kapnak szerkesztési jogot
   const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
 
-  const load = useCallback(() => {
+  useEffect(() => {
     supabase
       .from('competitors')
       .select('*')
       .eq('is_active', true)
       .order('full_name')
       .then(({ data }) => setCompetitors(data || []));
-  }, [supabase]);
-
-  useEffect(() => { load(); }, [load, dataReloadKey]);
-
-  // Ha szerkesztőben vagyunk (admin/edző) → CompetitorForm
-  if (editing) {
-    return (
-      <CompetitorForm
-        supabase={supabase}
-        competitor={editing}
-        onSaved={() => { setEditing(null); load(); }}
-        onCancel={() => setEditing(null)}
-        userRole={userRole}
-      />
-    );
-  }
-
-  // Ha publikus nézetben (szülő/versenyző)
-  if (viewing) {
-    return (
-      <PublicCompetitorProfile
-        supabase={supabase}
-        competitor={viewing}
-        onClose={() => setViewing(null)}
-      />
-    );
-  }
+  }, [supabase, dataReloadKey]);
 
   if (competitors === null) {
     return <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
@@ -2046,22 +1632,10 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
     }
     return true;
   });
-
-  // v0.9.28: rendezés becenév szerint (becenév nélküli versenyzőknél vezetéknév)
-  filtered.sort((a, b) => competitorSortKey(a).localeCompare(competitorSortKey(b), 'hu'));
   
   // Csoportosítás: ideiglenes vs végleges
   const provisional = filtered.filter(c => c.is_provisional);
   const finalized = filtered.filter(c => !c.is_provisional);
-
-  // Kattintáskor: edzőnek szerkesztő, másnak publikus
-  const handleClick = (c) => {
-    if (canEdit) {
-      setEditing(c);
-    } else {
-      setViewing(c);
-    }
-  };
 
   return (
     <div>
@@ -2100,13 +1674,13 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
 
           <div className="text-sm text-gray-600 mb-3">
             {filtered.length} / {competitors.length} versenyző
-            {provisional.length > 0 && canEdit && (
+            {provisional.length > 0 && (
               <span className="ml-2 text-amber-700">· {provisional.length} ideiglenes</span>
             )}
           </div>
 
-          {/* Ideiglenes profilok szekció - csak admin/edző látja */}
-          {canEdit && provisional.length > 0 && (
+          {/* Ideiglenes profilok szekció */}
+          {provisional.length > 0 && (
             <div className="mb-4 border-2 rounded-lg overflow-hidden" style={{ borderColor: '#f59e0b' }}>
               <div className="px-3 py-2 text-sm font-semibold flex items-center gap-2"
                    style={{ backgroundColor: '#fef3c7', color: '#92400e' }}>
@@ -2117,9 +1691,8 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
                 {provisional.map(c => {
                   const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
                   return (
-                    <div key={c.id} className="bg-white border rounded p-2 cursor-pointer hover:shadow-md transition-shadow"
-                         style={{ borderColor: '#fbbf24' }}
-                         onClick={() => handleClick(c)}>
+                    <div key={c.id} className="bg-white border rounded p-2"
+                         style={{ borderColor: '#fbbf24' }}>
                       <div className="font-semibold" style={{ color: COLORS.blueDark }}>
                         {formatCompetitorName(c)} <span className="text-xs text-amber-700 font-normal">⚠ Ideiglenes</span>
                       </div>
@@ -2133,25 +1706,18 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
             </div>
           )}
 
-          {/* Végleges profilok - mindenki kattinthat */}
+          {/* Végleges profilok */}
           <div className="space-y-2">
             {finalized.map(c => {
               const age = calculateAge(c.birth_date) ?? (new Date().getFullYear() - c.birth_year);
               return (
-                <div key={c.id}
-                     className="bg-white border rounded-lg p-3 shadow-sm cursor-pointer hover:shadow-md transition-shadow"
-                     style={{ borderColor: COLORS.gray200 }}
-                     onClick={() => handleClick(c)}>
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold" style={{ color: COLORS.blueDark }}>
-                        {formatCompetitorName(c)}
-                      </div>
-                      <div className="text-xs text-gray-500">
-                        {c.kategoria} · {c.korosztaly} · {age} éves
-                      </div>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-gray-300" />
+                <div key={c.id} className="bg-white border rounded-lg p-3 shadow-sm"
+                     style={{ borderColor: COLORS.gray200 }}>
+                  <div className="font-semibold" style={{ color: COLORS.blueDark }}>
+                    {formatCompetitorName(c)}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {c.kategoria} · {c.korosztaly} · {age} éves
                   </div>
                 </div>
               );
@@ -2164,316 +1730,10 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// PUBLIC COMPETITOR PROFILE — v0.9.25 ÚJ
-// Mindenki látja: alap adatok + minden eredmény (1-8 színes kiemelés)
-// ═══════════════════════════════════════════════════════════════════
-
-function PublicCompetitorProfile({ supabase, competitor, onClose }) {
-  const [results, setResults] = useState(null);
-  const [aaResults, setAaResults] = useState(null);
-  const [historicalResults, setHistoricalResults] = useState(null);
-  const [teamResults, setTeamResults] = useState(null);
-  const [error, setError] = useState(null);
-
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      // 1) Egyéni szer-eredmények (csak lezárt versenyek)
-      const { data: resData } = await supabase
-        .from('results')
-        .select(`
-          id, placement, apparatus, score_total,
-          startlist_entry:startlist_entries!inner(
-            competitor_id,
-            competition_category:competition_categories!inner(
-              competition_day:competition_days!inner(
-                competition_id,
-                competition:competitions!inner(id, name, start_date, is_finalized)
-              )
-            )
-          )
-        `)
-        .eq('startlist_entry.competitor_id', competitor.id);
-
-      // 2) Összetett eredmények
-      const { data: aaData } = await supabase
-        .from('all_around_results')
-        .select(`
-          id, placement, score_total,
-          competition_category:competition_categories!inner(
-            competition_day:competition_days!inner(
-              competition_id,
-              competition:competitions!inner(id, name, start_date, is_finalized)
-            )
-          )
-        `)
-        .eq('competitor_id', competitor.id);
-
-      // 3) Történeti eredmények
-      const { data: histData } = await supabase
-        .from('historical_results')
-        .select('*')
-        .eq('competitor_id', competitor.id)
-        .order('competition_date', { ascending: false });
-
-      // 4) Csapat-eredmények (2 lépésben)
-      const { data: memberData } = await supabase
-        .from('competition_team_members')
-        .select('team_id')
-        .eq('competitor_id', competitor.id);
-
-      const teamIds = (memberData || []).map(m => m.team_id).filter(Boolean);
-      let teamData = [];
-      if (teamIds.length > 0) {
-        const { data: teamsRaw } = await supabase
-          .from('competition_teams')
-          .select(`
-            id, name, placement, competition_id,
-            competition:competition_id (id, name, start_date, is_finalized)
-          `)
-          .in('id', teamIds);
-        teamData = (teamsRaw || []).filter(t => t.competition?.is_finalized);
-      }
-
-      // Szűrés finalized-re
-      const filterFinalized = (arr, path) => {
-        return (arr || []).filter(r => {
-          const c = path === 'individual' 
-            ? r.startlist_entry?.competition_category?.competition_day?.competition
-            : r.competition_category?.competition_day?.competition;
-          return c?.is_finalized;
-        });
-      };
-
-      setResults(filterFinalized(resData, 'individual'));
-      setAaResults(filterFinalized(aaData, 'aa'));
-      setHistoricalResults(histData || []);
-      setTeamResults(teamData);
-    } catch (err) {
-      setError(err.message);
-      setResults([]);
-      setAaResults([]);
-      setHistoricalResults([]);
-      setTeamResults([]);
-    }
-  }, [supabase, competitor.id]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
-  const loading = results === null || aaResults === null || historicalResults === null || teamResults === null;
-
-  // Helyezés alapján kiemelés szín
-  const placementStyle = (place) => {
-    if (!place) return { backgroundColor: '#f9fafb', color: '#6b7280' };
-    if (place === 1) return { backgroundColor: '#fef3c7', color: '#92400e', borderColor: '#f59e0b' };
-    if (place === 2) return { backgroundColor: '#f3f4f6', color: '#374151', borderColor: '#9ca3af' };
-    if (place === 3) return { backgroundColor: '#fed7aa', color: '#9a3412', borderColor: '#fb923c' };
-    if (place <= 8) return { backgroundColor: '#dbeafe', color: '#1e40af', borderColor: '#60a5fa' };
-    return { backgroundColor: '#f9fafb', color: '#6b7280', borderColor: '#e5e7eb' };
-  };
-
-  const placementIcon = (place) => {
-    if (place === 1) return '🥇';
-    if (place === 2) return '🥈';
-    if (place === 3) return '🥉';
-    if (place && place <= 8) return '⭐';
-    return '';
-  };
-
-  // Összes eredmény egy listában (dátum szerint csökkenő)
-  const allResults = [];
-  
-  (results || []).forEach(r => {
-    const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
-    if (comp) {
-      allResults.push({
-        id: `live-i-${r.id}`,
-        type: 'egyeni',
-        date: comp.start_date,
-        competition: comp.name,
-        detail: r.apparatus || '',
-        placement: r.placement,
-        score: r.score_total
-      });
-    }
-  });
-  
-  (aaResults || []).forEach(r => {
-    const comp = r.competition_category?.competition_day?.competition;
-    if (comp) {
-      allResults.push({
-        id: `live-aa-${r.id}`,
-        type: 'osszetett',
-        date: comp.start_date,
-        competition: comp.name,
-        detail: 'Összetett',
-        placement: r.placement,
-        score: r.score_total
-      });
-    }
-  });
-  
-  (teamResults || []).forEach(t => {
-    if (t.competition) {
-      allResults.push({
-        id: `team-${t.id}`,
-        type: 'csapat',
-        date: t.competition.start_date,
-        competition: t.competition.name,
-        detail: `Csapat (${t.name})`,
-        placement: t.placement,
-        score: null
-      });
-    }
-  });
-  
-  (historicalResults || []).forEach(h => {
-    allResults.push({
-      id: `hist-${h.id}`,
-      type: 'historical',
-      date: h.competition_date,
-      competition: h.competition_name,
-      detail: h.apparatus || (h.score_osszetett ? 'Összetett' : ''),
-      placement: h.placement,
-      score: h.score_total || h.score_osszetett
-    });
-  });
-  
-  // Rendezés dátum szerint csökkenően
-  allResults.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-
-  return (
-    <div>
-      {/* Fejléc */}
-      <div className="flex items-center gap-2 mb-4">
-        <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-        <h3 className="text-xl font-semibold" style={{ color: COLORS.blueDark }}>
-          {formatCompetitorName(competitor)}
-        </h3>
-      </div>
-
-      {/* Alap adatok */}
-      <div className="bg-white rounded-lg border p-4 mb-4" style={{ borderColor: COLORS.gray200 }}>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="text-center">
-            <div className="text-xs text-gray-500 mb-1">Kategória</div>
-            <div className="font-bold text-base" style={{ color: COLORS.blueDark }}>{competitor.kategoria}</div>
-          </div>
-          <div className="text-center border-l border-r" style={{ borderColor: COLORS.gray200 }}>
-            <div className="text-xs text-gray-500 mb-1">Korosztály</div>
-            <div className="font-bold text-base" style={{ color: COLORS.blueDark }}>{competitor.korosztaly}</div>
-          </div>
-          <div className="text-center">
-            <div className="text-xs text-gray-500 mb-1">Életkor</div>
-            <div className="font-bold text-base" style={{ color: COLORS.blueDark }}>{age} éves</div>
-          </div>
-        </div>
-      </div>
-
-      {/* Eredmények */}
-      <div className="bg-white rounded-lg border p-4" style={{ borderColor: COLORS.gray200 }}>
-        <h4 className="font-bold text-lg mb-4 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
-          <Trophy className="w-6 h-6" />
-          Eredmények
-          {!loading && allResults.length > 0 && (
-            <span className="text-sm font-normal text-gray-500">({allResults.length})</span>
-          )}
-        </h4>
-
-        {error && (
-          <div className="text-sm text-red-600 mb-3">Hiba: {error}</div>
-        )}
-
-        {loading ? (
-          <div className="text-center py-6">
-            <Loader className="w-5 h-5 animate-spin mx-auto text-gray-400" />
-          </div>
-        ) : allResults.length === 0 ? (
-          <div className="text-center py-6 text-sm text-gray-500 italic">
-            Még nincsenek eredmények.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {allResults.map(r => {
-              const style = placementStyle(r.placement);
-              const icon = placementIcon(r.placement);
-              const isTop = r.placement && r.placement <= 8;
-              const isMedal = r.placement && r.placement <= 3;
-              return (
-                <div key={r.id}
-                     className={`border rounded-lg ${isMedal ? 'border-4 p-4' : isTop ? 'border-2 p-4' : 'border p-3'}`}
-                     style={style}>
-                  <div className="flex items-center justify-between gap-3 flex-wrap">
-                    <div className="flex items-center gap-3 min-w-0 flex-1">
-                      {icon && (
-                        <span className={isMedal ? 'text-5xl' : 'text-3xl'}>
-                          {icon}
-                        </span>
-                      )}
-                      <div className="min-w-0 flex-1">
-                        <div className={`font-bold ${isMedal ? 'text-lg' : 'text-base'} truncate`}>
-                          {r.competition}
-                        </div>
-                        <div className="text-sm opacity-80 flex items-center gap-1.5 flex-wrap mt-1">
-                          <span>{r.date ? new Date(r.date).toLocaleDateString('hu-HU') : ''}</span>
-                          {r.detail && (
-                            <>
-                              <span>·</span>
-                              <span className="capitalize font-medium">{r.detail}</span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4 text-right">
-                      {r.placement && (
-                        <div className="text-center">
-                          <div className={`font-extrabold leading-none ${isMedal ? 'text-5xl' : isTop ? 'text-4xl' : 'text-2xl'}`}>
-                            {r.placement}.
-                          </div>
-                          <div className={`opacity-75 mt-1 ${isMedal ? 'text-sm font-semibold' : 'text-xs'}`}>
-                            hely
-                          </div>
-                        </div>
-                      )}
-                      {r.score != null && r.score > 0 && (
-                        <div className="text-center border-l pl-3" style={{ borderColor: 'currentColor', borderLeftWidth: '2px', borderLeftStyle: 'solid', opacity: 0.7 }}>
-                          <div className={`font-bold leading-none ${isMedal ? 'text-2xl' : 'text-lg'}`}>
-                            {Number(r.score).toFixed(2)}
-                          </div>
-                          <div className={`opacity-75 mt-1 ${isMedal ? 'text-sm' : 'text-xs'}`}>
-                            pont
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* Lábléc - szín jelmagyarázat */}
-      <div className="mt-4 bg-gray-50 rounded-lg p-3 text-sm text-gray-600 flex flex-wrap gap-4 items-center justify-center">
-        <span className="flex items-center gap-1"><span className="text-xl">🥇</span> 1. hely</span>
-        <span className="flex items-center gap-1"><span className="text-xl">🥈</span> 2. hely</span>
-        <span className="flex items-center gap-1"><span className="text-xl">🥉</span> 3. hely</span>
-        <span className="flex items-center gap-1"><span className="text-xl">⭐</span> 4-8. (Top 8)</span>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════════
 // PARENT PROFILE VIEW — szülő látja és szerkesztheti a saját gyerekét
 // ═══════════════════════════════════════════════════════════════════
 
-export function ParentProfileView({ supabase, parentUserId, userRole, dataReloadKey }) {
+export function ParentProfileView({ supabase, parentUserId, dataReloadKey }) {
   const [children, setChildren] = useState(null);
   const [editing, setEditing] = useState(null);
   const [error, setError] = useState(null);
@@ -2512,16 +1772,13 @@ export function ParentProfileView({ supabase, parentUserId, userRole, dataReload
 
   useEffect(() => { load(); }, [load, dataReloadKey]);
 
-  // v0.9.25: a szülő ugyanazt látja a saját gyerekén mint az edző egy versenyzőn
-  // (CompetitorForm — érem-összesítő fent, fejlődési grafikon, eredmények, szem. adatok lent)
   if (editing) {
     return (
-      <CompetitorForm
+      <ParentChildEditForm
         supabase={supabase}
         competitor={editing}
         onSaved={() => { setEditing(null); load(); }}
         onCancel={() => setEditing(null)}
-        userRole={userRole}
       />
     );
   }
@@ -2565,13 +1822,18 @@ export function ParentProfileView({ supabase, parentUserId, userRole, dataReload
                       <div className="text-xs text-gray-500 mt-1">Inaktív</div>
                     )}
                   </div>
-                  <ChevronRight className="w-5 h-5 text-gray-400" />
+                  <Edit2 className="w-5 h-5 text-gray-400" />
                 </div>
               </div>
             );
           })}
         </div>
       )}
+
+      <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-900">
+        <strong>Megjegyzés:</strong> Kattints egy gyerekre a profil szerkesztéséhez. 
+        Új gyerek hozzárendelését vagy szülők változtatását az adminisztrátortól kérheted.
+      </div>
     </div>
   );
 }

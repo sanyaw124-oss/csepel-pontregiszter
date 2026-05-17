@@ -13,6 +13,8 @@ import { TrainingView } from './training';
 import { EventsView, UpcomingEventsWidget } from './events';
 import { CoachNotesView } from './coach-notes';
 import CompetitorDashboard from './competitor-dashboard';
+import CompetitorProfileView from './competitor-profile';
+import CompetitorTreasureView from './competitor-treasure';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -650,7 +652,8 @@ function LoadingScreen({ message = 'Betöltés...' }) {
 const NAV_ITEMS = [
   { id: 'dashboard', label: 'Áttekintés', icon: BarChart3, roles: 'all' },
   { id: 'profile', label: 'Profil', icon: User, roles: [ROLES.VERSENYZO, ROLES.SZULO, ROLES.SZULO_ADMIN] },
-  { id: 'competitors', label: 'Versenyzők', icon: Users, roles: 'all' },
+  { id: 'treasure', label: 'Kincsesládám', icon: Trophy, roles: [ROLES.VERSENYZO] },
+  { id: 'competitors', label: 'Versenyzők', icon: Users, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO, ROLES.SZULO] },
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
@@ -694,6 +697,7 @@ function AppShell() {
             </span>
             <span className="text-gray-500 text-xs sm:text-sm">
               {ROLE_LABELS[profile.role]}
+              {profile.titulus ? ` · ${profile.titulus}` : ''}
             </span>
           </div>
           <div className="flex items-center gap-1">
@@ -742,19 +746,30 @@ function AppShell() {
       </nav>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+        {/* Áttekintés: VERSENYZŐ → saját vidám, MÁS → klubos áttekintés */}
         {activeView === 'dashboard' && profile.role === 'versenyzo' && (
-          <CompetitorDashboard supabase={supabase} profile={profile} setActiveView={setActiveView} />
+          <CompetitorDashboard supabase={supabase} profile={profile} />
         )}
-        {activeView === 'dashboard' && profile.role !== 'versenyzo' && <DashboardView setActiveView={setActiveView} />}
+        {activeView === 'dashboard' && profile.role !== 'versenyzo' && (
+          <DashboardView setActiveView={setActiveView} />
+        )}
+
+        {/* Profil: szülő → ParentProfileView, versenyző → CompetitorProfileView (Én vagyok!) */}
         {activeView === 'profile' && hasParentRights(profile.role) && (
           <ParentProfileView supabase={supabase} parentUserId={profile.id} userRole={profile.role} dataReloadKey={dataReloadKey} />
         )}
         {activeView === 'profile' && profile.role === 'versenyzo' && (
-          <CompetitorDashboard supabase={supabase} profile={profile} setActiveView={setActiveView} />
+          <CompetitorProfileView supabase={supabase} profile={profile} />
         )}
+
+        {/* Kincsesládám: CSAK versenyző */}
+        {activeView === 'treasure' && profile.role === 'versenyzo' && (
+          <CompetitorTreasureView supabase={supabase} profile={profile} />
+        )}
+
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
-        {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
+        {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'coach-notes' && <CoachNotesView supabase={supabase} userRole={profile.role} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
@@ -959,6 +974,7 @@ function DashboardView({ setActiveView }) {
       </h2>
       <p className="text-gray-600 mb-6">
         {ROLE_LABELS[profile.role]}
+        {profile.titulus ? ` · ${profile.titulus}` : ''}
       </p>
 
       {error && (
@@ -1098,6 +1114,37 @@ function DashboardView({ setActiveView }) {
           </div>
           <div>
             Az adatok a felhőben tárolódnak, valós időben szinkronizálnak minden eszköz között.
+          </div>
+        </div>
+      </div>
+
+      <div 
+        className="mt-4 rounded-lg p-4 border"
+        style={{ backgroundColor: COLORS.blueBg, borderColor: COLORS.blueLight }}
+      >
+        <div className="font-semibold mb-2 text-sm" style={{ color: COLORS.blueDark }}>
+          Fejlesztési ütemterv
+        </div>
+        <div className="space-y-1.5 text-sm" style={{ color: COLORS.blue }}>
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-green-600" />
+            1. fázis: Supabase auth + login (KÉSZ)
+          </div>
+          <div className="flex items-center gap-2">
+            <Check className="w-4 h-4 text-green-600" />
+            2. fázis: Admin felület (KÉSZ)
+          </div>
+          <div className="flex items-center gap-2">
+            <Loader className="w-4 h-4" />
+            3. fázis: Versenyek + startlista + pontozás
+          </div>
+          <div className="flex items-center gap-2 opacity-50">
+            <div className="w-4 h-4" />
+            4. fázis: Eredmények + grafikonok + szülő profil szerkesztés
+          </div>
+          <div className="flex items-center gap-2 opacity-50">
+            <div className="w-4 h-4" />
+            5. fázis: Kamera nagyító (TV pontleolvasáshoz)
           </div>
         </div>
       </div>

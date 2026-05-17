@@ -16,11 +16,10 @@
 //   - Excel/PDF export
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, ChevronLeft, ChevronRight, Save, Check, X,
-  Loader, AlertCircle, BookOpen, CheckSquare, Square, ArrowLeft, Users,
-  BarChart3, TrendingDown
+  Loader, AlertCircle, BookOpen, CheckSquare, Square, ArrowLeft, Users
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -69,27 +68,151 @@ function shiftDate(dateStr, days) {
 
 function formatCompetitorName(c) {
   if (!c) return '';
-  if (!c.nickname) return c.full_name || '';
-  // v0.9.28: becenév előre, utána a teljes név
-  // pl. "Völgyesi Noémi" + nickname "Ori" → '"Ori" Völgyesi Noémi'
-  return `"${c.nickname}" ${c.full_name || ''}`.trim();
-}
-
-// Rendezési kulcs: becenév először (ha van), különben vezetéknév
-function competitorSortKey(c) {
-  if (!c) return '';
-  if (c.nickname) return c.nickname.toLowerCase();
-  return (c.full_name || '').toLowerCase();
+  if (c.nickname) {
+    // "Völgyesi Noémi" + nickname "Ori" → "Völgyesi 'Ori' Noémi"
+    const parts = (c.full_name || '').split(' ');
+    if (parts.length >= 2) {
+      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
+    }
+  }
+  return c.full_name || '';
 }
 
 // ═══════════════════════════════════════════════════════════════════
 // FŐ KOMPONENS — Edző/Admin nézet
 // ═══════════════════════════════════════════════════════════════════
 
-export function TrainingView({ supabase, userRole, dataReloadKey }) {
-  // v0.9.25: tab kapcsoló (napi / klub-összesítő)
-  const [tab, setTab] = useState('daily'); // 'daily' | 'summary'
+export function TrainingView({ supabase, userRole, dataReloadKey, profile }) {
+  // VERSENYZŐ → saját nézet (csak olvasás)
+  if (userRole === 'versenyzo') {
+    return <MyTrainingsView supabase={supabase} profile={profile} />;
+  }
+  
+  return <CoachTrainingView supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />;
+}
 
+// ═══════════════════════════════════════════════════════════════════
+// VERSENYZŐI saját edzések nézet (csak olvasás + "Hamarosan" jelzés)
+// ═══════════════════════════════════════════════════════════════════
+function MyTrainingsView({ supabase, profile }) {
+  const [trainings, setTrainings] = useState([]);
+  const [stats, setStats] = useState({ edzes: 0, egesznapos: 0, tabor: 0, total: 0 });
+  const [loading, setLoading] = useState(true);
+  const [year] = useState(new Date().getFullYear());
+
+  useEffect(() => {
+    let mounted = true;
+    const load = async () => {
+      try {
+        let competitorId = profile?.competitor_id;
+        if (!competitorId && profile?.full_name) {
+          const fb = await supabase.from('competitors').select('id').eq('full_name', profile.full_name).limit(1).maybeSingle();
+          if (fb.data?.id) competitorId = fb.data.id;
+        }
+        if (!competitorId) { if (mounted) setLoading(false); return; }
+
+        const { data } = await supabase
+          .from('training_attendance')
+          .select(`
+            id,
+            training_sessions!inner(id, date, session_type, notes)
+          `)
+          .eq('competitor_id', competitorId)
+          .gte('training_sessions.date', `${year}-01-01`)
+          .order('training_sessions(date)', { ascending: false });
+
+        if (data && mounted) {
+          setTrainings(data);
+          const counts = { edzes: 0, egesznapos: 0, tabor: 0 };
+          data.forEach(t => {
+            const type = t.training_sessions?.session_type;
+            if (type && counts[type] !== undefined) counts[type]++;
+          });
+          setStats({ ...counts, total: data.length });
+        }
+      } catch (err) {
+        console.error('MyTrainings load:', err);
+      } finally {
+        if (mounted) setLoading(false);
+      }
+    };
+    load();
+    return () => { mounted = false; };
+  }, [supabase, profile?.competitor_id, profile?.id, profile?.full_name, year]);
+
+  if (loading) return <div className="py-12 text-center"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
+
+  return (
+    <div className="max-w-md mx-auto space-y-3">
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <BookOpen className="w-5 h-5 text-gray-700" />
+          <h1 className="text-lg font-semibold">Edzéseim ({year})</h1>
+        </div>
+      </div>
+
+      {/* Statisztika */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold text-blue-700">{stats.edzes}</div>
+          <div className="text-xs text-gray-500">edzés</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold text-green-700">{stats.egesznapos}</div>
+          <div className="text-xs text-gray-500">egész napos</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold text-amber-700">{stats.tabor}</div>
+          <div className="text-xs text-gray-500">tábor</div>
+        </div>
+      </div>
+
+      {/* Lista */}
+      <div className="bg-white rounded-lg border border-gray-200">
+        <div className="p-3 border-b border-gray-200 text-sm font-medium text-gray-700">
+          Részvételeim ({stats.total})
+        </div>
+        {trainings.length === 0 ? (
+          <div className="p-6 text-center text-sm text-gray-500">Még nincs rögzített edzésed idén.</div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {trainings.map(t => {
+              const session = t.training_sessions;
+              if (!session) return null;
+              const typeLabel = session.session_type === 'edzes' ? '💪 Edzés' :
+                                session.session_type === 'egesznapos' ? '☀️ Egész napos' : '🏕️ Tábor';
+              return (
+                <div key={t.id} className="p-3 flex items-center justify-between text-sm">
+                  <div>
+                    <div className="font-medium">{typeLabel}</div>
+                    <div className="text-xs text-gray-500">
+                      {new Date(session.date).toLocaleDateString('hu-HU', { 
+                        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' 
+                      })}
+                    </div>
+                  </div>
+                  <div className="text-green-600">✓</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* "Hamarosan" jelzés */}
+      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 text-center">
+        <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
+          ⏳ Hamarosan: <strong>saját edzés rögzítés</strong> — ha az edző jóváhagyja!
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EDZŐI/ADMIN edzésnapló (eredeti TrainingView)
+// ═══════════════════════════════════════════════════════════════════
+function CoachTrainingView({ supabase, userRole, dataReloadKey }) {
   const [date, setDate] = useState(todayISO());
   const [sessionType, setSessionType] = useState('edzes');
   const [competitors, setCompetitors] = useState([]);
@@ -148,12 +271,7 @@ export function TrainingView({ supabase, userRole, dataReloadKey }) {
         (atts || []).forEach(a => attendIds.add(a.competitor_id));
       }
 
-      // v0.9.28: rendezés becenév szerint (becenév nélküli versenyzőknél vezetéknév)
-      const sortedComps = (comps || []).slice().sort((a, b) => 
-        competitorSortKey(a).localeCompare(competitorSortKey(b), 'hu')
-      );
-
-      setCompetitors(sortedComps);
+      setCompetitors(comps || []);
       setYearlyStats(statsMap);
       setExistingSession(sess);
       setNotes(sess?.notes || '');
@@ -287,38 +405,6 @@ export function TrainingView({ supabase, userRole, dataReloadKey }) {
 
   return (
     <div className="space-y-4">
-      {/* v0.9.25: Tab kapcsoló (napi / klub-összesítő) */}
-      <div className="bg-white rounded-lg border border-gray-200 p-1 inline-flex">
-        <button
-          onClick={() => setTab('daily')}
-          className={`px-4 py-2 text-sm rounded-md font-medium transition-colors flex items-center gap-2 ${
-            tab === 'daily' ? 'text-white' : 'text-gray-700 hover:bg-gray-50'
-          }`}
-          style={tab === 'daily' ? { backgroundColor: COLORS.red } : {}}
-        >
-          <Calendar className="w-4 h-4" />
-          Napi bejegyzés
-        </button>
-        <button
-          onClick={() => setTab('summary')}
-          className={`px-4 py-2 text-sm rounded-md font-medium transition-colors flex items-center gap-2 ${
-            tab === 'summary' ? 'text-white' : 'text-gray-700 hover:bg-gray-50'
-          }`}
-          style={tab === 'summary' ? { backgroundColor: COLORS.red } : {}}
-        >
-          <BarChart3 className="w-4 h-4" />
-          Klub-összesítő
-        </button>
-      </div>
-
-      {/* Klub-összesítő nézet */}
-      {tab === 'summary' && (
-        <ClubTrainingSummary supabase={supabase} dataReloadKey={dataReloadKey} />
-      )}
-
-      {/* Napi bejegyzés nézet (eredeti) */}
-      {tab === 'daily' && (
-      <>
       {/* Fejléc */}
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-3 mb-3">
@@ -524,374 +610,13 @@ export function TrainingView({ supabase, userRole, dataReloadKey }) {
           )}
         </div>
       </div>
-      </>
-      )}
     </div>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// CLUB TRAINING SUMMARY — v0.9.25 ÚJ
-// Klub-szintű edzés-összesítő edzőknek/adminoknak
-// Szűrők: év + hónap + nap (vegyíthetőek)
-// Kiemelés: heti < 3 edzés aktív versenyzőknél
+// SZÜLŐI NÉZET — saját gyerek edzései
 // ═══════════════════════════════════════════════════════════════════
-
-function ClubTrainingSummary({ supabase, dataReloadKey }) {
-  const currentYear = new Date().getFullYear();
-  const [year, setYear] = useState(currentYear);
-  const [monthFrom, setMonthFrom] = useState(1);
-  const [monthTo, setMonthTo] = useState(12);
-  const [dayFrom, setDayFrom] = useState('');
-  const [dayTo, setDayTo] = useState('');
-  const [availableYears, setAvailableYears] = useState([currentYear]);
-
-  const [sessions, setSessions] = useState(null);
-  const [competitors, setCompetitors] = useState(null);
-  const [attendance, setAttendance] = useState(null);
-  const [error, setError] = useState(null);
-
-  // Adatok betöltése
-  const load = useCallback(async () => {
-    setError(null);
-    try {
-      // 1) Évek listája
-      const { data: yearData } = await supabase
-        .from('training_sessions')
-        .select('date')
-        .order('date', { ascending: false });
-      
-      const years = [...new Set((yearData || []).map(s => new Date(s.date).getFullYear()))];
-      if (years.length === 0) years.push(currentYear);
-      setAvailableYears(years);
-
-      // 2) Versenyzők
-      const { data: compData } = await supabase
-        .from('competitors')
-        .select('id, full_name, nickname, is_active, kategoria, korosztaly')
-        .order('full_name');
-      setCompetitors(compData || []);
-
-      // 3) Összes edzés
-      const { data: sessData } = await supabase
-        .from('training_sessions')
-        .select('id, date, session_type, notes')
-        .order('date', { ascending: false });
-      setSessions(sessData || []);
-
-      // 4) Összes részvétel
-      const { data: attData } = await supabase
-        .from('training_attendance')
-        .select('session_id, competitor_id');
-      setAttendance(attData || []);
-    } catch (err) {
-      setError(err.message);
-      setSessions([]);
-      setCompetitors([]);
-      setAttendance([]);
-    }
-  }, [supabase, currentYear]);
-
-  useEffect(() => { load(); }, [load, dataReloadKey]);
-
-  // Szűrt adatok kiszámítása
-  const summary = useMemo(() => {
-    if (!sessions || !competitors || !attendance) return null;
-
-    // Időszak meghatározása
-    let startDate, endDate;
-    if (dayFrom && dayTo) {
-      startDate = dayFrom;
-      endDate = dayTo;
-    } else {
-      const lastDay = new Date(year, monthTo, 0).getDate();
-      startDate = `${year}-${String(monthFrom).padStart(2, '0')}-01`;
-      endDate = `${year}-${String(monthTo).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-    }
-
-    // Szűrt edzések
-    const filteredSessions = sessions.filter(s => {
-      const d = s.date;
-      return d >= startDate && d <= endDate;
-    });
-
-    const sessionIdsInRange = new Set(filteredSessions.map(s => s.id));
-
-    // Szűrt részvételek
-    const filteredAttendance = attendance.filter(a => sessionIdsInRange.has(a.session_id));
-
-    // Versenyzőnkénti összesítés
-    const perCompetitor = competitors.map(c => {
-      const myAttendance = filteredAttendance.filter(a => a.competitor_id === c.id);
-      const mySessions = myAttendance.map(a => 
-        filteredSessions.find(s => s.id === a.session_id)
-      ).filter(Boolean);
-
-      const edzes = mySessions.filter(s => s.session_type === 'edzes').length;
-      const egesznapos = mySessions.filter(s => s.session_type === 'egesznapos').length;
-      const tabor = mySessions.filter(s => s.session_type === 'tabor').length;
-      const total = mySessions.length;
-
-      return { ...c, edzes, egesznapos, tabor, total };
-    });
-
-    // Időszak hossza hetekben (kerekítve)
-    const daysDiff = (new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24) + 1;
-    const weeks = daysDiff / 7;
-    const minExpected = Math.floor(weeks * 3); // heti 3 = elvárt minimum
-
-    // Aktív versenyzők, akik elmaradnak a heti 3-tól (csak edzés + egésznapos számít)
-    const underperforming = perCompetitor
-      .filter(c => c.is_active)
-      .filter(c => (c.edzes + c.egesznapos) < minExpected)
-      .sort((a, b) => (a.edzes + a.egesznapos) - (b.edzes + b.egesznapos));
-
-    // A többiek
-    const ok = perCompetitor
-      .filter(c => c.is_active)
-      .filter(c => (c.edzes + c.egesznapos) >= minExpected)
-      .sort((a, b) => (b.edzes + b.egesznapos) - (a.edzes + a.egesznapos));
-
-    const inactive = perCompetitor
-      .filter(c => !c.is_active && c.total > 0)
-      .sort((a, b) => b.total - a.total);
-
-    return {
-      startDate, endDate, weeks: Math.round(weeks * 10) / 10,
-      minExpected,
-      totalSessions: filteredSessions.length,
-      underperforming, ok, inactive
-    };
-  }, [sessions, competitors, attendance, year, monthFrom, monthTo, dayFrom, dayTo]);
-
-  const HONAPOK = [
-    'január', 'február', 'március', 'április', 'május', 'június',
-    'július', 'augusztus', 'szeptember', 'október', 'november', 'december'
-  ];
-
-  return (
-    <div className="space-y-4">
-      {/* Szűrők */}
-      <div className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className="flex items-center gap-2 mb-3">
-          <BarChart3 className="w-5 h-5 text-gray-700" />
-          <h2 className="text-lg font-semibold">Klub edzés-összesítő</h2>
-        </div>
-        
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-gray-600 block mb-1">Év</label>
-            <select
-              value={year}
-              onChange={(e) => { setYear(parseInt(e.target.value)); setDayFrom(''); setDayTo(''); }}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300"
-            >
-              {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-gray-600 block mb-1">Hónaptól</label>
-            <select
-              value={monthFrom}
-              onChange={(e) => { setMonthFrom(parseInt(e.target.value)); setDayFrom(''); setDayTo(''); }}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300"
-            >
-              {HONAPOK.map((m, i) => <option key={i + 1} value={i + 1}>{i + 1}. {m}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-gray-600 block mb-1">Hónapig</label>
-            <select
-              value={monthTo}
-              onChange={(e) => { setMonthTo(parseInt(e.target.value)); setDayFrom(''); setDayTo(''); }}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300"
-            >
-              {HONAPOK.map((m, i) => <option key={i + 1} value={i + 1}>{i + 1}. {m}</option>)}
-            </select>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3 mb-2">
-          <div>
-            <label className="text-xs text-gray-600 block mb-1">Naptól (opcionális)</label>
-            <input
-              type="date"
-              value={dayFrom}
-              onChange={(e) => setDayFrom(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-600 block mb-1">Napig (opcionális)</label>
-            <input
-              type="date"
-              value={dayTo}
-              onChange={(e) => setDayTo(e.target.value)}
-              className="w-full px-3 py-2 text-sm rounded border border-gray-300"
-            />
-          </div>
-        </div>
-
-        {(dayFrom || dayTo) && (
-          <button
-            onClick={() => { setDayFrom(''); setDayTo(''); }}
-            className="text-xs text-gray-500 hover:text-gray-700 underline"
-          >
-            Konkrét napok törlése (visszatérés hónap-szűréshez)
-          </button>
-        )}
-      </div>
-
-      {error && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-          {error}
-        </div>
-      )}
-
-      {summary === null ? (
-        <div className="text-center py-8">
-          <Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" />
-        </div>
-      ) : (
-        <>
-          {/* Összesített statisztika */}
-          <div className="bg-white rounded-lg border border-gray-200 p-4">
-            <div className="text-sm text-gray-600 mb-2">
-              Időszak: <strong>{summary.startDate}</strong> → <strong>{summary.endDate}</strong> ({summary.weeks} hét)
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <div className="bg-gray-50 rounded-lg p-3">
-                <div className="text-xs text-gray-500">Összes edzésnap</div>
-                <div className="text-2xl font-bold" style={{ color: COLORS.primary }}>{summary.totalSessions}</div>
-              </div>
-              <div className="bg-blue-50 rounded-lg p-3">
-                <div className="text-xs text-blue-700">Elvárt min/fő</div>
-                <div className="text-2xl font-bold text-blue-700">{summary.minExpected}</div>
-                <div className="text-xs text-blue-600">heti 3 alapján</div>
-              </div>
-              <div className="bg-green-50 rounded-lg p-3">
-                <div className="text-xs text-green-700">✓ Rendben</div>
-                <div className="text-2xl font-bold text-green-700">{summary.ok.length}</div>
-                <div className="text-xs text-green-600">aktív versenyző</div>
-              </div>
-              <div className="bg-red-50 rounded-lg p-3">
-                <div className="text-xs text-red-700">⚠ Elmaradás</div>
-                <div className="text-2xl font-bold text-red-700">{summary.underperforming.length}</div>
-                <div className="text-xs text-red-600">heti 3 alatt</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Elmaradók — kiemelt pirossal */}
-          {summary.underperforming.length > 0 && (
-            <div className="bg-white rounded-lg border-2 border-red-300 overflow-hidden">
-              <div className="px-4 py-3 bg-red-50 border-b border-red-200 flex items-center gap-2">
-                <TrendingDown className="w-5 h-5 text-red-700" />
-                <h3 className="font-semibold text-red-800">
-                  Elmaradás — heti 3 edzés alatt ({summary.underperforming.length})
-                </h3>
-              </div>
-              <div className="divide-y divide-red-100">
-                {summary.underperforming.map(c => (
-                  <CompetitorTrainingRow key={c.id} competitor={c} expected={summary.minExpected} warning />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Rendben edzők */}
-          {summary.ok.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 bg-green-50 border-b border-green-200 flex items-center gap-2">
-                <Check className="w-5 h-5 text-green-700" />
-                <h3 className="font-semibold text-green-800">
-                  Rendben ({summary.ok.length})
-                </h3>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {summary.ok.map(c => (
-                  <CompetitorTrainingRow key={c.id} competitor={c} expected={summary.minExpected} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Inaktív, de részt vett */}
-          {summary.inactive.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
-              <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-2">
-                <Users className="w-5 h-5 text-gray-600" />
-                <h3 className="font-semibold text-gray-700">
-                  Inaktív (volt edzésen az időszakban): {summary.inactive.length}
-                </h3>
-              </div>
-              <div className="divide-y divide-gray-100">
-                {summary.inactive.map(c => (
-                  <CompetitorTrainingRow key={c.id} competitor={c} expected={summary.minExpected} inactive />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {summary.ok.length === 0 && summary.underperforming.length === 0 && summary.inactive.length === 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-              <BookOpen className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-              Nincs adat ebben az időszakban.
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-// Egy versenyző sor a klub-összesítőben
-function CompetitorTrainingRow({ competitor, expected, warning, inactive }) {
-  const c = competitor;
-  const activeCount = c.edzes + c.egesznapos;
-  const missing = Math.max(0, expected - activeCount);
-  
-  return (
-    <div className={`px-4 py-3 flex items-center justify-between gap-3 flex-wrap ${warning ? 'bg-red-50' : ''}`}>
-      <div className="flex-1 min-w-0">
-        <div className="font-semibold" style={{ color: warning ? '#991b1b' : '#1e3a8a' }}>
-          {formatCompetitorName(c)}
-          {inactive && <span className="ml-2 text-xs text-gray-500 font-normal">(inaktív)</span>}
-        </div>
-        <div className="text-xs text-gray-500 mt-0.5">
-          {c.kategoria} · {c.korosztaly}
-        </div>
-      </div>
-      <div className="flex items-center gap-3 text-sm">
-        <div className="text-center min-w-[50px]">
-          <div className="font-bold text-blue-700">{c.edzes}</div>
-          <div className="text-xs text-gray-500">edzés</div>
-        </div>
-        <div className="text-center min-w-[50px]">
-          <div className="font-bold text-green-700">{c.egesznapos}</div>
-          <div className="text-xs text-gray-500">egészn.</div>
-        </div>
-        <div className="text-center min-w-[50px]">
-          <div className="font-bold text-amber-700">{c.tabor}</div>
-          <div className="text-xs text-gray-500">tábor</div>
-        </div>
-        <div className="text-center min-w-[60px] pl-2 border-l">
-          <div className="font-bold text-lg">{c.total}</div>
-          <div className="text-xs text-gray-500">össz.</div>
-        </div>
-        {warning && (
-          <div className="text-center min-w-[55px] pl-2 border-l">
-            <div className="font-bold text-lg text-red-700">-{missing}</div>
-            <div className="text-xs text-red-600">elmarad</div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 export function ParentTrainingView({ supabase, competitorId, year }) {
   const [yearStats, setYearStats] = useState(null);
