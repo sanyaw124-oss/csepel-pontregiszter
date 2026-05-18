@@ -465,8 +465,9 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       return;
     }
 
-    // v0.9.44: ha új versenyzőnél email+jelszó megadva → auth fiók is létrejön
-    const wantsAuthAccount = isNew && (form.email || '').trim() !== '';
+    // v0.9.45: ha új versenyzőnél VAGY létező versenyzőnél (akinek nincs auth fiókja)
+    // email+jelszó megadva → auth fiók létrejön/csatolódik
+    const wantsAuthAccount = (isNew || (!isNew && !linkedUserId)) && (form.email || '').trim() !== '';
     if (wantsAuthAccount) {
       const pwdError = validatePassword(form.password);
       if (pwdError) {
@@ -715,8 +716,8 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           )}
         </Field>
 
-        {/* v0.9.44: Jelszó mező új versenyzőhöz (ha email is van) */}
-        {isNew && (form.email || '').trim() !== '' && (
+        {/* v0.9.45: Jelszó mező - új versenyzőhöz VAGY létező versenyzőhöz akinek nincs auth fiókja */}
+        {((isNew || !linkedUserId) && (form.email || '').trim() !== '') && (
           <Field label="Jelszó * (min. 6 karakter, min. 1 szám)">
             <div className="relative">
               <Input
@@ -733,6 +734,11 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
+            {!isNew && (
+              <div className="text-xs text-green-700 mt-1">
+                ✨ Új belépési fiók létrejön a versenyzőnek mentéskor.
+              </div>
+            )}
           </Field>
         )}
 
@@ -795,10 +801,15 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           </div>
         )}
 
-        {/* v0.9.44: Tájékoztatás létező versenyzőnél ha NINCS auth fiók */}
-        {!isNew && !linkedUserId && (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
-            💡 Ehhez a versenyzőhöz még nincs belépési fiók. Új versenyző létrehozásakor add meg az email + jelszót.
+        {/* v0.9.45: Tájékoztatás létező versenyzőnél ha NINCS auth fiók - email mező + jelszó megjelenik fent */}
+        {!isNew && !linkedUserId && (form.email || '').trim() === '' && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 text-xs text-blue-900">
+            💡 Ehhez a versenyzőhöz még nincs belépési fiók. Add meg az email címét fent, és megjelenik a jelszó mező is.
+          </div>
+        )}
+        {!isNew && !linkedUserId && (form.email || '').trim() !== '' && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-xs text-green-900">
+            ✨ Mentéskor új belépési fiók jön létre <strong>{form.email}</strong> címmel.
           </div>
         )}
 
