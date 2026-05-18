@@ -208,6 +208,7 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
   const [editing, setEditing] = useState(null);
   const [filter, setFilter] = useState({ search: '', kategoria: 'all', showInactive: false });
   const [error, setError] = useState(null);
+  const [generatedCreds, setGeneratedCreds] = useState(null); // v0.9.44: új versenyzői fiók credentials
 
   const load = useCallback(async () => {
     setError(null);
@@ -245,7 +246,11 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
         supabase={supabase}
         competitor={editing === 'new' ? null : editing}
         userRole="admin"
-        onSaved={() => { setEditing(null); load(); }}
+        onSaved={(creds) => { 
+          setEditing(null); 
+          load();
+          if (creds) setGeneratedCreds(creds);  // v0.9.44: új auth fiók esetén popup
+        }}
         onCancel={() => setEditing(null)}
       />
     );
@@ -257,6 +262,9 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
 
   return (
     <div>
+      {/* v0.9.44: új versenyzői auth fiók credentials popup */}
+      {generatedCreds && <CredentialsPopup creds={generatedCreds} onClose={() => setGeneratedCreds(null)} />}
+      
       <div className="flex flex-col sm:flex-row gap-2 mb-4">
         <div className="flex-1 flex gap-2">
           <div className="relative flex-1">
@@ -379,6 +387,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       kategoria: 'VSK II',
       korosztaly: 'serdülő', // v0.9.37: DB constraint kompatibilis kis betűs érték
       email: '',
+      password: '',  // v0.9.44: új versenyzőhöz auth fiók
       is_active: true,
       is_club_member: true
     };
@@ -387,6 +396,13 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
   const [linkedParentIds, setLinkedParentIds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  // v0.9.44: auth fiók kezelés versenyzőhöz
+  const [showPassword, setShowPassword] = useState(false);
+  const [showPasswordChange, setShowPasswordChange] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [passwordChangeMessage, setPasswordChangeMessage] = useState(null);
+  const [linkedUserId, setLinkedUserId] = useState(null); // a competitor-hez tartozó profile.id (auth fiók)
 
   // Szülők és linkek betöltése
   useEffect(() => {
@@ -404,10 +420,33 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           .select('parent_user_id')
           .eq('competitor_id', competitor.id);
         setLinkedParentIds((links || []).map(l => l.parent_user_id));
+
+        // v0.9.44: létezik-e már auth fiók ehhez a versenyzőhöz?
+        const { data: linkedProfile } = await supabase
+          .from('profiles')
+          .select('id, email')
+          .eq('competitor_id', competitor.id)
+          .eq('role', 'versenyzo')
+          .maybeSingle();
+        if (linkedProfile?.id) {
+          setLinkedUserId(linkedProfile.id);
+          // Ha az email különbözik a competitors.email-től, a profile email-jét tekintjük igazinak
+          if (linkedProfile.email && linkedProfile.email !== form.email) {
+            setForm(f => ({ ...f, email: linkedProfile.email }));
+          }
+        }
       }
     };
     loadParents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [supabase, isNew, competitor]);
+
+  // v0.9.44: jelszó validáció (mint ParentForm-ban)
+  const validatePassword = (pwd) => {
+    if (!pwd || pwd.length < 6) return 'A jelszó legalább 6 karakter legyen';
+    if (!/\d/.test(pwd)) return 'A jelszó legalább 1 számot tartalmazzon';
+    return null;
+  };
 
   const toggleParent = (pid) => {
     setLinkedParentIds(prev =>
@@ -424,6 +463,16 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
     if (!form.birth_date) {
       setError('A születési dátum kötelező');
       return;
+    }
+
+    // v0.9.44: ha új versenyzőnél email+jelszó megadva → auth fiók is létrejön
+    const wantsAuthAccount = isNew && (form.email || '').trim() !== '';
+    if (wantsAuthAccount) {
+      const pwdError = validatePassword(form.password);
+      if (pwdError) {
+        setError(pwdError);
+        return;
+      }
     }
     
     setSaving(true);
@@ -465,6 +514,48 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         competitorId = competitor.id;
       }
 
+      // v0.9.44: új versenyzőnél, ha email+jelszó van → auth fiók létrehozása
+      let createdAuth = null;
+      if (wantsAuthAccount) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) throw new Error('Nincs aktív session');
+        
+        const response = await fetch(
+          `${supabase.supabaseUrl}/functions/v1/create-user`,
+          {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.access_token}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              email: form.email.trim(),
+              full_name: form.full_name.trim(),
+              role: 'versenyzo',
+              password: form.password
+            })
+          }
+        );
+        
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result.error || 'Felhasználó létrehozása sikertelen');
+        }
+        
+        // Profile-t összekapcsoljuk a versenyzővel
+        const { error: linkErr } = await supabase
+          .from('profiles')
+          .update({ competitor_id: competitorId })
+          .eq('id', result.user_id);
+        if (linkErr) throw new Error('Versenyző-fiók linkelés sikertelen: ' + linkErr.message);
+        
+        createdAuth = {
+          email: form.email.trim(),
+          password: form.password,
+          name: form.full_name.trim()
+        };
+      }
+
       // Szülő-gyerek kapcsolatok frissítése
       // 1. Minden meglévő törlése
       await supabase
@@ -483,9 +574,59 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         if (linkError) throw linkError;
       }
 
-      onSaved();
+      onSaved(createdAuth);  // v0.9.44: ha új auth jött létre, átadjuk a credentials-t
     } catch (err) {
       setError('Mentés sikertelen: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // v0.9.44: jelszó módosítása létező versenyzőnek (mint ParentForm)
+  const changePassword = async () => {
+    setError(null);
+    setPasswordChangeMessage(null);
+    
+    const pwdError = validatePassword(newPassword);
+    if (pwdError) {
+      setError(pwdError);
+      return;
+    }
+    if (!linkedUserId) {
+      setError('Ehhez a versenyzőhöz nincs auth fiók. Először hozz létre auth fiókot.');
+      return;
+    }
+    
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nincs aktív session');
+      
+      const response = await fetch(
+        `${supabase.supabaseUrl}/functions/v1/change-password`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: linkedUserId,
+            new_password: newPassword
+          })
+        }
+      );
+      
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Jelszó módosítása sikertelen');
+      }
+      
+      setPasswordChangeMessage(`Jelszó sikeresen módosítva. Új jelszó: ${newPassword}`);
+      setNewPassword('');
+      setShowPasswordChange(false);
+    } catch (err) {
+      setError('Jelszó módosítás sikertelen: ' + err.message);
     } finally {
       setSaving(false);
     }
@@ -557,13 +698,109 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           </Field>
         </div>
 
-        <Field label="Email (opcionális)">
+        <Field label={isNew ? 'Email (opcionális — auth fiókhoz)' : (linkedUserId ? 'Email (auth fiók)' : 'Email (opcionális)')}>
           <Input
             type="email"
+            name="competitor_email_field"
+            autoComplete="off"
             value={form.email}
             onChange={(e) => setForm({...form, email: e.target.value})}
+            disabled={!isNew && linkedUserId}
+            placeholder="versenyzo@example.com"
           />
+          {isNew && (
+            <div className="text-xs text-gray-500 mt-1">
+              Ha email + jelszó megadva → a versenyző be tud lépni saját profillal.
+            </div>
+          )}
         </Field>
+
+        {/* v0.9.44: Jelszó mező új versenyzőhöz (ha email is van) */}
+        {isNew && (form.email || '').trim() !== '' && (
+          <Field label="Jelszó * (min. 6 karakter, min. 1 szám)">
+            <div className="relative">
+              <Input
+                type={showPassword ? 'text' : 'password'}
+                value={form.password}
+                onChange={(e) => setForm({...form, password: e.target.value})}
+                placeholder="pl. csepel123"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
+            </div>
+          </Field>
+        )}
+
+        {/* v0.9.44: Jelszó módosítás létező versenyzőnél (ha van auth fiókja) */}
+        {!isNew && linkedUserId && (
+          <div className="border-t pt-3" style={{ borderColor: COLORS.gray200 }}>
+            <div className="text-xs text-gray-600 mb-2">
+              Auth fiók: <strong>{form.email}</strong> (be tud lépni)
+            </div>
+            {!showPasswordChange ? (
+              <SecondaryButton onClick={() => setShowPasswordChange(true)}>
+                <Eye className="w-4 h-4" /> Jelszó megváltoztatása
+              </SecondaryButton>
+            ) : (
+              <div className="space-y-2 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="text-sm font-medium text-amber-900">
+                  Új jelszó (min. 6 karakter, min. 1 szám):
+                </div>
+                <div className="relative">
+                  <Input
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="új jelszó"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={changePassword}
+                    disabled={saving || !newPassword}
+                    className="px-3 py-1.5 rounded text-sm font-medium text-white"
+                    style={{ backgroundColor: COLORS.blue }}
+                  >
+                    Jelszó módosítása
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setShowPasswordChange(false); setNewPassword(''); setError(null); }}
+                    className="px-3 py-1.5 rounded text-sm font-medium border"
+                    style={{ borderColor: COLORS.gray200 }}
+                  >
+                    Mégsem
+                  </button>
+                </div>
+              </div>
+            )}
+            {passwordChangeMessage && (
+              <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-2 text-sm text-green-900">
+                {passwordChangeMessage}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* v0.9.44: Tájékoztatás létező versenyzőnél ha NINCS auth fiók */}
+        {!isNew && !linkedUserId && (
+          <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs text-gray-600">
+            💡 Ehhez a versenyzőhöz még nincs belépési fiók. Új versenyző létrehozásakor add meg az email + jelszót.
+          </div>
+        )}
 
         {!isNew && (
           <Field label={`Szülő(k) — ${linkedParentIds.length} kiválasztva`}>

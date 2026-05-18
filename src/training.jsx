@@ -1035,27 +1035,27 @@ function ClubTrainingSummary({ supabase }) {
                     </div>
                   </div>
 
-                  {/* 3 számláló badge - mobil-barát */}
+                  {/* 4 számláló badge - nagyobb betűkkel az olvashatóságért */}
                   <div className="flex items-center gap-1.5 flex-shrink-0">
                     {/* Edzés (kék) */}
-                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-blue-50">
-                      <div className="text-sm font-bold text-blue-700 leading-none">{edzes}</div>
-                      <div className="text-[9px] text-blue-600 mt-0.5">edz.</div>
+                    <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-blue-50">
+                      <div className="text-xl font-bold text-blue-700 leading-none">{edzes}</div>
+                      <div className="text-[11px] text-blue-600 mt-0.5">edz.</div>
                     </div>
                     {/* Egésznapos (zöld) */}
-                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-green-50">
-                      <div className="text-sm font-bold text-green-700 leading-none">{egesznapos}</div>
-                      <div className="text-[9px] text-green-600 mt-0.5">eg.n.</div>
+                    <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-green-50">
+                      <div className="text-xl font-bold text-green-700 leading-none">{egesznapos}</div>
+                      <div className="text-[11px] text-green-600 mt-0.5">eg.n.</div>
                     </div>
                     {/* Tábor (sárga) */}
-                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-amber-50">
-                      <div className="text-sm font-bold text-amber-700 leading-none">{tabor}</div>
-                      <div className="text-[9px] text-amber-600 mt-0.5">tábor</div>
+                    <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-amber-50">
+                      <div className="text-xl font-bold text-amber-700 leading-none">{tabor}</div>
+                      <div className="text-[11px] text-amber-600 mt-0.5">tábor</div>
                     </div>
                     {/* Összesen (szürke) */}
-                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-gray-100 ml-1">
-                      <div className="text-sm font-bold text-gray-700 leading-none">{total}</div>
-                      <div className="text-[9px] text-gray-600 mt-0.5">össz.</div>
+                    <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-gray-100 ml-1">
+                      <div className="text-xl font-bold text-gray-700 leading-none">{total}</div>
+                      <div className="text-[11px] text-gray-600 mt-0.5">össz.</div>
                     </div>
                   </div>
                 </div>

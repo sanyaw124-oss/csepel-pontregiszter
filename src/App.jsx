@@ -872,7 +872,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.43 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.44 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1214,36 +1214,7 @@ function DashboardView({ setActiveView }) {
         </div>
       </div>
 
-      <div 
-        className="mt-4 rounded-lg p-4 border"
-        style={{ backgroundColor: COLORS.blueBg, borderColor: COLORS.blueLight }}
-      >
-        <div className="font-semibold mb-2 text-sm" style={{ color: COLORS.blueDark }}>
-          Fejlesztési ütemterv
-        </div>
-        <div className="space-y-1.5 text-sm" style={{ color: COLORS.blue }}>
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-green-600" />
-            1. fázis: Supabase auth + login (KÉSZ)
-          </div>
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-green-600" />
-            2. fázis: Admin felület (KÉSZ)
-          </div>
-          <div className="flex items-center gap-2">
-            <Loader className="w-4 h-4" />
-            3. fázis: Versenyek + startlista + pontozás
-          </div>
-          <div className="flex items-center gap-2 opacity-50">
-            <div className="w-4 h-4" />
-            4. fázis: Eredmények + grafikonok + szülő profil szerkesztés
-          </div>
-          <div className="flex items-center gap-2 opacity-50">
-            <div className="w-4 h-4" />
-            5. fázis: Kamera nagyító (TV pontleolvasáshoz)
-          </div>
-        </div>
-      </div>
+      {/* v0.9.44: Fejlesztési ütemterv doboz eltávolítva (nem releváns a klubnak) */}
       </>
       )}
     </div>
