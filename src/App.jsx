@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { 
   Users, Calendar, Settings, LogOut, User,
@@ -133,42 +133,107 @@ function useAuth() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // v0.9.43: In-flight guard - megakadályozza a duplikált loadProfile hívásokat
+  // (React StrictMode-ban a useEffect 2x fut, és a signIn is direkt hívná → 3x lefutott korábban)
+  // Egy useRef tárolja az éppen futó userId-t és AbortController-t.
+  const inflightRef = useRef({ userId: null, controller: null });
+
   const loadProfile = useCallback(async (userId) => {
-    // v0.9.37: korábban 5s timeout volt + nincs retry, ezért időnként 
-    // (különösen mobil hálózaton) hibára futott. Most: 10s timeout + 1 retry.
-    // Supabase lock-warning ("Lock not released within 5000ms") jelezheti, 
-    // hogy a token refresh zavar a párhuzamos query-vel.
-    const fetchWithTimeout = async (timeoutMs) => {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error(`timeout (${timeoutMs / 1000}s)`)), timeoutMs)
-      );
-      const queryPromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single();
-      return Promise.race([queryPromise, timeoutPromise]);
+    // v0.9.43: Ha már fut egy lekérdezés UGYANARRA a userId-ra, kihagyjuk a duplikálást
+    // (ez okozta a Supabase lock-konkurenciát + dupla 10s timeout-okat)
+    if (inflightRef.current.userId === userId && inflightRef.current.controller) {
+      console.log('Profil betöltés már folyamatban, kihagyom a duplikátumot');
+      return;
+    }
+
+    // Ha más userId-ra fut éppen lekérdezés, AZT megszakítjuk
+    if (inflightRef.current.controller) {
+      inflightRef.current.controller.abort();
+    }
+
+    // Új AbortController létrehozása ehhez a lekérdezéshez
+    const controller = new AbortController();
+    inflightRef.current = { userId, controller };
+
+    // v0.9.43: Promise.race helyett AbortController + timeout - 
+    // ez VALÓBAN megszakítja a Supabase HTTP request-et (a lock is felszabadul)
+    const fetchProfile = async (timeoutMs) => {
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .abortSignal(controller.signal)
+          .single();
+        clearTimeout(timeoutId);
+        if (error) throw error;
+        return data;
+      } catch (err) {
+        clearTimeout(timeoutId);
+        // AbortError esetén értelmes hibaüzenet
+        if (err.name === 'AbortError' || controller.signal.aborted) {
+          throw new Error(`profil lekérdezés megszakítva (timeout ${timeoutMs / 1000}s)`);
+        }
+        throw err;
+      }
     };
 
     try {
-      let result;
+      let data;
       try {
         // 1. próbálkozás: 10s timeout
-        result = await fetchWithTimeout(10000);
+        data = await fetchProfile(10000);
       } catch (firstErr) {
-        // ha timeout vagy hálózati hiba, várunk 500ms-t és retry
+        // Ha más folyamat felülírta az inflight-ot, ne retry-zzunk
+        if (inflightRef.current.userId !== userId) {
+          console.log('Inflight user változott, retry kihagyva');
+          return;
+        }
         console.warn('Profil 1. próbálkozás sikertelen, retry...', firstErr.message);
+        // Új AbortController a retry-hoz
+        const retryController = new AbortController();
+        inflightRef.current.controller = retryController;
+        
         await new Promise(r => setTimeout(r, 500));
-        result = await fetchWithTimeout(10000);
+        
+        // Retry külön try-catch, hogy a controller-t mindenképp megőrizzük
+        const retryTimeoutId = setTimeout(() => retryController.abort(), 10000);
+        try {
+          const result = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .abortSignal(retryController.signal)
+            .single();
+          clearTimeout(retryTimeoutId);
+          if (result.error) throw result.error;
+          data = result.data;
+        } catch (retryErr) {
+          clearTimeout(retryTimeoutId);
+          throw retryErr;
+        }
       }
 
-      const { data, error } = result;
-      if (error) throw error;
-      setProfile(data);
-      setError(null);
+      // Csak akkor állítsuk a state-et, ha még mindig erre a user-re vártunk
+      if (inflightRef.current.userId === userId) {
+        setProfile(data);
+        setError(null);
+      }
     } catch (err) {
+      // AbortError-t ne dobjuk a felhasználónak (várt megszakítás)
+      if (err.name === 'AbortError') {
+        return;
+      }
       console.error('Profil betöltési hiba:', err);
-      setError('A profil betöltése nem sikerült. Próbáld a Frissítés gombot, vagy várj egy kis ideig és tölts újra. (Részletek: ' + err.message + ')');
+      if (inflightRef.current.userId === userId) {
+        setError('A profil betöltése nem sikerült. Próbáld a Frissítés gombot, vagy várj egy kis ideig és tölts újra. (Részletek: ' + err.message + ')');
+      }
+    } finally {
+      // Megjelöljük befejezésként, hogy következő hívás indulhasson
+      if (inflightRef.current.userId === userId) {
+        inflightRef.current = { userId: null, controller: null };
+      }
     }
   }, []);
 
@@ -246,12 +311,11 @@ function useAuth() {
       setError(error.message);
       return false;
     }
+    // v0.9.43: NEM hívjuk a loadProfile-t itt - az onAuthStateChange event
+    // automatikusan meghívja, ha kétszer hívnánk, lock-konkurencia lenne.
     if (data?.session) {
       setSession(data.session);
-      if (data.user) {
-        await loadProfile(data.user.id);
-      }
-      setLoading(false);
+      // Loading állapot megmarad amíg az onAuthStateChange-ben be nem fejeződik
     }
     return true;
   };
@@ -825,7 +889,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.42 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.43 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
