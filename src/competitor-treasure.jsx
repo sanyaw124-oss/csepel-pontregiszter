@@ -1,13 +1,10 @@
 // ═══════════════════════════════════════════════════════════════════
-// COMPETITOR TREASURE — "Kincsesládám" oldal v0.9.40
+// COMPETITOR TREASURE — "Kincsesládám" oldal v0.9.41
 // ═══════════════════════════════════════════════════════════════════
-// Sándor döntése (2026.05.18):
-// 1. ÚJ FEJLÉC: serleg balra + alatta "Kincsesládám" felirat,
-//    avatar+név középen, kategória+korosztály+életkor jobbra
-// 2. SAJÁT ÉREMFALAD: 🥇🥈🥉 motivációs összesítő (ÖSSZES eredmény, nem csak idei)
-// 3. LEGUTÓBB doboz: legfrissebb érmes eredmény kiemelve
-// 4. Összes elért eredmény évenként (CompetitorYearlyStats az admin.jsx-ből)
-// 5. Érmek nagyban (CompetitorHistoricalResults)
+// JAVÍTÁSOK az SQL diagnosztika alapján (2026.05.18):
+// - competition_team_members → competition_teams chain (csapat-érmek) 
+// - historical_results JSONB struktúra (year, results JSONB)
+// - Promise.all() gyors párhuzamos betöltés
 // ═══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
@@ -22,7 +19,6 @@ import {
 const COLORS = {
   purpleDeep: '#831843',
   pinkDark: '#BE185D',
-  amber: '#F59E0B',
   amberDark: '#92400E',
   goldText: '#D97706',
   silverText: '#6B7280',
@@ -39,7 +35,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
     let mounted = true;
     const load = async () => {
       try {
-        // 1) competitorId megkeresése
+        // 1) Competitor ID
         let competitorId = profile?.competitor_id;
         if (!competitorId && profile?.full_name) {
           const fb = await safeQuery(() =>
@@ -58,56 +54,80 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
 
-        // 3) ÖSSZES érmes eredmény (egyéni + összetett + csapat + historical)
-        // a) Egyéni érmek
-        const indivRes = await safeQuery(() =>
-          supabase.from('results')
-            .select(`
-              placement, apparatus,
-              startlist_entry:startlist_entries!inner(
-                competitor_id,
+        // ═══════ PÁRHUZAMOS ÉREM-LEKÉRDEZÉSEK ═══════
+        const [indivRes, aaRes, histRes, teamMembersRes] = await Promise.all([
+          // a) Egyéni érmek (results)
+          safeQuery(() =>
+            supabase.from('results')
+              .select(`
+                placement, apparatus,
+                startlist_entry:startlist_entries!inner(
+                  competitor_id,
+                  competition_category:competition_categories!inner(
+                    competition_day:competition_days!inner(
+                      competition:competitions!inner(id, name, start_date)
+                    )
+                  )
+                )
+              `)
+              .eq('startlist_entry.competitor_id', competitorId)
+              .in('placement', [1, 2, 3])
+          ),
+
+          // b) Összetett érmek
+          safeQuery(() =>
+            supabase.from('all_around_results')
+              .select(`
+                placement,
                 competition_category:competition_categories!inner(
                   competition_day:competition_days!inner(
                     competition:competitions!inner(id, name, start_date)
                   )
                 )
-              )
-            `)
-            .eq('startlist_entry.competitor_id', competitorId)
-            .in('placement', [1, 2, 3])
-            .not('placement', 'is', null)
-        );
+              `)
+              .eq('competitor_id', competitorId)
+              .in('placement', [1, 2, 3])
+          ),
 
-        // b) Összetett érmek
-        const aaRes = await safeQuery(() =>
-          supabase.from('all_around_results')
-            .select(`
-              placement,
-              competition_category:competition_categories!inner(
-                competition_day:competition_days!inner(
-                  competition:competitions!inner(id, name, start_date)
-                )
-              )
-            `)
-            .eq('competitor_id', competitorId)
-            .in('placement', [1, 2, 3])
-            .not('placement', 'is', null)
-        );
+          // c) Historical eredmények (VALÓS struktúra: year, results JSONB)
+          safeQuery(() =>
+            supabase.from('historical_results')
+              .select('id, year, competition_name, team_name, results')
+              .eq('competitor_id', competitorId)
+          ),
 
-        // c) Historical érmek
-        const histRes = await safeQuery(() =>
-          supabase.from('historical_results')
-            .select('placement, apparatus, competition_name, competition_date')
-            .eq('competitor_id', competitorId)
-            .in('placement', [1, 2, 3])
-            .not('placement', 'is', null)
-        );
+          // d) Csapat-tagság (a 2. lépésben competition_teams-ből vesszük a placement-et)
+          safeQuery(() =>
+            supabase.from('competition_team_members')
+              .select('team_id')
+              .eq('competitor_id', competitorId)
+          )
+        ]);
 
-        // Összes érem összegyűjtése + legfrissebb keresése
+        // Csapat-érmek 2. lépés
+        let teamResData = [];
+        if (teamMembersRes?.data && teamMembersRes.data.length > 0) {
+          const teamIds = teamMembersRes.data.map(m => m.team_id).filter(Boolean);
+          if (teamIds.length > 0) {
+            const teamsRes = await safeQuery(() =>
+              supabase.from('competition_teams')
+                .select(`
+                  id, name, placement,
+                  competition:competition_id (id, name, start_date)
+                `)
+                .in('id', teamIds)
+                .in('placement', [1, 2, 3])
+            );
+            if (teamsRes?.data) teamResData = teamsRes.data;
+          }
+        }
+
+        // ═══════ ÉRMEK ÖSSZEGZÉSE ═══════
         let gold = 0, silver = 0, bronze = 0;
-        let allMedals = [];
+        const allMedals = [];
 
-        if (indivRes.data) {
+        // Egyéni érmek
+        if (indivRes?.data) {
           indivRes.data.forEach(r => {
             if (r.placement === 1) gold++;
             else if (r.placement === 2) silver++;
@@ -116,7 +136,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
             if (comp) {
               allMedals.push({
                 placement: r.placement,
-                apparatus: r.apparatus,
+                apparatus: r.apparatus || 'Egyéni',
                 name: comp.name,
                 date: comp.start_date,
                 source: 'individual'
@@ -124,7 +144,9 @@ export default function CompetitorTreasureView({ supabase, profile }) {
             }
           });
         }
-        if (aaRes.data) {
+
+        // Összetett érmek
+        if (aaRes?.data) {
           aaRes.data.forEach(r => {
             if (r.placement === 1) gold++;
             else if (r.placement === 2) silver++;
@@ -141,22 +163,75 @@ export default function CompetitorTreasureView({ supabase, profile }) {
             }
           });
         }
-        if (histRes.data) {
-          histRes.data.forEach(r => {
-            if (r.placement === 1) gold++;
-            else if (r.placement === 2) silver++;
-            else if (r.placement === 3) bronze++;
-            allMedals.push({
-              placement: r.placement,
-              apparatus: r.apparatus || 'Eredmény',
-              name: r.competition_name,
-              date: r.competition_date,
-              source: 'historical'
+
+        // Csapat-érmek
+        teamResData.forEach(t => {
+          if (t.placement === 1) gold++;
+          else if (t.placement === 2) silver++;
+          else if (t.placement === 3) bronze++;
+          allMedals.push({
+            placement: t.placement,
+            apparatus: `Csapat (${t.name || 'csapat'})`,
+            name: t.competition?.name || 'Verseny',
+            date: t.competition?.start_date,
+            source: 'team'
+          });
+        });
+
+        // Historical érmek (JSONB)
+        if (histRes?.data) {
+          histRes.data.forEach(h => {
+            const results = h.results || {};
+            const date = h.year ? `${h.year}-12-31` : null; // év végét vesszük dátumnak
+
+            // Egyéni szerek
+            ['karika', 'labda', 'buzogany', 'szalag', 'kotel', 'szabad'].forEach(a => {
+              if (results[a]?.placement && results[a].placement >= 1 && results[a].placement <= 3) {
+                const p = results[a].placement;
+                if (p === 1) gold++; else if (p === 2) silver++; else if (p === 3) bronze++;
+                const labels = { 
+                  szabad: 'Szabad', karika: 'Karika', labda: 'Labda',
+                  buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél'
+                };
+                allMedals.push({
+                  placement: p,
+                  apparatus: labels[a],
+                  name: h.competition_name,
+                  date,
+                  source: 'historical'
+                });
+              }
             });
+
+            // Összetett
+            if (results.osszetett?.placement && results.osszetett.placement >= 1 && results.osszetett.placement <= 3) {
+              const p = results.osszetett.placement;
+              if (p === 1) gold++; else if (p === 2) silver++; else if (p === 3) bronze++;
+              allMedals.push({
+                placement: p,
+                apparatus: 'Összetett',
+                name: h.competition_name,
+                date,
+                source: 'historical'
+              });
+            }
+
+            // Csapat (historical)
+            if (results.csapat?.placement && results.csapat.placement >= 1 && results.csapat.placement <= 3) {
+              const p = results.csapat.placement;
+              if (p === 1) gold++; else if (p === 2) silver++; else if (p === 3) bronze++;
+              allMedals.push({
+                placement: p,
+                apparatus: `Csapat (${h.team_name || 'csapat'})`,
+                name: h.competition_name,
+                date,
+                source: 'historical'
+              });
+            }
           });
         }
 
-        // Legfrissebb érem (date csökkenő szerint)
+        // Legfrissebb érem
         allMedals.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         const newest = allMedals[0] || null;
 
@@ -202,11 +277,10 @@ export default function CompetitorTreasureView({ supabase, profile }) {
   return (
     <div className="max-w-3xl mx-auto px-4 py-4 space-y-4">
 
-      {/* ─── ÚJ FEJLÉC: serleg balra + felirat, avatar középen, kategória jobbra ─── */}
+      {/* ─── ÚJ FEJLÉC: serleg+felirat balra | avatar+név középen | kategória jobbra ─── */}
       <div className="rounded-2xl p-4 flex items-center gap-3" style={{
         background: 'linear-gradient(135deg, #FEF3C7 0%, #FCE4EC 100%)'
       }}>
-        {/* Bal: nagy serleg + felirat */}
         <div className="flex flex-col items-center justify-center flex-shrink-0 min-w-[64px]">
           <div className="text-5xl leading-none">🏆</div>
           <div className="text-xs mt-1 font-medium text-center" style={{
@@ -218,7 +292,6 @@ export default function CompetitorTreasureView({ supabase, profile }) {
           </div>
         </div>
 
-        {/* Közép: avatar + név */}
         <div className="flex-1 min-w-0 text-center">
           <div className="text-5xl leading-none mb-1">{competitor.avatar_emoji || '🦄'}</div>
           <div className="text-base font-bold leading-tight" style={{ color: COLORS.amberDark }}>
@@ -231,7 +304,6 @@ export default function CompetitorTreasureView({ supabase, profile }) {
           )}
         </div>
 
-        {/* Jobb: kategória adatok */}
         <div className="text-right text-xs leading-relaxed flex-shrink-0" style={{ color: COLORS.amberDark }}>
           <div className="font-bold">{competitor.kategoria}</div>
           <div>{competitor.korosztaly || 'versenyző'}</div>
@@ -239,14 +311,13 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         </div>
       </div>
 
-      {/* ─── SAJÁT ÉREMFALAD — 🥇🥈🥉 ─── */}
+      {/* ─── SAJÁT ÉREMFALAD ─── */}
       <div className="rounded-2xl p-5 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
         <div className="text-sm font-bold mb-4 text-center" style={{ color: COLORS.amberDark }}>
           🏅 Saját éremfalad
         </div>
 
         <div className="grid grid-cols-3 gap-3">
-          {/* ARANY */}
           <div className="text-center">
             <div className="text-6xl mb-1">🥇</div>
             <div className="text-4xl font-bold leading-none" style={{ color: COLORS.goldText }}>
@@ -254,7 +325,6 @@ export default function CompetitorTreasureView({ supabase, profile }) {
             </div>
             <div className="text-xs mt-1 text-gray-600">arany</div>
           </div>
-          {/* EZÜST */}
           <div className="text-center">
             <div className="text-6xl mb-1">🥈</div>
             <div className="text-4xl font-bold leading-none" style={{ color: COLORS.silverText }}>
@@ -262,7 +332,6 @@ export default function CompetitorTreasureView({ supabase, profile }) {
             </div>
             <div className="text-xs mt-1 text-gray-600">ezüst</div>
           </div>
-          {/* BRONZ */}
           <div className="text-center">
             <div className="text-6xl mb-1">🥉</div>
             <div className="text-4xl font-bold leading-none" style={{ color: COLORS.bronzeText }}>
@@ -278,7 +347,6 @@ export default function CompetitorTreasureView({ supabase, profile }) {
           </div>
         )}
 
-        {/* LEGUTÓBB doboz */}
         {lastMedal && (
           <div className="mt-4 rounded-xl p-3 text-center" style={{ background: '#FEF3C7' }}>
             <div className="text-xs" style={{ color: COLORS.amberDark }}>
@@ -291,20 +359,18 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         )}
       </div>
 
-      {/* ─── ÖSSZES ELÉRT EREDMÉNY ÉVENKÉNT (a meglévő admin komponens) ─── */}
+      {/* ─── ÉVENKÉNTI ÖSSZESÍTŐ (admin.jsx komponensei) ─── */}
       <CompetitorYearlyStats
         supabase={supabase}
         competitorId={competitor.id}
         competitorName={competitor.full_name}
       />
 
-      {/* ─── CSAPAT-EREDMÉNYEK ─── */}
       <CompetitorTeamResults
         supabase={supabase}
         competitorId={competitor.id}
       />
 
-      {/* ─── ÖSSZES ÉRMES EREDMÉNY (NAGYBAN) ─── */}
       <CompetitorHistoricalResults
         supabase={supabase}
         competitorId={competitor.id}

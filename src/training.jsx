@@ -16,10 +16,11 @@
 //   - Excel/PDF export
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Calendar, ChevronLeft, ChevronRight, Save, Check, X,
-  Loader, AlertCircle, BookOpen, CheckSquare, Square, ArrowLeft, Users
+  Loader, AlertCircle, BookOpen, CheckSquare, Square, ArrowLeft, Users,
+  BarChart3, ClipboardList
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -210,9 +211,50 @@ function MyTrainingsView({ supabase, profile }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// EDZŐI/ADMIN edzésnapló (eredeti TrainingView)
+// EDZŐI/ADMIN edzésnapló WRAPPER — tab választó (rögzítés ↔ összesítő)
+// v0.9.42: Klub összesítő visszahozva (eltűnt korábbi iterációban)
 // ═══════════════════════════════════════════════════════════════════
 function CoachTrainingView({ supabase, userRole, dataReloadKey }) {
+  const [tab, setTab] = useState('log'); // 'log' | 'summary'
+
+  return (
+    <div className="space-y-3">
+      {/* Tab választó */}
+      <div className="bg-white rounded-lg border border-gray-200 p-1 inline-flex gap-1">
+        <button
+          onClick={() => setTab('log')}
+          className={`px-4 py-2 rounded text-sm font-medium transition-all flex items-center gap-2 ${
+            tab === 'log'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
+          Edzés rögzítés
+        </button>
+        <button
+          onClick={() => setTab('summary')}
+          className={`px-4 py-2 rounded text-sm font-medium transition-all flex items-center gap-2 ${
+            tab === 'summary'
+              ? 'bg-blue-600 text-white'
+              : 'text-gray-700 hover:bg-gray-50'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4" />
+          Klub összesítő
+        </button>
+      </div>
+
+      {tab === 'log' && <CoachLogView supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
+      {tab === 'summary' && <ClubTrainingSummary supabase={supabase} />}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EDZÉS RÖGZÍTÉS — a régi CoachTrainingView (átnevezve)
+// ═══════════════════════════════════════════════════════════════════
+function CoachLogView({ supabase, userRole, dataReloadKey }) {
   const [date, setDate] = useState(todayISO());
   const [sessionType, setSessionType] = useState('edzes');
   const [competitors, setCompetitors] = useState([]);
@@ -238,9 +280,15 @@ function CoachTrainingView({ supabase, userRole, dataReloadKey }) {
       const { data: comps, error: cErr } = await supabase
         .from('competitors')
         .select('id, full_name, nickname, kategoria, korosztaly, birth_year, is_active')
-        .eq('is_active', true)
-        .order('full_name');
+        .eq('is_active', true);
       if (cErr) throw cErr;
+
+      // v0.9.42: becenév-elsődleges magyar abc rendezés (PG byte-alap helyett JS-ben)
+      const sortedComps = (comps || []).sort((a, b) => {
+        const aKey = (a.nickname || a.full_name || '').trim();
+        const bKey = (b.nickname || b.full_name || '').trim();
+        return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base', numeric: true });
+      });
 
       // 2. Éves összesítés (view)
       const { data: stats, error: sErr } = await supabase
@@ -271,7 +319,7 @@ function CoachTrainingView({ supabase, userRole, dataReloadKey }) {
         (atts || []).forEach(a => attendIds.add(a.competitor_id));
       }
 
-      setCompetitors(comps || []);
+      setCompetitors(sortedComps);
       setYearlyStats(statsMap);
       setExistingSession(sess);
       setNotes(sess?.notes || '');
@@ -735,6 +783,292 @@ export function ParentTrainingView({ supabase, competitorId, year }) {
           {targetYear}-ben még nincs rögzített edzés.
         </div>
       )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// KLUB ÖSSZESÍTŐ — minden versenyző edzés-statisztikája
+// v0.9.42: visszahozva (eltűnt korábbi iterációban)
+// ═══════════════════════════════════════════════════════════════════
+// Nézet választó:
+//   - Éves: minden versenyző évre összesítve (edzés/egésznapos/tábor)
+//   - Havi: minden versenyző adott hónapra (alap: aktuális hónap)
+// Adatforrás: v_training_yearly_summary / v_training_monthly_summary view
+// ═══════════════════════════════════════════════════════════════════
+function ClubTrainingSummary({ supabase }) {
+  const currentDate = new Date();
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth() + 1; // 1-12
+
+  const [viewMode, setViewMode] = useState('yearly'); // 'yearly' | 'monthly'
+  const [year, setYear] = useState(currentYear);
+  const [month, setMonth] = useState(currentMonth);
+  const [competitors, setCompetitors] = useState([]);
+  const [stats, setStats] = useState({}); // competitor_id -> {edzes_count, egesznapos_count, tabor_count, total_count}
+  const [availableYears, setAvailableYears] = useState([currentYear]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const MONTHS = [
+    'Január', 'Február', 'Március', 'Április', 'Május', 'Június',
+    'Július', 'Augusztus', 'Szeptember', 'Október', 'November', 'December'
+  ];
+
+  // Adatok betöltése (PÁRHUZAMOSAN)
+  const loadData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const queries = [];
+
+      // 1. Aktív versenyzők
+      queries.push(
+        supabase
+          .from('competitors')
+          .select('id, full_name, nickname, kategoria, korosztaly, birth_year')
+          .eq('is_active', true)
+      );
+
+      // 2. Statisztika a választott nézet szerint
+      if (viewMode === 'yearly') {
+        queries.push(
+          supabase
+            .from('v_training_yearly_summary')
+            .select('competitor_id, edzes_count, egesznapos_count, tabor_count')
+            .eq('year', year)
+        );
+      } else {
+        queries.push(
+          supabase
+            .from('v_training_monthly_summary')
+            .select('competitor_id, edzes_count, egesznapos_count, tabor_count, total_count')
+            .eq('year', year)
+            .eq('month', month)
+        );
+      }
+
+      // 3. Évek listája (választóhoz) — egyszerűen az utolsó pár évet vesszük
+      // jelenleg az adatbázisban ami létezik (yearly summary alapján)
+      queries.push(
+        supabase
+          .from('v_training_yearly_summary')
+          .select('year')
+      );
+
+      const [compsRes, statsRes, yearsRes] = await Promise.all(queries);
+
+      if (compsRes.error) throw compsRes.error;
+      if (statsRes.error) throw statsRes.error;
+
+      // Versenyzők becenév-rendezett
+      const sortedComps = (compsRes.data || []).sort((a, b) => {
+        const aKey = (a.nickname || a.full_name || '').trim();
+        const bKey = (b.nickname || b.full_name || '').trim();
+        return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base', numeric: true });
+      });
+
+      // Statisztika map
+      const statsMap = {};
+      (statsRes.data || []).forEach(s => {
+        statsMap[s.competitor_id] = s;
+      });
+
+      // Évek listája
+      const yearSet = new Set([currentYear]);
+      (yearsRes?.data || []).forEach(y => { if (y.year) yearSet.add(y.year); });
+      const years = Array.from(yearSet).sort((a, b) => b - a);
+
+      setCompetitors(sortedComps);
+      setStats(statsMap);
+      setAvailableYears(years);
+    } catch (err) {
+      console.error('ClubTrainingSummary load:', err);
+      setError(err.message || 'Hiba történt');
+    } finally {
+      setLoading(false);
+    }
+  }, [supabase, viewMode, year, month, currentYear]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  // Klub-szintű összesítés a fejléchez
+  const clubTotal = useMemo(() => {
+    let edzes = 0, egesznapos = 0, tabor = 0;
+    Object.values(stats).forEach(s => {
+      edzes += s.edzes_count || 0;
+      egesznapos += s.egesznapos_count || 0;
+      tabor += s.tabor_count || 0;
+    });
+    return { edzes, egesznapos, tabor };
+  }, [stats]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  const periodLabel = viewMode === 'yearly'
+    ? `${year}. év`
+    : `${year}. ${MONTHS[month - 1]}`;
+
+  return (
+    <div className="space-y-4">
+      {/* Fejléc */}
+      <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="flex items-center gap-3 mb-3">
+          <BarChart3 className="w-5 h-5 text-gray-700" />
+          <h1 className="text-lg font-semibold">Klub edzés-összesítő</h1>
+        </div>
+
+        {/* Nézet választó */}
+        <div className="flex items-center gap-2 flex-wrap mb-3">
+          <div className="inline-flex border rounded-lg overflow-hidden">
+            <button
+              onClick={() => setViewMode('yearly')}
+              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                viewMode === 'yearly'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Éves
+            </button>
+            <button
+              onClick={() => setViewMode('monthly')}
+              className={`px-3 py-1.5 text-sm font-medium transition-colors ${
+                viewMode === 'monthly'
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              Havi
+            </button>
+          </div>
+
+          {/* Év választó */}
+          <select
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value, 10))}
+            className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white"
+          >
+            {availableYears.map(y => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+
+          {/* Hónap választó (csak havi nézetben) */}
+          {viewMode === 'monthly' && (
+            <select
+              value={month}
+              onChange={(e) => setMonth(parseInt(e.target.value, 10))}
+              className="px-3 py-1.5 text-sm rounded border border-gray-300 bg-white"
+            >
+              {MONTHS.map((m, i) => (
+                <option key={i + 1} value={i + 1}>{m}</option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        <div className="text-sm text-gray-600">{periodLabel}</div>
+      </div>
+
+      {/* Hibák */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-3 flex items-center gap-2 text-sm text-red-700">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* Klub-szintű 3 stat kártya */}
+      <div className="grid grid-cols-3 gap-2">
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold text-blue-700">{clubTotal.edzes}</div>
+          <div className="text-xs text-gray-500">edzés (klub össz.)</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold text-green-700">{clubTotal.egesznapos}</div>
+          <div className="text-xs text-gray-500">egész napos</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold text-amber-700">{clubTotal.tabor}</div>
+          <div className="text-xs text-gray-500">tábor</div>
+        </div>
+      </div>
+
+      {/* Versenyzők lista */}
+      <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+        <div className="p-3 border-b border-gray-200 bg-gray-50">
+          <div className="text-sm font-medium">Versenyzők ({competitors.length})</div>
+          <div className="text-xs text-gray-500 mt-0.5">Becenév szerint rendezve</div>
+        </div>
+
+        {competitors.length === 0 ? (
+          <div className="p-6 text-center text-sm text-gray-500">
+            Nincs aktív versenyző.
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {competitors.map(c => {
+              const s = stats[c.id];
+              const edzes = s?.edzes_count || 0;
+              const egesznapos = s?.egesznapos_count || 0;
+              const tabor = s?.tabor_count || 0;
+              const total = edzes + egesznapos + tabor;
+              const age = c.birth_year ? (year - c.birth_year) : null;
+
+              return (
+                <div key={c.id} className="p-3 flex items-center gap-3 hover:bg-gray-50 transition-colors">
+                  {/* Név + meta */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium truncate">
+                      {formatCompetitorName(c)}
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {c.kategoria} · {c.korosztaly}
+                      {age !== null && ` · ${age} éves`}
+                    </div>
+                  </div>
+
+                  {/* 3 számláló badge - mobil-barát */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {/* Edzés (kék) */}
+                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-blue-50">
+                      <div className="text-sm font-bold text-blue-700 leading-none">{edzes}</div>
+                      <div className="text-[9px] text-blue-600 mt-0.5">edz.</div>
+                    </div>
+                    {/* Egésznapos (zöld) */}
+                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-green-50">
+                      <div className="text-sm font-bold text-green-700 leading-none">{egesznapos}</div>
+                      <div className="text-[9px] text-green-600 mt-0.5">eg.n.</div>
+                    </div>
+                    {/* Tábor (sárga) */}
+                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-amber-50">
+                      <div className="text-sm font-bold text-amber-700 leading-none">{tabor}</div>
+                      <div className="text-[9px] text-amber-600 mt-0.5">tábor</div>
+                    </div>
+                    {/* Összesen (szürke) */}
+                    <div className="text-center min-w-[34px] px-1.5 py-1 rounded bg-gray-100 ml-1">
+                      <div className="text-sm font-bold text-gray-700 leading-none">{total}</div>
+                      <div className="text-[9px] text-gray-600 mt-0.5">össz.</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Lábléc info */}
+      <div className="text-xs text-gray-500 italic px-1">
+        💡 Az "egész napos" külön számít az "edzés"-en kívül. Tábor: minden nap külön bejegyzés.
+      </div>
     </div>
   );
 }
