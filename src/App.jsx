@@ -191,6 +191,9 @@ function useAuth() {
     M(`🔵 useEffect MOUNT (subscribe to onAuthStateChange)`);
     let mounted = true;
     let eventCount = 0;
+    // 🎯 v0.9.43: utoljára betöltött userId nyomon követése, hogy ne fusson
+    // dupla loadProfile ugyanarra a user-re (mért: 3-4 párhuzamos query → lock konkurencia)
+    let loadedUserId = null;
 
     // Csak az onAuthStateChange-t használjuk - az INITIAL_SESSION event-et 
     // is meghívja, így nincs lock-konkurencia két párhuzamos auth hívással.
@@ -204,11 +207,23 @@ function useAuth() {
         }
         
         setSession(currentSession);
+        const newUserId = currentSession?.user?.id || null;
         
-        if (currentSession?.user) {
-          await loadProfile(currentSession.user.id);
-        } else {
+        // 🎯 SIGNED_OUT: profil törlése
+        if (event === 'SIGNED_OUT' || !newUserId) {
           setProfile(null);
+          loadedUserId = null;
+          M(`  🚪 signed out / no session → setProfile(null)`);
+        }
+        // 🎯 Csak ÚJ user esetén tölt profilt (nem ugyanarra a userre 3x)
+        else if (newUserId !== loadedUserId) {
+          M(`  🆕 new user → loadProfile (prev=${loadedUserId?.slice(0,8) || 'null'})`);
+          loadedUserId = newUserId;
+          await loadProfile(newUserId);
+        }
+        // 🎯 TOKEN_REFRESHED, INITIAL_SESSION ugyanarra a userre: skip
+        else {
+          M(`  ⏭️  same user (${newUserId.slice(0,8)}), event=${event} → skip loadProfile`);
         }
         
         // Loading kikapcsolása az első event után
@@ -857,7 +872,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.42 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.43 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
