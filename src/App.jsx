@@ -127,6 +127,13 @@ export { HU_COLLATOR, huSortByName, huSortByNickname };
 // AUTH HOOK
 // ═══════════════════════════════════════════════════════════════════
 
+// 🔬 MÉRÉSI HELPER (v0.9.42-MÉRÉS) - globális időbélyeg, oldalbetöltéskor indul
+const __MEASURE_START = Date.now();
+const M = (msg) => {
+  const t = Date.now() - __MEASURE_START;
+  console.log(`[T+${t}ms] ${msg}`);
+};
+
 function useAuth() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -134,6 +141,7 @@ function useAuth() {
   const [error, setError] = useState(null);
 
   const loadProfile = useCallback(async (userId) => {
+    M(`🟡 loadProfile START userId=${userId?.slice(0,8)}`);
     // v0.9.37: korábban 5s timeout volt + nincs retry, ezért időnként 
     // (különösen mobil hálózaton) hibára futott. Most: 10s timeout + 1 retry.
     // Supabase lock-warning ("Lock not released within 5000ms") jelezheti, 
@@ -153,33 +161,47 @@ function useAuth() {
     try {
       let result;
       try {
+        M(`  ⏳ loadProfile query #1 START`);
         // 1. próbálkozás: 10s timeout
         result = await fetchWithTimeout(10000);
+        M(`  ✅ loadProfile query #1 OK`);
       } catch (firstErr) {
         // ha timeout vagy hálózati hiba, várunk 500ms-t és retry
+        M(`  ❌ loadProfile query #1 FAIL: ${firstErr.message}`);
         console.warn('Profil 1. próbálkozás sikertelen, retry...', firstErr.message);
         await new Promise(r => setTimeout(r, 500));
+        M(`  ⏳ loadProfile query #2 START (retry)`);
         result = await fetchWithTimeout(10000);
+        M(`  ✅ loadProfile query #2 OK`);
       }
 
       const { data, error } = result;
       if (error) throw error;
       setProfile(data);
       setError(null);
+      M(`🟢 loadProfile DONE (setProfile called)`);
     } catch (err) {
+      M(`🔴 loadProfile FINAL FAIL: ${err.message}`);
       console.error('Profil betöltési hiba:', err);
       setError('A profil betöltése nem sikerült. Próbáld a Frissítés gombot, vagy várj egy kis ideig és tölts újra. (Részletek: ' + err.message + ')');
     }
   }, []);
 
   useEffect(() => {
+    M(`🔵 useEffect MOUNT (subscribe to onAuthStateChange)`);
     let mounted = true;
+    let eventCount = 0;
 
     // Csak az onAuthStateChange-t használjuk - az INITIAL_SESSION event-et 
     // is meghívja, így nincs lock-konkurencia két párhuzamos auth hívással.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, currentSession) => {
-        if (!mounted) return;
+        eventCount++;
+        M(`📡 onAuthStateChange #${eventCount} event=${event} hasSession=${!!currentSession}`);
+        if (!mounted) {
+          M(`  ⏭️  skipped (unmounted)`);
+          return;
+        }
         
         setSession(currentSession);
         
@@ -191,6 +213,7 @@ function useAuth() {
         
         // Loading kikapcsolása az első event után
         if (mounted) setLoading(false);
+        M(`📡 onAuthStateChange #${eventCount} DONE`);
       }
     );
 
@@ -198,6 +221,7 @@ function useAuth() {
     // mutatjuk a login képernyőt (nincs session)
     const safetyTimeout = setTimeout(() => {
       if (mounted) {
+        M(`⏰ safetyTimeout fired (3s) - setLoading(false)`);
         setLoading(false);
       }
     }, 3000);
@@ -207,14 +231,22 @@ function useAuth() {
     // FONTOS: NEM hívunk getSession()-t, mert az lock-konkurenciát okoz!
     // A Supabase saját onAuthStateChange-je magától refresh-eli a sessiont.
     let lastVisibilityRefresh = Date.now();
+    let visibilityCount = 0;
     const handleVisibilityChange = async () => {
+      visibilityCount++;
+      M(`👁️  visibilitychange #${visibilityCount} state=${document.visibilityState}`);
       if (!mounted) return;
       if (document.visibilityState === 'visible') {
         // Csak akkor frissítünk ha legalább 30 másodperc telt el
         // (elkerüljük hogy gyors váltogatáskor sok query menjen)
         const now = Date.now();
-        if (now - lastVisibilityRefresh < 30000) return;
+        const elapsed = now - lastVisibilityRefresh;
+        if (elapsed < 30000) {
+          M(`  ⏭️  skipped (only ${elapsed}ms since last)`);
+          return;
+        }
         lastVisibilityRefresh = now;
+        M(`  ✓ would refresh (but currently no-op in code)`);
         
         try {
           // Csak a profilt töltjük újra ha van session
