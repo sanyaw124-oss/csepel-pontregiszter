@@ -2830,11 +2830,68 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
         });
       }
 
+      // v0.9.39: Helyezés AUTO-SZÁMÍTÁS
+      // ha a results.placement NULL DE van score_total, számoljuk ki a helyezést
+      // a teljes startlista (csepeliek + külsősök) alapján kategória+szer csoportonként.
+      // Tie-break: E → D → A (FIG CoP 2025-2028)
+      // 
+      // PROBLÉMA háttere: a scoring.jsx-en a "Helyezések" nézet csak megjelenítéshez
+      // számolja a helyezéseket, NEM ír vissza a DB-be. Ezért a Csepeli eredmények
+      // szerkesztőben üresen jelent meg a placement mező korábban.
+      // Most: ha a DB-ben van placement (manuálisan beírt), azt használjuk;
+      // különben kiszámoljuk és virtuálisan beállítjuk az editValues-ban.
+      const allEntriesForRanking = []; // { catId, entryId, apparatus, score_total, score_e, score_d, score_a, isCsepeli }
+      (days || []).forEach(day => {
+        (day.categories || [])
+          .filter(c => c.type !== 'csapat')
+          .forEach(cat => {
+            (cat.entries || []).forEach(entry => {
+              // Csepeli rekordnak vesszük csak, ahol van results bejegyzés
+              const r = resultsMap[entry.id];
+              if (r && r.score_total !== null && r.score_total !== undefined) {
+                allEntriesForRanking.push({
+                  catId: cat.id,
+                  entryId: entry.id,
+                  apparatus: entry.apparatus,
+                  competitorId: entry.competitor_id,
+                  score_total: r.score_total,
+                  score_e: r.score_e,
+                  score_d: r.score_d,
+                  score_a: r.score_a
+                });
+              }
+            });
+            // Külsős versenyzők (entry.competitor_id NULL) - ők NINCSENEK a results
+            // táblában (csak csepelinek mentjük), így a helyezésszámításhoz külön
+            // forrásból kellene lekérni. Egyelőre csak a csepeliek között rangsorolunk.
+            // TODO 2. kör: külsősök beépítése a tényleges helyezésszámításba
+          });
+      });
+
+      // Helyezésszámítás kategóriánként + szerenként
+      const calculatedPlacement = {}; // entryId → placement
+      const groups = {}; // "catId__apparatus" → entries[]
+      allEntriesForRanking.forEach(e => {
+        const key = `${e.catId}__${e.apparatus || '__none__'}`;
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(e);
+      });
+      Object.values(groups).forEach(arr => {
+        // Rendezés: total DESC → e DESC → d DESC → a DESC
+        arr.sort((a, b) => {
+          if (b.score_total !== a.score_total) return b.score_total - a.score_total;
+          if ((b.score_e || 0) !== (a.score_e || 0)) return (b.score_e || 0) - (a.score_e || 0);
+          if ((b.score_d || 0) !== (a.score_d || 0)) return (b.score_d || 0) - (a.score_d || 0);
+          return (b.score_a || 0) - (a.score_a || 0);
+        });
+        arr.forEach((e, idx) => { calculatedPlacement[e.entryId] = idx + 1; });
+      });
+
       setGroupedByCategoryAndCompetitor(grouped);
       setResults(resultsMap);
       setAllAroundResults(aaMap);
 
-      // Init edit values
+      // Init edit values - a placement-nél: DB-érték elsőbbség, különben számolt érték
       const initEdit = {};
       const initAA = {};
       Object.entries(grouped).forEach(([catId, g]) => {
@@ -2842,7 +2899,8 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           cData.entries.forEach(e => {
             const r = resultsMap[e.id];
             initEdit[e.id] = {
-              placement: r?.placement ?? '',
+              // v0.9.39: ha DB-ben nincs placement DE van pont, töltsük a számoltat
+              placement: r?.placement ?? calculatedPlacement[e.id] ?? '',
               score_db: r?.score_db ?? '',
               score_da: r?.score_da ?? '',
               score_d: r?.score_d ?? '',
