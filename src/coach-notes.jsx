@@ -21,7 +21,7 @@ const COLORS = {
 // MAIN: CoachNotesView
 // ═══════════════════════════════════════════════════════════════════
 
-export function CoachNotesView({ supabase, userRole }) {
+export function CoachNotesView({ supabase, userRole, profile }) {
   const [notes, setNotes] = useState(null);
   const [competitors, setCompetitors] = useState([]);
   const [authors, setAuthors] = useState({});
@@ -31,23 +31,48 @@ export function CoachNotesView({ supabase, userRole }) {
   const [editing, setEditing] = useState(null); // null | 'new' | note
   
   const canWrite = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
+  // v0.9.46: szülő csak saját gyerekei megjegyzéseit lássa
+  const isParent = userRole === 'szulo';
 
   const load = useCallback(async () => {
     setError(null);
     try {
+      // v0.9.46: szülő esetén előbb lekérjük a saját gyerekek competitor_id-jét
+      let parentChildIds = null;
+      if (isParent && profile?.id) {
+        const { data: links, error: linksErr } = await supabase
+          .from('parent_child_links')
+          .select('competitor_id')
+          .eq('parent_user_id', profile.id);
+        if (linksErr) throw linksErr;
+        parentChildIds = (links || []).map(l => l.competitor_id);
+        // Ha a szülőnek nincs gyereke összerendelve, üres listát mutatunk
+        if (parentChildIds.length === 0) {
+          setNotes([]);
+          setCompetitors([]);
+          return;
+        }
+      }
+
       // Megjegyzések + versenyzők egyszerre
-      const [notesRes, compRes] = await Promise.all([
-        supabase
-          .from('coach_notes')
-          .select('*')
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('competitors')
-          .select('id, full_name, nickname, kategoria, korosztaly')
-          .eq('is_active', true)
-          .eq('is_provisional', false)
-          .order('full_name')
-      ]);
+      // v0.9.46: szülő esetén szűrünk a saját gyerekekre (defense-in-depth az RLS mellett)
+      const notesQuery = supabase
+        .from('coach_notes')
+        .select('*')
+        .order('created_at', { ascending: false });
+      const competitorsQuery = supabase
+        .from('competitors')
+        .select('id, full_name, nickname, kategoria, korosztaly')
+        .eq('is_active', true)
+        .eq('is_provisional', false)
+        .order('full_name');
+
+      if (parentChildIds) {
+        notesQuery.in('competitor_id', parentChildIds);
+        competitorsQuery.in('id', parentChildIds);
+      }
+
+      const [notesRes, compRes] = await Promise.all([notesQuery, competitorsQuery]);
       
       if (notesRes.error) throw notesRes.error;
       setNotes(notesRes.data || []);
@@ -67,7 +92,7 @@ export function CoachNotesView({ supabase, userRole }) {
     } catch (err) {
       setError(err.message);
     }
-  }, [supabase]);
+  }, [supabase, isParent, profile?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -158,7 +183,7 @@ export function CoachNotesView({ supabase, userRole }) {
               onChange={(e) => setFilterCompetitor(e.target.value)}
               className="px-2 py-1 border border-gray-300 rounded bg-white text-sm"
             >
-              <option value="all">Minden versenyző</option>
+              <option value="all">{isParent ? 'Minden gyermekem' : 'Minden versenyző'}</option>
               {competitors.map(c => (
                 <option key={c.id} value={c.id}>
                   {formatCompName(c)}

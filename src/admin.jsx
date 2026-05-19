@@ -1883,10 +1883,12 @@ function AdminLinks({ supabase, dataReloadKey }) {
 // COMPETITORS PUBLIC VIEW (a Versenyzők navfül-höz)
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
+export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [filter, setFilter] = useState({ kategoria: 'all', search: '' });
   const [viewing, setViewing] = useState(null);  // melyik versenyző profilját nézzük
+  // v0.9.46: szülő saját gyerekeinek ID-jai (a Korábbi eredmények "+ Új eredmény" gomb csak saját gyereken jelenjen meg)
+  const [ownChildIds, setOwnChildIds] = useState([]);
 
   // Edzők és adminok kapnak szerkesztési jogot
   const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
@@ -1894,6 +1896,24 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
   // v0.9.38: a Versenyzők menü mindenkinek MINDEN klub-tagot mutat
   // (Sándor 2026.05.17: "versenyzők oldalon minden klubtagot látnia kellene")
   // Csak a Profil menüben (ParentProfileView) szűrünk saját gyerekre.
+
+  // v0.9.46: szülőnél lekérjük a saját gyerekeit, hogy a PublicCompetitorProfile-ban
+  // tudjuk az "+ Új eredmény" gombot csak saját gyereken megjeleníteni.
+  useEffect(() => {
+    if (userRole !== 'szulo' || !profile?.id) {
+      setOwnChildIds([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('parent_child_links')
+        .select('competitor_id')
+        .eq('parent_user_id', profile.id);
+      if (!cancelled) setOwnChildIds((data || []).map(l => l.competitor_id));
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, userRole, profile?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1922,6 +1942,7 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
         supabase={supabase}
         competitor={viewing}
         userRole={userRole}
+        ownChildIds={ownChildIds}
         onBack={() => setViewing(null)}
       />
     );
@@ -2047,8 +2068,14 @@ export function CompetitorsView({ supabase, userRole, dataReloadKey }) {
 // Mutatja: érem-összesítő, csapat-eredmények, korábbi eredmények
 // (de NEM mutatja az edzői privát megjegyzéseket vagy szerkesztési mezőket)
 // ═══════════════════════════════════════════════════════════════════
-function PublicCompetitorProfile({ supabase, competitor, userRole, onBack }) {
+function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, onBack }) {
   const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
+  
+  // v0.9.46: szülőnél a Korábbi eredmények "+ Új eredmény" gomb csak saját gyereken jelenjen meg.
+  // Ha NEM saját gyerek, akkor 'vendeg' role-t adunk át, ami nincs a canEdit listában → nincs gomb.
+  const effectiveUserRole = (userRole === 'szulo' && Array.isArray(ownChildIds) && !ownChildIds.includes(competitor.id))
+    ? 'vendeg'
+    : userRole;
   
   return (
     <div>
@@ -2082,8 +2109,9 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, onBack }) {
       {/* Csapat-eredmények */}
       <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
 
-      {/* Korábbi eredmények - publikus nézet */}
-      <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+      {/* Korábbi eredmények - publikus nézet
+          v0.9.46: szülőnél csak saját gyereknél lehet "+ Új eredmény"-t hozzáadni */}
+      <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={effectiveUserRole} />
     </div>
   );
 }
