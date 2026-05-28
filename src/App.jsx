@@ -27,7 +27,15 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: false
+    detectSessionInUrl: false,
+    // 🎯 v0.9.48: lock no-op. A gotrue-js Web Lock-ja ("Lock not released
+    // within 5000ms") régi tárolt token mellett 5s+-ig akadt, ettől a
+    // profil-query 10s-ig timeout-olt, retry × 3 ≈ 21s belépés (inkognitóban
+    // nincs régi token → nincs lock-harc → gyors volt). A lock-ot azonnal
+    // feloldó függvénnyel felülírjuk: a fn() rögtön lefut, nincs várakozás.
+    // Trade-off: több egyidejű tab esetén elvi token-refresh race, de a klub
+    // use-case-ében (egy tab) ez nem reális kockázat.
+    lock: async (name, acquireTimeout, fn) => await fn()
   }
 });
 
@@ -872,7 +880,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.47 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.48 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
