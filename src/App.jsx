@@ -287,18 +287,18 @@ function useAuth() {
   }, [loadProfile]);
 
   const signIn = async (email, password) => {
+    // 🎯 v0.9.47: a signIn KIZÁRÓLAG hitelesít. A session/profil/loading
+    // beállítását az onAuthStateChange SIGNED_IN event-je végzi — egyszer.
+    // Korábban (v0.9.46) a signIn is hívott setSession+loadProfile+setLoading-ot,
+    // ezzel PÁRHUZAMOS loadProfile futott (signIn + SIGNED_IN event egyszerre).
+    // A párhuzamos query + régi token autoRefresh = gotrue lock-konkurencia →
+    // 10s timeout × retry × 3 ≈ 21s belépés normál böngészőben (inkognitóban
+    // nincs régi token, ezért volt gyors). A signIn most nem nyúl a state-hez.
     setError(null);
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setError(error.message);
       return false;
-    }
-    if (data?.session) {
-      setSession(data.session);
-      if (data.user) {
-        await loadProfile(data.user.id);
-      }
-      setLoading(false);
     }
     return true;
   };
@@ -872,7 +872,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.46 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.47 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
