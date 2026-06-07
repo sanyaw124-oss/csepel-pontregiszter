@@ -72,6 +72,15 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
         .order('placement', { nullsFirst: false });
       if (tErr) throw tErr;
 
+      // v0.9.50: kiszűrjük az EKCS (startlistából létrehozott) csapatokat.
+      // A Klub-csapatok nézet CSAK azokat mutatja, amikre NEM mutat startlistasor (team_id).
+      const { data: linkedRows } = await supabase
+        .from('startlist_entries')
+        .select('team_id')
+        .not('team_id', 'is', null);
+      const linkedTeamIds = new Set((linkedRows || []).map(r => r.team_id));
+      const clubTeams = (teamsData || []).filter(t => !linkedTeamIds.has(t.id));
+
       // Csepeli versenyzők (csak klubtagok)
       const { data: compsData, error: cErr } = await supabase
         .from('competitors')
@@ -80,7 +89,7 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
         .order('full_name');
       if (cErr) throw cErr;
 
-      setTeams(teamsData || []);
+      setTeams(clubTeams);
       setCsepeliCompetitors(compsData || []);
     } catch (err) {
       console.error('CompetitionTeamsView load error:', err);

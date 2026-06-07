@@ -2909,10 +2909,29 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChange }) {
   const [section, setSection] = useState('individual'); // 'individual' | 'teams'
   const canFinalize = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
+  // v0.9.50: csapatversenynél (van csapat-kategória) ne jelenjen meg a Klub-csapatok rész
+  const [isTeamCompetition, setIsTeamCompetition] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('competition_categories')
+        .select('type, competition_day_id, competition_days!inner(competition_id)')
+        .eq('competition_days.competition_id', competition.id)
+        .eq('type', 'csapat')
+        .limit(1);
+      if (!cancelled && data && data.length > 0) {
+        setIsTeamCompetition(true);
+        setSection('individual');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, competition.id]);
   
   return (
     <div className="space-y-4">
-      {/* Szekció választó */}
+      {/* Szekció választó — csapatversenynél nincs Klub-csapatok */}
+      {!isTeamCompetition && (
       <div className="flex gap-2 bg-gray-100 p-1 rounded-lg w-fit">
         <button
           onClick={() => setSection('individual')}
@@ -2939,6 +2958,7 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
           Klub-csapatok
         </button>
       </div>
+      )}
 
       {section === 'individual' && (
         <CsepeliIndividualSection 
@@ -2948,7 +2968,7 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
           onCompetitionChange={onCompetitionChange}
         />
       )}
-      {section === 'teams' && (
+      {section === 'teams' && !isTeamCompetition && (
         <CompetitionTeamsView 
           supabase={supabase} 
           userRole={userRole} 

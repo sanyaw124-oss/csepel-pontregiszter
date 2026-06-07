@@ -191,6 +191,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   useEffect(() => { loadData(); }, [loadData]);
 
   // ─── Helyezések kiszámítása (csak megjelenítéshez) ────────────
+  // v0.9.50: a kézi placement MINDIG felülírja a pontból számolt helyezést.
   const calculatedRankings = (() => {
     const withResults = entries.filter(e => {
       const r = results[e.id];
@@ -200,6 +201,13 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
     const rankMap = {};
     sorted.forEach((e, idx) => {
       rankMap[e.id] = idx + 1;
+    });
+    // Kézi helyezés felülírja a számoltat
+    entries.forEach(e => {
+      const r = results[e.id];
+      if (r && r.placement !== null && r.placement !== undefined) {
+        rankMap[e.id] = r.placement;
+      }
     });
     return rankMap;
   })();
@@ -216,6 +224,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       score_e: r?.score_e ?? '',
       score_p: r?.score_p ?? '',
       score_total_manual: r?.score_total ?? '',
+      placement_manual: r?.placement ?? '',
       apparatus: entry.apparatus || '',
       _isCsepeli: isCsepeli
     });
@@ -240,7 +249,9 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
 
       // Validáció
       const apparatusToSave = f.apparatus || entry.apparatus;
-      if (!apparatusToSave) {
+      const placementOnly = (f.placement_manual !== '' && f.placement_manual !== null)
+        && f.score_total_manual === '' && f.score_d === '' && f.score_a === '' && f.score_e === '';
+      if (!apparatusToSave && !placementOnly) {
         throw new Error('Szer kötelező! Válassz a legördülőből.');
       }
 
@@ -266,6 +277,12 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       const scoreE = validateScore(f.score_e, 'E', 10);
       const scoreP = validateScore(f.score_p, 'P', null);
       const totalManual = validateScore(f.score_total_manual, 'Total', null);
+      const placementManual = f.placement_manual === '' || f.placement_manual === null
+        ? null
+        : parseInt(f.placement_manual, 10);
+      if (placementManual !== null && (isNaN(placementManual) || placementManual < 1)) {
+        throw new Error('Helyezés: pozitív egész szám kell');
+      }
 
       // Total számítása: ha kézzel beírt → az; különben D+A+E-P
       let total;
@@ -273,15 +290,18 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         total = totalManual;
       } else if (scoreD !== null || scoreA !== null || scoreE !== null) {
         total = calculateTotal(scoreDb, scoreDa, scoreD, scoreA, scoreE, scoreP);
+      } else if (placementManual !== null) {
+        // v0.9.50: pont nélkül is menthető, ha van kézi helyezés (sokszor csak helyezést hirdetnek)
+        total = null;
       } else {
-        throw new Error('Legalább a Total mezőt töltsd ki, vagy add meg D/A/E/P-t!');
+        throw new Error('Adj meg Total-t, D/A/E/P-t, vagy legalább egy kézi helyezést!');
       }
 
       // Konfirmáció ha extrém érték
-      if (total > 60) {
+      if (total !== null && total > 60) {
         throw new Error(`Total (${total}) túl magas (>60). Ellenőrizd a beírt értékeket.`);
       }
-      if (total > 40) {
+      if (total !== null && total > 40) {
         const ok = window.confirm(`Total = ${total.toFixed(3)}. Ez magasabb a szokásosnál (>40). Biztos jó?`);
         if (!ok) { setSaving(false); return; }
       }
@@ -317,6 +337,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         score_e: scoreE,
         score_p: scoreP,
         score_total: total,
+        placement: placementManual,
         modified_at: new Date().toISOString(),
         score_history: scoreHistory
       };
@@ -721,6 +742,32 @@ function StartlistScoringView({
                   </div>
                 </div>
                 
+                {/* v0.9.50: Kézi helyezés — felülírja a pontból számoltat. Pont nélkül is megadható. */}
+                <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
+                  <label className="text-xs text-gray-700 block mb-1 font-medium">
+                    Helyezés (kézi) — felülírja a pontból számoltat, pont nélkül is megadható
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={editForm.placement_manual}
+                      onChange={(e) => setEditForm({...editForm, placement_manual: e.target.value})}
+                      placeholder="pl. 1"
+                      className="flex-1 px-2 py-1.5 text-base font-semibold border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setEditForm({...editForm, placement_manual: ''})}
+                      className="text-xs px-2 py-1 rounded border border-gray-300 hover:bg-gray-50"
+                      title="Kézi helyezés törlése (vissza a számolthoz)"
+                    >
+                      törlés
+                    </button>
+                  </div>
+                </div>
+                
                 {/* Gombok */}
                 <div className="mt-3 flex gap-2">
                   <button 
@@ -785,8 +832,15 @@ function StartlistScoringView({
 
 function RankingsView({ entries, results, calculatedRankings, userRole }) {
   const sortedEntries = [...entries]
-    .filter(e => results[e.id] && results[e.id].score_total !== null)
-    .sort((a, b) => calculatedRankings[a.id] - calculatedRankings[b.id]);
+    .filter(e => {
+      const r = results[e.id];
+      // v0.9.50: pontozott VAGY kézi helyezéssel rendelkező sorok
+      return r && (
+        (r.score_total !== null && r.score_total !== undefined) ||
+        (r.placement !== null && r.placement !== undefined)
+      );
+    })
+    .sort((a, b) => (calculatedRankings[a.id] ?? 999) - (calculatedRankings[b.id] ?? 999));
 
   if (sortedEntries.length === 0) {
     return <div className="p-6 text-center text-sm text-gray-500">Még nincs pontozott versenyző.</div>;
