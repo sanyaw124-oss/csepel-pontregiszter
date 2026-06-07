@@ -1388,7 +1388,14 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
   const removeEntry = async (entryId) => {
     if (!window.confirm('Biztos törlöd ezt a sort?')) return;
     try {
+      // v0.9.50: ha csapat-sor, a kapcsolt csapatot és tagjait is takarítjuk,
+      // hogy ne maradjon árva competition_teams rekord
+      const target = (entries || []).find(e => e.id === entryId);
       await supabase.from('startlist_entries').delete().eq('id', entryId);
+      if (target && target.team_id) {
+        await supabase.from('competition_team_members').delete().eq('team_id', target.team_id);
+        await supabase.from('competition_teams').delete().eq('id', target.team_id);
+      }
       load();
     } catch (err) {
       alert('Törlés sikertelen: ' + err.message);
@@ -1614,9 +1621,73 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
       setError('Sorszám kötelező és pozitív kell legyen');
       return;
     }
-    // v0.9.50 (3a): csapat-mód mentés még nem aktív — a 3b lépésben jön
+    // v0.9.50 (3b): csapat-mód mentés
     if (isTeam) {
-      setError('A csapat-mentés még nem aktív (3a lépés: csak felület-előnézet).');
+      if (!form.external_name.trim()) {
+        setError('Csapatnév kötelező');
+        return;
+      }
+      setSaving(true);
+      try {
+        const apparatusStr = teamApparatuses.length > 0 ? teamApparatuses.join('+') : null;
+        let teamId = entry?.team_id || null;
+
+        // 1. competition_teams: létrehozás vagy frissítés
+        if (teamId) {
+          const { error: tErr } = await supabase
+            .from('competition_teams')
+            .update({ name: form.external_name.trim(), age_range: category.korosztaly || null })
+            .eq('id', teamId);
+          if (tErr) throw new Error('Csapat frissítése: ' + tErr.message);
+        } else {
+          const { data: tData, error: tErr } = await supabase
+            .from('competition_teams')
+            .insert({
+              competition_id: competitionId,
+              name: form.external_name.trim(),
+              age_range: category.korosztaly || null
+            })
+            .select('id')
+            .single();
+          if (tErr) throw new Error('Csapat létrehozása: ' + tErr.message);
+          teamId = tData.id;
+        }
+
+        // 2. startlist_entries: a csapat mint induló-sor
+        const payload = {
+          competition_category_id: competitionCategoryId,
+          start_order: form.start_order,
+          competitor_id: null,
+          external_name: form.external_name.trim(),
+          external_club: form.external_club.trim() || null,
+          apparatus: apparatusStr,
+          team_id: teamId
+        };
+        if (isNew) {
+          const { error: sErr } = await supabase.from('startlist_entries').insert(payload);
+          if (sErr) throw new Error('Startlista sor: ' + sErr.message);
+        } else {
+          const { error: sErr } = await supabase
+            .from('startlist_entries').update(payload).eq('id', entry.id);
+          if (sErr) throw new Error('Startlista sor: ' + sErr.message);
+        }
+
+        // 3. competition_team_members: tagság frissítése (régi törlés → új beírás)
+        const { error: dErr } = await supabase
+          .from('competition_team_members').delete().eq('team_id', teamId);
+        if (dErr) throw new Error('Régi tagság törlése: ' + dErr.message);
+        if (teamMemberIds.length > 0) {
+          const memberRows = teamMemberIds.map(cid => ({ team_id: teamId, competitor_id: cid }));
+          const { error: mErr } = await supabase
+            .from('competition_team_members').insert(memberRows);
+          if (mErr) throw new Error('Tagok mentése: ' + mErr.message);
+        }
+
+        onSaved();
+      } catch (err) {
+        setError('Mentés sikertelen: ' + err.message);
+        setSaving(false);
+      }
       return;
     }
     if (form.is_csepeli && !form.competitor_id) {
