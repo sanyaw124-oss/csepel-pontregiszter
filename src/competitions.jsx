@@ -1413,7 +1413,9 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
   const externalCount = (entries || []).filter(e => !e.competitor_id).length;
   
   // Ha pontozás módban vagyunk, mutassuk a ScoringView-t
-  if (viewMode === 'scoring' && !isTeam) {
+  // (v0.9.49: csapat-kategóriáknál is engedélyezve — a csapat mint induló
+  //  ugyanúgy pontozható D/A/E/P-vel, mint egy egyéni versenyző)
+  if (viewMode === 'scoring') {
     return (
       <ScoringView
         supabase={supabase}
@@ -1441,7 +1443,7 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
             <span>Szerek: {(category.apparatuses || []).map(a => APPARATUS_LABELS[a] || a).join(', ') || '—'}</span>
           </div>
         </div>
-        {!isTeam && entries && entries.length > 0 && (
+        {entries && entries.length > 0 && (
           <button
             onClick={() => setViewMode('scoring')}
             className="px-3 py-2 rounded text-white font-medium text-sm flex items-center gap-2"
@@ -1465,11 +1467,6 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
       ) : entries.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500 mb-3">
           Még nincs startlistasor.
-          {isTeam && (
-            <div className="mt-2 text-xs italic">
-              (A csapat-startlista kezelése a következő frissítésben lesz teljes körű.)
-            </div>
-          )}
         </div>
       ) : (
         <div className="bg-white rounded-lg border overflow-hidden mb-3" style={{ borderColor: COLORS.gray200 }}>
@@ -1491,18 +1488,12 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
         </div>
       )}
       
-      {canManage && !isTeam && (
+      {canManage && (
         <PrimaryButton onClick={() => setEditingEntry('new')}>
           <Plus className="w-4 h-4" /> Új sor
         </PrimaryButton>
       )}
       
-      {isTeam && (
-        <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900">
-          ℹ️ A csapat-startlista kezelése a következő frissítésben lesz teljes körű 
-          (csapatok létrehozása, tagok hozzárendelése). 
-        </div>
-      )}
     </div>
   );
 }
