@@ -155,7 +155,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club,
-          apparatus, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year,
+          apparatus, performance_number, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year,
           competitors:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -619,6 +619,9 @@ function StartlistScoringView({
                 <div className="text-sm font-medium flex items-center gap-1">
                   {isCsepeli && <Star className="w-3 h-3" style={{ color: COLORS.red, fill: COLORS.red }} />}
                   <span style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
+                  {entry.performance_number && (
+                    <span className="text-xs font-normal text-gray-500">· {entry.performance_number}. bem.</span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500">
                   {displayClub} · {apparatusLabel}
@@ -825,6 +828,9 @@ function RankingsView({ entries, results, calculatedRankings, userRole }) {
                 <div className="text-sm font-medium flex items-center gap-1">
                   {isCsepeli && <Star className="w-3 h-3" style={{ color: COLORS.red, fill: COLORS.red }} />}
                   <span style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
+                  {entry.performance_number && (
+                    <span className="text-xs font-normal text-gray-500">· {entry.performance_number}. bem.</span>
+                  )}
                 </div>
                 <div className="text-xs text-gray-500">{displayClub} · {apparatusLabel}</div>
                 <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-2">

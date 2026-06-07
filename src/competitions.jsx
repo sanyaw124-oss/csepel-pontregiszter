@@ -1361,7 +1361,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club, 
-          apparatus, team_id, snapshot_kategoria, snapshot_korosztaly,
+          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly,
           competitor:competitors(id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -1520,7 +1520,7 @@ function StartlistRow({ entry, canManage, onEdit, onRemove }) {
   
   const club = isCsepeli ? 'Csepeli RG Club' : (entry.external_club || '');
   const apparatus = entry.apparatus 
-    ? (APPARATUS_LABELS[entry.apparatus] || entry.apparatus)
+    ? entry.apparatus.split('+').map(a => APPARATUS_LABELS[a.trim()] || a.trim()).join(' + ')
     : <span className="italic text-gray-500">Választott</span>;
   
   return (
@@ -1537,6 +1537,11 @@ function StartlistRow({ entry, canManage, onEdit, onRemove }) {
           <span className={`text-sm truncate ${isCsepeli ? 'font-semibold' : ''}`} style={{ color: COLORS.blueDark }}>
             {displayName}
           </span>
+          {entry.performance_number && (
+            <span className="text-xs px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: COLORS.blueBg, color: COLORS.blue }}>
+              {entry.performance_number}. bem.
+            </span>
+          )}
         </div>
         <div className="text-xs text-gray-500 truncate">
           {club}
@@ -1661,7 +1666,8 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
           external_name: form.external_name.trim(),
           external_club: form.external_club.trim() || null,
           apparatus: apparatusStr,
-          team_id: teamId
+          team_id: teamId,
+          performance_number: entry?.performance_number ?? null
         };
         if (isNew) {
           const { error: sErr } = await supabase.from('startlist_entries').insert(payload);
@@ -1682,6 +1688,14 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
             .from('competition_team_members').insert(memberRows);
           if (mErr) throw new Error('Tagok mentése: ' + mErr.message);
         }
+
+        // 4. v0.9.50: a szer öröklődik a csapat MINDEN bemutatására (azonos team_id-jű sorok)
+        //    A tagok a közös team_id miatt automatikusan közösek; a szert itt terjesztjük ki.
+        const { error: aErr } = await supabase
+          .from('startlist_entries')
+          .update({ apparatus: apparatusStr })
+          .eq('team_id', teamId);
+        if (aErr) throw new Error('Szer terjesztése: ' + aErr.message);
 
         onSaved();
       } catch (err) {
@@ -2648,7 +2662,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                   competitor_id: overrideId,
                   external_name: null,
                   external_club: null,
-                  apparatus: s.apparatus || null
+                  apparatus: s.apparatus || null,
+                  performance_number: s.performance || null
                 };
               }
               // Csepeli de nem rendelt versenyzőhöz: külsősként, "Csepeli RG Club (ismeretlen)"
@@ -2658,7 +2673,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                 competitor_id: null,
                 external_name: s.name,
                 external_club: 'Csepeli RG Club (ismeretlen)',
-                apparatus: s.apparatus || null
+                apparatus: s.apparatus || null,
+                performance_number: s.performance || null
               };
             }
             
@@ -2668,11 +2684,38 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
               competitor_id: null,
               external_name: s.name,
               external_club: s.club || null,
-              apparatus: s.apparatus || null
+              apparatus: s.apparatus || null,
+              performance_number: s.performance || null
             };
           });
           
           if (entries.length > 0) {
+            // v0.9.50: csapat-kategóriánál az azonos nevű sorokat közös csapatra kötjük
+            // (a két bemutatás = egy csapat). Csak külsős/csapat sorokra (competitor_id nélkül).
+            const isTeamCat = (catData.type || cat.type) === 'csapat';
+            if (isTeamCat) {
+              const nameToTeamId = {};
+              for (const e of entries) {
+                if (e.competitor_id) continue; // egyéni-rendelt sort nem kötünk csapatra
+                const teamName = (e.external_name || '').trim();
+                if (!teamName) continue;
+                if (!nameToTeamId[teamName]) {
+                  const { data: tData, error: tErr } = await supabase
+                    .from('competition_teams')
+                    .insert({
+                      competition_id: comp.id,
+                      name: teamName,
+                      age_range: catData.korosztaly || null
+                    })
+                    .select('id')
+                    .single();
+                  if (tErr) throw new Error('Csapat létrehozása (' + teamName + '): ' + tErr.message);
+                  nameToTeamId[teamName] = tData.id;
+                }
+                e.team_id = nameToTeamId[teamName];
+              }
+            }
+            
             // Meglévő versenynél: nézzük meg már létezik-e startlista ebben a kategóriában
             if (existingCompetition) {
               const { data: existingEntries } = await supabase
