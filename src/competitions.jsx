@@ -891,6 +891,7 @@ function DaysTab({ supabase, competitionId, canManage, userRole }) {
       <StartlistView
         supabase={supabase}
         category={openCategory}
+        competitionId={competitionId}
         canManage={canManage}
         userRole={userRole}
         onClose={() => { setOpenCategory(null); load(); }}
@@ -1344,7 +1345,7 @@ function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
 // STARTLIST VIEW (egy kategória startlistája)
 // ═══════════════════════════════════════════════════════════════════
 
-function StartlistView({ supabase, category, canManage, userRole, onClose }) {
+function StartlistView({ supabase, category, competitionId, canManage, userRole, onClose }) {
   const [entries, setEntries] = useState(null);
   const [competitors, setCompetitors] = useState([]);
   const [error, setError] = useState(null);
@@ -1360,7 +1361,7 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club, 
-          apparatus, snapshot_kategoria, snapshot_korosztaly,
+          apparatus, team_id, snapshot_kategoria, snapshot_korosztaly,
           competitor:competitors(id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -1399,6 +1400,7 @@ function StartlistView({ supabase, category, canManage, userRole, onClose }) {
       <StartlistEntryForm
         supabase={supabase}
         competitionCategoryId={category.id}
+        competitionId={competitionId}
         category={category}
         entry={editingEntry === 'new' ? null : editingEntry}
         competitors={competitors}
@@ -1558,8 +1560,15 @@ function StartlistRow({ entry, canManage, onEdit, onRemove }) {
   );
 }
 
-function StartlistEntryForm({ supabase, competitionCategoryId, category, entry, competitors, existingEntries, onCancel, onSaved }) {
+function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, category, entry, competitors, existingEntries, onCancel, onSaved }) {
   const isNew = !entry;
+  const isTeam = category.type === 'csapat';
+  // v0.9.50: csapat-mód állapot — kipipált szerek (tömb) és kipipált tagok (competitor id-k)
+  const [teamApparatuses, setTeamApparatuses] = useState(() => {
+    if (entry && entry.apparatus) return entry.apparatus.split('+').map(s => s.trim()).filter(Boolean);
+    return [];
+  });
+  const [teamMemberIds, setTeamMemberIds] = useState([]);
   const [form, setForm] = useState(() => {
     if (entry) {
       return {
@@ -1584,11 +1593,30 @@ function StartlistEntryForm({ supabase, competitionCategoryId, category, entry, 
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // v0.9.50: meglévő csapat-sor szerkesztésekor betöltjük a tagokat
+  useEffect(() => {
+    if (!isTeam || !entry || !entry.team_id) return;
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from('competition_team_members')
+        .select('competitor_id')
+        .eq('team_id', entry.team_id);
+      if (!cancelled && data) setTeamMemberIds(data.map(m => m.competitor_id));
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, isTeam, entry]);
   
   const save = async () => {
     setError(null);
     if (!form.start_order || form.start_order < 1) {
       setError('Sorszám kötelező és pozitív kell legyen');
+      return;
+    }
+    // v0.9.50 (3a): csapat-mód mentés még nem aktív — a 3b lépésben jön
+    if (isTeam) {
+      setError('A csapat-mentés még nem aktív (3a lépés: csak felület-előnézet).');
       return;
     }
     if (form.is_csepeli && !form.competitor_id) {
@@ -1650,6 +1678,93 @@ function StartlistEntryForm({ supabase, competitionCategoryId, category, entry, 
           />
         </Field>
         
+        {isTeam && (
+          <>
+            <Field label="Csapatnév *">
+              <Input
+                type="text"
+                value={form.external_name}
+                onChange={(e) => setForm({...form, external_name: e.target.value})}
+                placeholder="pl. Csepel A"
+              />
+            </Field>
+            
+            <Field label="Klub">
+              <Input
+                type="text"
+                value={form.external_club}
+                onChange={(e) => setForm({...form, external_club: e.target.value})}
+                placeholder="pl. Csepeli RG Klub"
+              />
+            </Field>
+            
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2">Szerek (több is választható)</div>
+              <div className="grid grid-cols-2 gap-2">
+                {APPARATUS_OPTIONS.map(opt => {
+                  const checked = teamApparatuses.includes(opt.value);
+                  return (
+                    <label
+                      key={opt.value}
+                      className="flex items-center gap-2 px-3 py-2 border rounded-lg text-sm cursor-pointer"
+                      style={{
+                        borderColor: checked ? COLORS.blue : COLORS.gray200,
+                        backgroundColor: checked ? COLORS.blueBg : 'white'
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setTeamApparatuses(prev =>
+                          prev.includes(opt.value)
+                            ? prev.filter(x => x !== opt.value)
+                            : [...prev, opt.value]
+                        )}
+                      />
+                      {opt.label}
+                    </label>
+                  );
+                })}
+              </div>
+              {teamApparatuses.length > 0 && (
+                <div className="mt-2 text-xs text-gray-500">
+                  Kiválasztott: {teamApparatuses.map(a => APPARATUS_LABELS[a] || a).join(' + ')}
+                </div>
+              )}
+            </div>
+            
+            <div>
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Csapattagok ({teamMemberIds.length} kiválasztva)
+              </div>
+              <div className="border rounded-lg divide-y max-h-64 overflow-y-auto" style={{ borderColor: COLORS.gray200 }}>
+                {competitors.length === 0 ? (
+                  <div className="px-3 py-2 text-sm text-gray-500">Nincs választható klubtag.</div>
+                ) : competitors.map(c => {
+                  const checked = teamMemberIds.includes(c.id);
+                  return (
+                    <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => setTeamMemberIds(prev =>
+                          prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                        )}
+                      />
+                      <span>
+                        {c.nickname ? `${c.full_name} ("${c.nickname}")` : c.full_name}
+                        <span className="text-gray-400"> · {c.kategoria} {c.korosztaly}</span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+        
+        {!isTeam && (
+        <>
         <div>
           <div className="text-sm font-medium text-gray-700 mb-2">Versenyző</div>
           <div className="flex gap-2 mb-2">
@@ -1721,6 +1836,8 @@ function StartlistEntryForm({ supabase, competitionCategoryId, category, entry, 
             ))}
           </Select>
         </Field>
+        </>
+        )}
         
         <ErrorBox>{error}</ErrorBox>
         
