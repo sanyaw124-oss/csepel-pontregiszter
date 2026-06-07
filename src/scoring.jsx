@@ -30,6 +30,17 @@ const APPARATUS_LABELS = {
   kotel: 'Kötél'
 };
 
+// v0.9.50: vegyes szer címkézése csapatgyakorlatnál.
+// A szer lehet egyszeres ('karika') vagy '+'-szal kombinált ('karika+labda').
+// Az egyes kódokat felcímkézi a szótárból; ismeretlen kódot változatlanul hagy.
+function formatApparatus(value) {
+  if (!value) return null;
+  return String(value)
+    .split('+')
+    .map(part => APPARATUS_LABELS[part.trim()] || part.trim())
+    .join(' + ');
+}
+
 const COLORS = {
   primary: '#1F2937',
   secondary: '#6B7280',
@@ -590,7 +601,7 @@ function StartlistScoringView({
           ? 'Csepeli RG Club'
           : entry.external_club;
         const apparatusLabel = entry.apparatus 
-          ? APPARATUS_LABELS[entry.apparatus] 
+          ? formatApparatus(entry.apparatus) 
           : 'Választott';
         const rank = calculatedRankings[entry.id];
         const isEditing = editingId === entry.id;
@@ -796,7 +807,7 @@ function RankingsView({ entries, results, calculatedRankings, userRole }) {
             ? 'Csepeli RG Club'
             : entry.external_club;
           const apparatusLabel = entry.apparatus 
-            ? APPARATUS_LABELS[entry.apparatus] 
+            ? formatApparatus(entry.apparatus) 
             : '—';
 
           return (
