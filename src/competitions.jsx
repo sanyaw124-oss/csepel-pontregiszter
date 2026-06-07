@@ -1689,13 +1689,17 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
           if (mErr) throw new Error('Tagok mentése: ' + mErr.message);
         }
 
-        // 4. v0.9.50: a szer öröklődik a csapat MINDEN bemutatására (azonos team_id-jű sorok)
-        //    A tagok a közös team_id miatt automatikusan közösek; a szert itt terjesztjük ki.
+        // 4. v0.9.50: a szer ÉS a csapatnév/klub öröklődik a csapat MINDEN bemutatására
+        //    (azonos team_id-jű sorok). A tagok a közös team_id miatt automatikusan közösek.
         const { error: aErr } = await supabase
           .from('startlist_entries')
-          .update({ apparatus: apparatusStr })
+          .update({
+            apparatus: apparatusStr,
+            external_name: form.external_name.trim(),
+            external_club: form.external_club.trim() || null
+          })
           .eq('team_id', teamId);
-        if (aErr) throw new Error('Szer terjesztése: ' + aErr.message);
+        if (aErr) throw new Error('Csapatadatok terjesztése: ' + aErr.message);
 
         onSaved();
       } catch (err) {
