@@ -590,6 +590,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
             canEdit={canEdit}
             isFinalized={isFinalized}
             userRole={userRole}
+            isTeam={isTeam}
           />
         )}
       </div>
@@ -605,7 +606,7 @@ function StartlistScoringView({
   entries, results, calculatedRankings,
   editingId, editForm, setEditForm,
   startEdit, cancelEdit, handleSave, handleDelete, saving,
-  canEdit, isFinalized, userRole
+  canEdit, isFinalized, userRole, isTeam
 }) {
   if (entries.length === 0) {
     return <div className="p-6 text-center text-sm text-gray-500">Nincs startlista bejegyzés.</div>;
