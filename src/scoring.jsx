@@ -129,6 +129,7 @@ function formatCompetitorName(c) {
 // ═══════════════════════════════════════════════════════════════════
 
 export function ScoringView({ supabase, userRole, category, onBack, onChange }) {
+  const isTeam = category.type === 'csapat'; // v0.9.50: csapatnál a helyezés külön fülön, nem a pontozóban
   const [entries, setEntries] = useState([]);
   const [results, setResults] = useState({});  // entryId → results obj
   const [loading, setLoading] = useState(true);
@@ -742,7 +743,8 @@ function StartlistScoringView({
                   </div>
                 </div>
                 
-                {/* v0.9.50: Kézi helyezés — felülírja a pontból számoltat. Pont nélkül is megadható. */}
+                {/* v0.9.50: Kézi helyezés — egyéninél a pontozóban; csapatnál külön fülön (itt rejtve) */}
+                {!isTeam && (
                 <div className="mt-3 p-3 bg-blue-50 rounded border border-blue-200">
                   <label className="text-xs text-gray-700 block mb-1 font-medium">
                     Helyezés (kézi) — felülírja a pontból számoltat, pont nélkül is megadható
@@ -767,6 +769,7 @@ function StartlistScoringView({
                     </button>
                   </div>
                 </div>
+                )}
                 
                 {/* Gombok */}
                 <div className="mt-3 flex gap-2">

@@ -1342,6 +1342,140 @@ function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// CSAPAT HELYEZÉSEK (v0.9.50) — EKCS csapatonként EGY helyezés
+// A két bemutatás közös team_id-re mutat → egy helyezés a csapat-rekordon.
+// ═══════════════════════════════════════════════════════════════════
+function TeamPlacementsView({ supabase, category, entries, canManage, onBack }) {
+  // Egyedi csapatok a startlistából (team_id szerint), a bemutatások összevonva
+  const teams = (() => {
+    const map = {};
+    for (const e of entries) {
+      if (!e.team_id) continue;
+      if (!map[e.team_id]) {
+        map[e.team_id] = { team_id: e.team_id, name: e.external_name || '(névtelen csapat)', performances: [] };
+      }
+      if (e.performance_number) map[e.team_id].performances.push(e.performance_number);
+    }
+    return Object.values(map);
+  })();
+
+  const [placements, setPlacements] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const ids = teams.map(t => t.team_id);
+      if (ids.length === 0) { setLoading(false); return; }
+      const { data } = await supabase
+        .from('competition_teams')
+        .select('id, placement')
+        .in('id', ids);
+      if (!cancelled) {
+        const m = {};
+        (data || []).forEach(r => { m[r.id] = r.placement ?? ''; });
+        setPlacements(m);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, entries]);
+
+  const save = async () => {
+    setSaving(true);
+    setError(null);
+    setSuccessMsg(null);
+    try {
+      for (const t of teams) {
+        const val = placements[t.team_id];
+        const p = (val === '' || val === null || val === undefined) ? null : parseInt(val, 10);
+        if (p !== null && (isNaN(p) || p < 1)) throw new Error(`${t.name}: a helyezés pozitív egész szám legyen`);
+        const { error: uErr } = await supabase
+          .from('competition_teams')
+          .update({ placement: p })
+          .eq('id', t.team_id);
+        if (uErr) throw uErr;
+      }
+      setSuccessMsg('Helyezések mentve');
+      setTimeout(() => setSuccessMsg(null), 2500);
+    } catch (err) {
+      setError('Mentés sikertelen: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-3">
+        <button onClick={onBack} className="p-1 hover:bg-gray-100 rounded">
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="flex-1 min-w-0">
+          <h3 className="font-semibold truncate" style={{ color: COLORS.blueDark }}>
+            Csapat helyezések: {category.kategoria} · {category.korosztaly}
+          </h3>
+          <div className="text-xs text-gray-500">Csapatonként egy helyezés (a két bemutatás összevonva)</div>
+        </div>
+      </div>
+
+      <ErrorBox>{error}</ErrorBox>
+      {successMsg && (
+        <div className="mb-3 p-2 rounded text-sm" style={{ backgroundColor: COLORS.greenLight, color: COLORS.green }}>
+          {successMsg}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="text-center py-8"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>
+      ) : teams.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          Még nincs csapat. Adj hozzá csapat-sorokat a startlistán, és rendelj hozzájuk tagokat.
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg border overflow-hidden mb-3" style={{ borderColor: COLORS.gray200 }}>
+          <div className="divide-y" style={{ borderColor: COLORS.gray200 }}>
+            {teams.map(t => (
+              <div key={t.team_id} className="flex items-center gap-3 px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium truncate" style={{ color: COLORS.blueDark }}>{t.name}</div>
+                  <div className="text-xs text-gray-500">
+                    {t.performances.length > 0 ? `${[...new Set(t.performances)].sort().join('. és ')}. bemutatás` : '—'}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    disabled={!canManage}
+                    value={placements[t.team_id] ?? ''}
+                    onChange={(e) => setPlacements({ ...placements, [t.team_id]: e.target.value })}
+                    placeholder="hely"
+                    className="w-20 px-2 py-1.5 text-base font-semibold border border-blue-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-gray-100"
+                  />
+                  <span className="text-sm text-gray-500">.</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {canManage && teams.length > 0 && (
+        <PrimaryButton onClick={save} disabled={saving}>
+          {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          Helyezések mentése
+        </PrimaryButton>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // STARTLIST VIEW (egy kategória startlistája)
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1436,6 +1570,18 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
     );
   }
   
+  if (viewMode === 'placements') {
+    return (
+      <TeamPlacementsView
+        supabase={supabase}
+        category={category}
+        entries={entries || []}
+        canManage={canManage}
+        onBack={() => { setViewMode('startlist'); load(); }}
+      />
+    );
+  }
+  
   return (
     <div>
       <div className="flex items-center gap-2 mb-3 flex-wrap">
@@ -1463,6 +1609,16 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
                logikája gondoskodik arról hogy lezárt versenynél már csak edző tud
                módosítani. Versenyző mindig csak nézi. */}
             {userRole === 'versenyzo' ? 'Eredmények' : 'Pontozás'}
+          </button>
+        )}
+        {isTeam && entries && entries.length > 0 && (
+          <button
+            onClick={() => setViewMode('placements')}
+            className="px-3 py-2 rounded font-medium text-sm flex items-center gap-2 border"
+            style={{ borderColor: COLORS.blue, color: COLORS.blue, backgroundColor: 'white' }}
+          >
+            <Award className="w-4 h-4" />
+            Csapat helyezések
           </button>
         )}
       </div>
