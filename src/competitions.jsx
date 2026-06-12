@@ -2808,15 +2808,20 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
           }
           
           // Startlista bejegyzések
-          const entries = (catData.startlist || []).map(s => {
+          // v0.9.52: EGYÉNI versenynél a csepeli, de profil nélküli versenyzőkhöz
+          // a program automatikusan ideiglenes profilt hoz létre (is_provisional),
+          // amit edző/admin véglegesíthet. CSAPAT versenynél NEM (ott a név csapatnév).
+          const isTeamCategory = (catData.type || cat.type) === 'csapat';
+          const entries = [];
+          for (const s of (catData.startlist || [])) {
             const club = (s.club || '').toLowerCase().trim();
             const isCsepeli = club.includes('csepel') || club === 'csepeli rg club' || club === 'csepel sc';
-            
+
             if (isCsepeli) {
               // Először a manualOverrides-ből nézzük (ha a felhasználó beállította)
               const overrideId = manualOverrides[s.name.trim()];
               if (overrideId) {
-                return {
+                entries.push({
                   competition_category_id: cat.id,
                   start_order: s.order,
                   competitor_id: overrideId,
@@ -2824,10 +2829,55 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                   external_club: null,
                   apparatus: s.apparatus || null,
                   performance_number: s.performance || null
-                };
+                });
+                continue;
               }
-              // Csepeli de nem rendelt versenyzőhöz: külsősként, "Csepeli RG Club (ismeretlen)"
-              return {
+
+              // EGYÉNI verseny + csepeli + nincs profil → ideiglenes profil létrehozása
+              if (!isTeamCategory) {
+                const sourceName = (s.name || '').trim();
+                // Duplikáció-védelem: van-e már (akár frissen létrehozott) profil ezzel a névvel?
+                const existing = allCompetitors.find(
+                  c => (c.full_name || '').toLowerCase().trim() === sourceName.toLowerCase()
+                );
+                let provisionalId = existing?.id || null;
+
+                if (!provisionalId && sourceName) {
+                  const { data: newComp, error: newCompErr } = await supabase
+                    .from('competitors')
+                    .insert({
+                      full_name: sourceName,
+                      kategoria: catData.kategoria || null,
+                      korosztaly: catData.korosztaly || null,
+                      is_provisional: true,
+                      is_active: true,
+                      is_club_member: true
+                    })
+                    .select('id, full_name, nickname, kategoria, korosztaly, is_active, is_club_member')
+                    .single();
+                  if (newCompErr) throw newCompErr;
+                  provisionalId = newComp.id;
+                  // A frissen létrehozott profilt hozzáadjuk a listához (újabb azonos név ne duplikáljon)
+                  allCompetitors.push(newComp);
+                  setAllCompetitors(prev => [...prev, newComp]);
+                }
+
+                if (provisionalId) {
+                  entries.push({
+                    competition_category_id: cat.id,
+                    start_order: s.order,
+                    competitor_id: provisionalId,
+                    external_name: null,
+                    external_club: null,
+                    apparatus: s.apparatus || null,
+                    performance_number: s.performance || null
+                  });
+                  continue;
+                }
+              }
+
+              // Csapat verseny VAGY névtelen sor: külsősként, "Csepeli RG Club (ismeretlen)"
+              entries.push({
                 competition_category_id: cat.id,
                 start_order: s.order,
                 competitor_id: null,
@@ -2835,10 +2885,11 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                 external_club: 'Csepeli RG Club (ismeretlen)',
                 apparatus: s.apparatus || null,
                 performance_number: s.performance || null
-              };
+              });
+              continue;
             }
-            
-            return {
+
+            entries.push({
               competition_category_id: cat.id,
               start_order: s.order,
               competitor_id: null,
@@ -2846,8 +2897,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
               external_club: s.club || null,
               apparatus: s.apparatus || null,
               performance_number: s.performance || null
-            };
-          });
+            });
+          }
           
           if (entries.length > 0) {
             // v0.9.50: csapat-kategóriánál az azonos nevű sorokat közös csapatra kötjük
