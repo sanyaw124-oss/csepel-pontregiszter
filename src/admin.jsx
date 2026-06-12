@@ -2708,7 +2708,7 @@ const APPARATUS_LIST = [
 const COMPETITION_TYPE_LIST = [
   { value: 'egyeni', label: 'Egyéni' },
   { value: 'egyuttes', label: 'Együttes (kéziszer)' },
-  { value: 'esztetikus', label: 'Esztétikus csapat gimnasztika' }
+  { value: 'klubcsapat', label: 'Klub-csapat' }
 ];
 
 const VERSENY_BESOROLAS_LIST = [
@@ -3229,11 +3229,11 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
             </div>
           )}
           
-          {/* ESZTÉTIKUS CSAPAT: csak csapat eredmény */}
-          {form.competition_type === 'esztetikus' && (
+          {/* KLUB-CSAPAT: csak csapat eredmény */}
+          {form.competition_type === 'klubcsapat' && (
             <div className="space-y-1.5">
               <div className="text-xs text-gray-500 italic mb-2">
-                Esztétikus csapat gimnasztikánál csak csapat eredmény van (zene + koreográfia).
+                Klub-csapatnál csak a csapat helyezése van (egyéni verseny után utólag összeállított csapat).
               </div>
               <ApparatusResultRow
                 label="Csapat eredmény"
