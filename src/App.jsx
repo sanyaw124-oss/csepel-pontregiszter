@@ -240,14 +240,36 @@ function useAuth() {
       }
     );
 
-    // Biztonsági timeout: ha 3 másodpercen belül nem érkezett auth event,
-    // mutatjuk a login képernyőt (nincs session)
-    const safetyTimeout = setTimeout(() => {
-      if (mounted) {
-        M(`⏰ safetyTimeout fired (3s) - setLoading(false)`);
-        setLoading(false);
+    // Biztonsági timeout: ha 5 másodpercen belül nem érkezett auth event,
+    // AKTÍVAN lekérjük a sessiont (getSession), mielőtt login képernyőt mutatnánk.
+    // 🎯 v0.9.53: lejárt access token + érvényes refresh token esetén a gotrue-nak
+    // előbb refresh-elnie kell, mire INITIAL_SESSION event jön — ez tovább tarthat
+    // mint a timeout, ezért korábban hibásan login képernyő villant fel ("F5 kell").
+    // Most a timeout lejártakor explicit getSession() kikényszeríti a refresh-t.
+    // A v0.9.48 lock no-op miatt a getSession már nem okoz lock-konkurenciát.
+    // Ha getSession ad sessiont → helyreáll; ha nem → login (mint eddig).
+    const safetyTimeout = setTimeout(async () => {
+      if (!mounted) return;
+      M(`⏰ safetyTimeout fired (5s) - getSession fallback`);
+      try {
+        const { data: { session: fallbackSession } } = await supabase.auth.getSession();
+        if (!mounted) return;
+        if (fallbackSession?.user?.id) {
+          M(`  ✅ getSession recovered session (${fallbackSession.user.id.slice(0,8)})`);
+          setSession(fallbackSession);
+          if (fallbackSession.user.id !== loadedUserId) {
+            loadedUserId = fallbackSession.user.id;
+            await loadProfile(fallbackSession.user.id);
+          }
+        } else {
+          M(`  ⚪ getSession: nincs session → login`);
+        }
+      } catch (err) {
+        M(`  🔴 getSession fallback FAIL: ${err.message}`);
+      } finally {
+        if (mounted) setLoading(false);
       }
-    }, 3000);
+    }, 5000);
 
     // ÚJ: Visibility change figyelés - telefon-lezárás / háttér után
     // Amikor visszatér az oldal a háttérből, újratöltjük a profilt.
