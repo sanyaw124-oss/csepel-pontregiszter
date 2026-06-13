@@ -1835,11 +1835,14 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
         }
 
         // 3. competition_team_members: tagság frissítése (régi törlés → új beírás)
+        // v0.9.56: csak csepeli klubnál menthető tag; nem-csepelinél a tagság ürül.
+        const isCsepeliKlub = (form.external_club || '').toLowerCase().includes('csepel');
+        const effectiveMemberIds = isCsepeliKlub ? teamMemberIds : [];
         const { error: dErr } = await supabase
           .from('competition_team_members').delete().eq('team_id', teamId);
         if (dErr) throw new Error('Régi tagság törlése: ' + dErr.message);
-        if (teamMemberIds.length > 0) {
-          const memberRows = teamMemberIds.map(cid => ({ team_id: teamId, competitor_id: cid }));
+        if (effectiveMemberIds.length > 0) {
+          const memberRows = effectiveMemberIds.map(cid => ({ team_id: teamId, competitor_id: cid }));
           const { error: mErr } = await supabase
             .from('competition_team_members').insert(memberRows);
           if (mErr) throw new Error('Tagok mentése: ' + mErr.message);
@@ -1982,28 +1985,34 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
               <div className="text-sm font-medium text-gray-700 mb-2">
                 Csapattagok ({teamMemberIds.length} kiválasztva)
               </div>
-              <div className="border rounded-lg divide-y max-h-64 overflow-y-auto" style={{ borderColor: COLORS.gray200 }}>
-                {competitors.length === 0 ? (
-                  <div className="px-3 py-2 text-sm text-gray-500">Nincs választható klubtag.</div>
-                ) : competitors.map(c => {
-                  const checked = teamMemberIds.includes(c.id);
-                  return (
-                    <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={() => setTeamMemberIds(prev =>
-                          prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]
-                        )}
-                      />
-                      <span>
-                        {c.nickname ? `${c.full_name} ("${c.nickname}")` : c.full_name}
-                        <span className="text-gray-400"> · {c.kategoria} {c.korosztaly}</span>
-                      </span>
-                    </label>
-                  );
-                })}
-              </div>
+              {(form.external_club || '').toLowerCase().includes('csepel') ? (
+                <div className="border rounded-lg divide-y max-h-64 overflow-y-auto" style={{ borderColor: COLORS.gray200 }}>
+                  {competitors.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-500">Nincs választható klubtag.</div>
+                  ) : competitors.map(c => {
+                    const checked = teamMemberIds.includes(c.id);
+                    return (
+                      <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => setTeamMemberIds(prev =>
+                            prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id]
+                          )}
+                        />
+                        <span>
+                          {c.nickname ? `${c.full_name} ("${c.nickname}")` : c.full_name}
+                          <span className="text-gray-400"> · {c.kategoria} {c.korosztaly}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="border rounded-lg px-3 py-3 text-sm text-gray-500 italic" style={{ borderColor: COLORS.gray200 }}>
+                  Csak csepeli csapathoz rendelhető versenyző. A klub mezőbe írj "Csepeli RG Klub"-ot, ha ez egy csepeli csapat.
+                </div>
+              )}
             </div>
           </>
         )}
@@ -3251,7 +3260,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
                 <div className="flex-1 min-w-0">
                   <div className="font-semibold" style={{ color: COLORS.red }}>
                     {t.name}
-                    <span className="text-xs font-normal text-gray-500 ml-2">
+                    <span className="font-normal text-gray-500 ml-2">
                       {t.kategoria}{t.korosztaly ? ` · ${t.korosztaly}` : ''}
                     </span>
                   </div>
