@@ -156,7 +156,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club,
-          apparatus, performance_number, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year,
+          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year,
           competitors:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -193,17 +193,51 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
 
   // ─── Helyezések kiszámítása (csak megjelenítéshez) ────────────
   // v0.9.50: a kézi placement MINDIG felülírja a pontból számolt helyezést.
+  // v0.9.55: EKCS (csapat) versenynél a sorrend CSAPATONKÉNT, a két bemutatás
+  // (performance_number 1+2, közös team_id) score_total-jának ÖSSZEGE alapján.
+  // Így 3 csapat = 1-2-3. hely (nem bemutatásonként 1-6). Mindkét bemutatás-sor
+  // a csapat helyezését kapja. A kézi placement itt is felülír.
   const calculatedRankings = (() => {
-    const withResults = entries.filter(e => {
-      const r = results[e.id];
-      return r && r.score_total !== null && r.score_total !== undefined;
-    });
-    const sorted = [...withResults].sort((a, b) => compareForRanking(results[a.id], results[b.id]));
     const rankMap = {};
-    sorted.forEach((e, idx) => {
-      rankMap[e.id] = idx + 1;
-    });
-    // Kézi helyezés felülírja a számoltat
+
+    if (isTeam) {
+      // Csapatonként összegezzük a bemutatások pontszámát
+      const teamTotals = {}; // team_id → összpont
+      const teamHasScore = {}; // team_id → van-e legalább egy pontozott bemutatás
+      entries.forEach(e => {
+        if (!e.team_id) return;
+        const r = results[e.id];
+        if (r && r.score_total !== null && r.score_total !== undefined) {
+          teamTotals[e.team_id] = (teamTotals[e.team_id] || 0) + (parseFloat(r.score_total) || 0);
+          teamHasScore[e.team_id] = true;
+        }
+      });
+      // Csak a pontozott csapatok rangsorolása összpont szerint csökkenően
+      const rankedTeamIds = Object.keys(teamHasScore)
+        .sort((a, b) => (teamTotals[b] || 0) - (teamTotals[a] || 0));
+      const teamRank = {}; // team_id → helyezés
+      rankedTeamIds.forEach((tid, idx) => {
+        teamRank[tid] = idx + 1;
+      });
+      // Minden bemutatás-sor a csapata helyezését kapja
+      entries.forEach(e => {
+        if (e.team_id && teamRank[e.team_id]) {
+          rankMap[e.id] = teamRank[e.team_id];
+        }
+      });
+    } else {
+      // Egyéni: a jelenlegi logika változatlanul
+      const withResults = entries.filter(e => {
+        const r = results[e.id];
+        return r && r.score_total !== null && r.score_total !== undefined;
+      });
+      const sorted = [...withResults].sort((a, b) => compareForRanking(results[a.id], results[b.id]));
+      sorted.forEach((e, idx) => {
+        rankMap[e.id] = idx + 1;
+      });
+    }
+
+    // Kézi helyezés felülírja a számoltat (EKCS és egyéni egyaránt)
     entries.forEach(e => {
       const r = results[e.id];
       if (r && r.placement !== null && r.placement !== undefined) {
