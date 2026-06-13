@@ -70,11 +70,8 @@ function shiftDate(dateStr, days) {
 function formatCompetitorName(c) {
   if (!c) return '';
   if (c.nickname) {
-    // "Völgyesi Noémi" + nickname "Ori" → "Völgyesi 'Ori' Noémi"
-    const parts = (c.full_name || '').split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
-    }
+    // "Völgyesi Noémi" + nickname "Ori" → "'Ori' Völgyesi Noémi"
+    return `"${c.nickname}" ${c.full_name || ''}`.trim();
   }
   return c.full_name || '';
 }
