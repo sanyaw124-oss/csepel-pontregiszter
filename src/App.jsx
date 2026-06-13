@@ -95,7 +95,8 @@ const ROLE_ICONS = {
 };
 
 // Helper: van-e admin jogosultsága a usernek?
-const hasAdminRights = (role) => role === 'admin' || role === 'szulo_admin';
+const hasAdminRights = (role) =>
+  ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(role);
 
 // Helper: van-e edzői jogosultsága? (admin, szulo_admin, vagy bármely edző szerep)
 const hasStaffRights = (role) => 
@@ -774,7 +775,7 @@ const NAV_ITEMS = [
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
   { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.SZULO] },
-  { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN] }
+  { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO] }
 ];
 
 function AppShell() {
@@ -922,7 +923,7 @@ function DashboardView({ setActiveView }) {
   const [error, setError] = useState(null);
   
   const isParentLike = profile.role === 'szulo' || profile.role === 'szulo_admin';
-  const isAdminLike = profile.role === 'admin' || profile.role === 'szulo_admin';
+  const isAdminLike = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(profile.role);
 
   useEffect(() => {
     let mounted = true;

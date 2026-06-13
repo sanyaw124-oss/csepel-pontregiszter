@@ -1062,8 +1062,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
   const [error, setError] = useState(null);
   const [passwordChangeMessage, setPasswordChangeMessage] = useState(null); // ÚJ: jelszó módosítás után üzenet
 
-  // Csak admin (nem szulo_admin) változtathat szülő-admin szerepkört
-  const canSetSzuloAdmin = userRole === 'admin';
+  // Teljes jogú szerepek (admin, szülő-admin, vezetőedző, edző) adhatnak szülő-admin jogot
+  const canSetSzuloAdmin = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
 
   useEffect(() => {
     const loadData = async () => {
@@ -1554,8 +1554,8 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
   const [error, setError] = useState(null);
   const [passwordChangeMessage, setPasswordChangeMessage] = useState(null);
 
-  // Csak admin (nem szulo_admin) hozhat létre szulo_admin fiókot
-  const canCreateSzuloAdmin = userRole === 'admin';
+  // Teljes jogú szerepek (admin, szülő-admin, vezetőedző, edző) hozhatnak létre admin/szülő-admin fiókot
+  const canCreateSzuloAdmin = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
 
   const validatePassword = (pwd) => {
     if (!pwd || pwd.length < 6) return 'A jelszó legalább 6 karakter legyen';
@@ -1729,6 +1729,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
             <option value="edzo">Edző</option>
             <option value="segededzo">Segédedző</option>
             {canCreateSzuloAdmin && <option value="szulo_admin">Szülő-admin</option>}
+            {canCreateSzuloAdmin && <option value="admin">Admin</option>}
           </Select>
         </Field>
         <Field label="Titulus (opcionális)">
