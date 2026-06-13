@@ -18,7 +18,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Calendar, ChevronLeft, ChevronRight, Save, Check, X,
+  Calendar, Save, Check, X,
   Loader, AlertCircle, BookOpen, CheckSquare, Square, ArrowLeft, Users,
   BarChart3, ClipboardList
 } from 'lucide-react';
@@ -61,11 +61,6 @@ function formatDateHU(dateStr) {
   return `${d.getFullYear()}. ${String(d.getMonth() + 1).padStart(2, '0')}. ${String(d.getDate()).padStart(2, '0')}. (${days[d.getDay()]})`;
 }
 
-function shiftDate(dateStr, days) {
-  const d = new Date(dateStr + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().split('T')[0];
-}
 
 function formatCompetitorName(c) {
   if (!c) return '';
@@ -459,12 +454,6 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
 
         {/* Dátum választó */}
         <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={() => setDate(shiftDate(date, -1))}
-            className="px-3 py-1.5 text-sm rounded border border-gray-300 hover:bg-gray-50 flex items-center gap-1"
-          >
-            <ChevronLeft className="w-4 h-4" /> Tegnap
-          </button>
           <input
             type="date"
             value={date}
@@ -478,13 +467,6 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
             disabled={date === todayISO()}
           >
             Ma
-          </button>
-          <button
-            onClick={() => setDate(shiftDate(date, 1))}
-            className="px-3 py-1.5 text-sm rounded border border-gray-300 hover:bg-gray-50 flex items-center gap-1"
-            disabled={date >= todayISO()}
-          >
-            Holnap <ChevronRight className="w-4 h-4" />
           </button>
         </div>
 
