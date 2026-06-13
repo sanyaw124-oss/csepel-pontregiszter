@@ -3113,6 +3113,170 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 // Szülő szerkesztheti, csak edző/admin véglegesíti
 // ═══════════════════════════════════════════════════════════════════
 
+// ───────────────────────────────────────────────────────────────────
+// CsepeliTeamResultsSection (v0.9.56) — EKCS csapateredmények a Csepeli fülön
+// Egy kártyán, csapatonként egy blokk: név + kategória + 1.bem + 2.bem + összpont + helyezés
+// Csak csepeli csapatok, amiknek VAN beírt helyezése (competition_teams.placement).
+// ───────────────────────────────────────────────────────────────────
+function CsepeliTeamResultsSection({ supabase, competition }) {
+  const [teams, setTeams] = useState(null);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setError(null);
+      try {
+        // 1) A verseny csapat-kategóriáinak startlista-sorai (team_id, performance, pont)
+        const { data: days, error: dErr } = await supabase
+          .from('competition_days')
+          .select(`
+            categories:competition_categories (
+              id, kategoria, korosztaly, type,
+              entries:startlist_entries (
+                id, team_id, performance_number, external_name, external_club
+              )
+            )
+          `)
+          .eq('competition_id', competition.id);
+        if (dErr) throw dErr;
+
+        // Csapat-sorok kigyűjtése (csak csapat-kategóriából, csak ahol van team_id)
+        const entryRows = [];
+        (days || []).forEach(day => {
+          (day.categories || [])
+            .filter(c => c.type === 'csapat')
+            .forEach(cat => {
+              (cat.entries || []).forEach(e => {
+                if (e.team_id) {
+                  entryRows.push({ ...e, kategoria: cat.kategoria, korosztaly: cat.korosztaly });
+                }
+              });
+            });
+        });
+
+        if (entryRows.length === 0) { if (!cancelled) setTeams([]); return; }
+
+        // 2) competition_teams (név, placement) a team_id-kre
+        const teamIds = [...new Set(entryRows.map(e => e.team_id))];
+        const { data: ctData, error: ctErr } = await supabase
+          .from('competition_teams')
+          .select('id, name, placement')
+          .in('id', teamIds);
+        if (ctErr) throw ctErr;
+        const teamInfo = {};
+        (ctData || []).forEach(t => { teamInfo[t.id] = t; });
+
+        // 3) results (score_total) a startlista-sorokra
+        const entryIds = entryRows.map(e => e.id);
+        const { data: resData } = await supabase
+          .from('results')
+          .select('startlist_entry_id, score_total')
+          .in('startlist_entry_id', entryIds);
+        const scoreByEntry = {};
+        (resData || []).forEach(r => { scoreByEntry[r.startlist_entry_id] = r.score_total; });
+
+        // 4) Csoportosítás team_id szerint, csepeli szűrés + csak beírt helyezés
+        const grouped = {};
+        entryRows.forEach(e => {
+          const info = teamInfo[e.team_id];
+          if (!info) return;
+          const nev = info.name || e.external_name || '';
+          const isCsepeli = (nev + ' ' + (e.external_club || '')).toLowerCase().includes('csepel');
+          if (!isCsepeli) return;
+          if (info.placement === null || info.placement === undefined) return; // csak beírt helyezés
+
+          if (!grouped[e.team_id]) {
+            grouped[e.team_id] = {
+              team_id: e.team_id,
+              name: nev,
+              kategoria: e.kategoria,
+              korosztaly: e.korosztaly,
+              placement: info.placement,
+              perf: {} // performance_number → score_total
+            };
+          }
+          if (e.performance_number) {
+            grouped[e.team_id].perf[e.performance_number] = scoreByEntry[e.id] ?? null;
+          }
+        });
+
+        const list = Object.values(grouped).sort((a, b) => (a.placement || 999) - (b.placement || 999));
+        if (!cancelled) setTeams(list);
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [supabase, competition.id]);
+
+  if (teams === null && !error) {
+    return <div className="text-sm text-gray-500 py-4">Betöltés…</div>;
+  }
+  if (error) {
+    return <div className="text-sm text-red-600 py-4">Hiba: {error}</div>;
+  }
+  if (teams.length === 0) {
+    return (
+      <div className="text-center text-sm text-gray-500 py-8">
+        Még nincs csepeli csapat-helyezés ezen a versenyen.
+      </div>
+    );
+  }
+
+  const fmt = (n) => (n === null || n === undefined) ? '—' : parseFloat(n).toFixed(3);
+
+  return (
+    <div className="rounded-lg p-4 border" style={{ borderColor: COLORS.gray200, backgroundColor: 'white' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <Award className="w-5 h-5" style={{ color: COLORS.red }} />
+        <span className="font-semibold" style={{ color: COLORS.red }}>
+          Csepeli csapateredmények ({teams.length})
+        </span>
+      </div>
+      <div className="space-y-3">
+        {teams.map(t => {
+          const p1 = t.perf[1];
+          const p2 = t.perf[2];
+          const ossz = ((parseFloat(p1) || 0) + (parseFloat(p2) || 0));
+          const hasScore = (p1 !== null && p1 !== undefined) || (p2 !== null && p2 !== undefined);
+          const placementColor = t.placement === 1 ? '#B45309'
+            : t.placement === 2 ? '#6B7280'
+            : t.placement === 3 ? '#92400E'
+            : COLORS.gray700;
+          return (
+            <div key={t.team_id} className="rounded p-3 border-l-4"
+              style={{ borderLeftColor: COLORS.red, borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px', backgroundColor: '#FFF5F7' }}>
+              <div className="flex items-start justify-between flex-wrap gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold" style={{ color: COLORS.red }}>
+                    {t.name}
+                    <span className="text-xs font-normal text-gray-500 ml-2">
+                      {t.kategoria}{t.korosztaly ? ` · ${t.korosztaly}` : ''}
+                    </span>
+                  </div>
+                  {hasScore && (
+                    <div className="text-xs text-gray-600 mt-1">
+                      1. bemutató: <span className="font-medium">{fmt(p1)}</span>
+                      <span className="mx-2">·</span>
+                      2. bemutató: <span className="font-medium">{fmt(p2)}</span>
+                      <span className="mx-2">·</span>
+                      összpont: <span className="font-semibold">{ossz.toFixed(3)}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="font-bold text-base whitespace-nowrap" style={{ color: placementColor }}>
+                  {t.placement}. hely
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChange }) {
   const [section, setSection] = useState('individual'); // 'individual' | 'teams'
   const canFinalize = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
@@ -3167,12 +3331,19 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
       </div>
       )}
 
-      {section === 'individual' && (
+      {section === 'individual' && !isTeamCompetition && (
         <CsepeliIndividualSection 
           supabase={supabase} 
           userRole={userRole} 
           competition={competition}
           onCompetitionChange={onCompetitionChange}
+        />
+      )}
+      {/* v0.9.56: EKCS (csapat) versenynél a csepeli csapateredmények */}
+      {isTeamCompetition && (
+        <CsepeliTeamResultsSection
+          supabase={supabase}
+          competition={competition}
         />
       )}
       {section === 'teams' && !isTeamCompetition && (
