@@ -152,8 +152,7 @@ export function CoachNotesView({ supabase, userRole, profile }) {
   const formatCompName = (c) => {
     if (!c) return 'Versenyző';
     if (c.nickname) {
-      const parts = c.full_name.split(' ');
-      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
+      return `"${c.nickname}" ${c.full_name}`;
     }
     return c.full_name;
   };
@@ -313,8 +312,7 @@ function CoachNoteForm({ supabase, note, competitors, onSaved, onCancel }) {
   const formatCompName = (c) => {
     if (!c) return '';
     if (c.nickname) {
-      const parts = c.full_name.split(' ');
-      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
+      return `"${c.nickname}" ${c.full_name}`;
     }
     return c.full_name;
   };
