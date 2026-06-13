@@ -1223,6 +1223,21 @@ function DashboardView({ setActiveView }) {
         </div>
       )}
 
+      {/* RG sportszer hirdetés banner - nem-versenyzőknek, a tartalom alján */}
+      <a
+        href="https://www.rgsportaruhaz.hu"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="block mt-6 rounded-lg overflow-hidden border hover:opacity-95 transition-opacity"
+        style={{ borderColor: COLORS.gray200 }}
+      >
+        <img
+          src="/rg-bolt-banner.png"
+          alt="RG Sportáruház - Pastorelli FIG hivatalos partner"
+          className="w-full h-auto block"
+        />
+      </a>
+
       {/* Admin info dobozok - csak admin/szülő-admin */}
       {isAdminLike && (
         <>
