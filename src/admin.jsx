@@ -2102,7 +2102,7 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, 
       </div>
 
       {/* Érem-összesítő évvégi statisztika — profilnézetben alapból az aktuális év */}
-      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} defaultYear={new Date().getFullYear()} />
+      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} defaultYear={String(new Date().getFullYear())} />
 
       {/* v0.9.37: Fejlődési grafikon - eddig hiányzott a publikus profilból! */}
       <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
@@ -3981,7 +3981,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         >
           <option value="all">Összes idő</option>
           {availableYears.map(y => (
-            <option key={y} value={y}>{y}</option>
+            <option key={y} value={String(y)}>{y}</option>
           ))}
         </select>
       </div>
