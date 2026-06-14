@@ -2101,8 +2101,8 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, 
         <div className="text-xs text-gray-400 mt-1">Csepel RG Klub ★ csapat tagja</div>
       </div>
 
-      {/* Érem-összesítő évvégi statisztika */}
-      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
+      {/* Érem-összesítő évvégi statisztika — profilnézetben alapból az aktuális év */}
+      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} defaultYear={new Date().getFullYear()} />
 
       {/* v0.9.37: Fejlődési grafikon - eddig hiányzott a publikus profilból! */}
       <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
@@ -3726,8 +3726,8 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
 // 3 forrásból gyűjti: results + competition_teams + historical_results
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorYearlyStats({ supabase, competitorId, competitorName }) {
-  const [year, setYear] = useState('all'); // 'all' | year (int)
+export function CompetitorYearlyStats({ supabase, competitorId, competitorName, defaultYear = 'all' }) {
+  const [year, setYear] = useState(defaultYear); // 'all' | year (int)
   const [availableYears, setAvailableYears] = useState([]);
   const [stats, setStats] = useState(null);
   const [details, setDetails] = useState([]);
