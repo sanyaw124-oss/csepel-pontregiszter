@@ -2117,7 +2117,7 @@ function ClubRankingsWidget() {
           <div className="flex items-center gap-2">
             <Trophy className="w-4 h-4" style={{ color: '#B45309' }} />
             <h3 className="font-semibold text-sm" style={{ color: COLORS.blueDark }}>
-              Helyezések {year}
+              Egyéni helyezések {year}
             </h3>
           </div>
           {!loading && (
