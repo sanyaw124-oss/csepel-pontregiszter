@@ -11,6 +11,7 @@ import {
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award
 } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
+import { fillAutoPlacements, clearAutoPlacements } from './placements';
 import { ScoringView } from './scoring';
 import { CompetitionTeamsView } from './teams';
 
@@ -3672,7 +3673,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
   // Verseny lezárása
   const handleFinalize = async () => {
     if (!canFinalize) return;
-    if (!window.confirm('Lezárod a versenyt? Lezárás után csak edző és admin módosíthat. Folytatod?')) return;
+    if (!window.confirm('Lezárod a versenyt? Ahol nincs kézi helyezés, oda a pontból számolt kerül. Lezárás után csak edző és admin módosíthat. Folytatod?')) return;
     
     try {
       const userResp = await supabase.auth.getUser();
@@ -3693,6 +3694,9 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           .update({ is_provisional: false, finalized_by: userId, finalized_at: new Date().toISOString() })
           .in('id', aaIds);
       }
+
+      // v0.9.49: ahol nincs kézi helyezés, oda a pontból számolt kerül (placements.js)
+      await fillAutoPlacements(supabase, Object.keys(groupedByCategoryAndCompetitor));
       
       // verseny lezárása
       await supabase.from('competitions').update({ is_finalized: true }).eq('id', competition.id);
@@ -3718,6 +3722,8 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       if (aaIds.length > 0) {
         await supabase.from('all_around_results').update({ is_provisional: true, finalized_by: null, finalized_at: null }).in('id', aaIds);
       }
+      // v0.9.49: a lezáráskor beírt számolt helyezések törlése (a kézi marad)
+      await clearAutoPlacements(supabase, Object.keys(groupedByCategoryAndCompetitor));
       await supabase.from('competitions').update({ is_finalized: false }).eq('id', competition.id);
       setSuccessMsg('Verseny visszanyitva.');
       if (onCompetitionChange) onCompetitionChange({ ...competition, is_finalized: false });

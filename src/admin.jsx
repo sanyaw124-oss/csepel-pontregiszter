@@ -9,7 +9,7 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 // v0.9.37: Fejlődési grafikon importálása - eddig hiányzott, ezért nem jelent meg
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
-import { useOwnCompetitors, loadTeamScoreSums } from './privacy';
+import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -2456,11 +2456,15 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
           `)
           .eq('competitor_id', competitorId);
         if (err) throw err;
-        // v0.9.49: EKCS-csapatnál a team.score üres — a bemutatások pontjainak összege
-        const sums = await loadTeamScoreSums(supabase, (data || []).map(m => m.team?.id).filter(Boolean));
-        const withScore = (data || []).map(m => (m.team && (m.team.score === null || m.team.score === undefined) && sums[m.team.id] !== undefined)
-          ? { ...m, team: { ...m.team, score: sums[m.team.id] } }
-          : m);
+        // v0.9.49: EKCS-csapatnál a team.score üres — a bemutatások pontjainak összege,
+        // és a bemutatások részletei (D/A/E/P) is (a gyerekek kérése)
+        const perf = await loadTeamPerformances(supabase, (data || []).map(m => m.team?.id).filter(Boolean));
+        const withScore = (data || []).map(m => {
+          if (!m.team) return m;
+          const pf = perf[m.team.id];
+          const score = (m.team.score === null || m.team.score === undefined) && pf ? pf.sum : m.team.score;
+          return { ...m, team: { ...m.team, score, _perfs: pf ? pf.perfs : [] } };
+        });
         if (active) setTeams(withScore);
       } catch (err) {
         if (active) setError(err.message);
@@ -2535,6 +2539,26 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
                       )}
                       {team.notes && (
                         <div className="text-xs text-gray-500 italic mt-0.5">{team.notes}</div>
+                      )}
+                      {/* v0.9.49: bemutatásonkénti részletek (csak lezárt versenyből, saját / edző) */}
+                      {finalized && !hideScores && team._perfs && team._perfs.length > 0 && (
+                        <div className="mt-1.5 space-y-0.5">
+                          {team._perfs.map((pf, i) => {
+                            const f = (v) => (v === null || v === undefined || v === '') ? null : parseFloat(v).toFixed(3);
+                            const parts = [['D', f(pf.d)], ['A', f(pf.a)], ['E', f(pf.e)]]
+                              .filter(([, v]) => v !== null).map(([k, v]) => `${k} ${v}`);
+                            if (pf.p !== null && pf.p !== undefined && parseFloat(pf.p) > 0) parts.push(`P −${f(pf.p)}`);
+                            return (
+                              <div key={i} className="text-xs text-gray-600 flex flex-wrap gap-x-2">
+                                <span className="font-medium text-gray-700">
+                                  {pf.no ? `${pf.no}. bemutatás` : 'Bemutatás'}{pf.apparatus ? ` · ${apparatusLabel(pf.apparatus)}` : ''}:
+                                </span>
+                                {parts.length > 0 && <span>{parts.join(' · ')}</span>}
+                                <span className="font-semibold text-gray-800">= {f(pf.total)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
                       )}
                     </div>
                     {placement && (

@@ -53,28 +53,47 @@ export function useOwnCompetitors(supabase, role) {
   };
 }
 
-// Csapatok összpontszáma a bemutatások pontjainak összegéből (EKCS-nél a
-// competition_teams.score üres, a pont a startlista-sorok eredményeiben van).
-// Visszaad: { team_id → összpont } (csak ahol van legalább egy pont)
-export async function loadTeamScoreSums(supabase, teamIds) {
-  const sums = {};
-  if (!teamIds || teamIds.length === 0) return sums;
+// Csapatok bemutatásai és összpontszáma (EKCS-nél a competition_teams.score üres,
+// a pont a startlista-sorok eredményeiben van: bemutatásonként D/A/E/P/Total).
+// Visszaad: { team_id → { sum, perfs: [{ no, apparatus, d, a, e, p, db, da, total }] } }
+export async function loadTeamPerformances(supabase, teamIds) {
+  const out = {};
+  if (!teamIds || teamIds.length === 0) return out;
   const { data: entries } = await supabase
     .from('startlist_entries')
-    .select('id, team_id')
+    .select('id, team_id, performance_number, apparatus')
     .in('team_id', teamIds);
-  const entryTeam = {};
-  (entries || []).forEach(e => { entryTeam[e.id] = e.team_id; });
-  const entryIds = Object.keys(entryTeam);
-  if (entryIds.length === 0) return sums;
+  const entryMap = {};
+  (entries || []).forEach(e => { entryMap[e.id] = e; });
+  const entryIds = Object.keys(entryMap);
+  if (entryIds.length === 0) return out;
   const { data: res } = await supabase
     .from('results')
-    .select('startlist_entry_id, score_total')
+    .select('startlist_entry_id, apparatus, score_db, score_da, score_d, score_a, score_e, score_p, score_total')
     .in('startlist_entry_id', entryIds)
     .not('score_total', 'is', null);
   (res || []).forEach(r => {
-    const t = entryTeam[r.startlist_entry_id];
-    sums[t] = (sums[t] || 0) + (parseFloat(r.score_total) || 0);
+    const e = entryMap[r.startlist_entry_id];
+    const slot = (out[e.team_id] = out[e.team_id] || { sum: 0, perfs: [] });
+    slot.sum += parseFloat(r.score_total) || 0;
+    slot.perfs.push({
+      no: e.performance_number, apparatus: r.apparatus || e.apparatus,
+      db: r.score_db, da: r.score_da, d: r.score_d, a: r.score_a, e: r.score_e, p: r.score_p,
+      total: r.score_total
+    });
   });
+  Object.values(out).forEach(s => s.perfs.sort((x, y) => (x.no || 0) - (y.no || 0)));
+  return out;
+}
+
+// Csak az összpontszám: { team_id → összpont }
+export async function loadTeamScoreSums(supabase, teamIds) {
+  const perf = await loadTeamPerformances(supabase, teamIds);
+  const sums = {};
+  Object.entries(perf).forEach(([id, s]) => { sums[id] = s.sum; });
   return sums;
 }
+
+const APPARATUS_HU = { szabad: 'Szabad', karika: 'Karika', labda: 'Labda', buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél' };
+// 'karika+labda' → 'Karika + Labda'
+export const apparatusLabel = (v) => (v ? String(v).split('+').map(s => APPARATUS_HU[s.trim()] || s.trim()).join(' + ') : '');

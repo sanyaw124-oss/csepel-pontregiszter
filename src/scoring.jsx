@@ -17,6 +17,7 @@ import {
   Trophy, Star, Edit2, X, Check, RefreshCw, Award
 } from 'lucide-react';
 import { formatCompetitorName } from './names';
+import { fillAutoPlacements, clearAutoPlacements, manualPlacementOf } from './placements';
 
 // ═══════════════════════════════════════════════════════════════════
 // KONSTANSOK
@@ -225,14 +226,20 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         }
       });
     } else {
-      // Egyéni: a jelenlegi logika változatlanul
+      // Egyéni: v0.9.49 — szerenként rangsorolunk (mint a Csepeli fül és a lezáráskor
+      // mentett helyezés, placements.js), hogy a látott és a mentett helyezés egyezzen
       const withResults = entries.filter(e => {
         const r = results[e.id];
         return r && r.score_total !== null && r.score_total !== undefined;
       });
-      const sorted = [...withResults].sort((a, b) => compareForRanking(results[a.id], results[b.id]));
-      sorted.forEach((e, idx) => {
-        rankMap[e.id] = idx + 1;
+      const byApparatus = {};
+      withResults.forEach(e => {
+        const k = e.apparatus || '__none__';
+        (byApparatus[k] = byApparatus[k] || []).push(e);
+      });
+      Object.values(byApparatus).forEach(arr => {
+        arr.sort((a, b) => compareForRanking(results[a.id], results[b.id]));
+        arr.forEach((e, idx) => { rankMap[e.id] = idx + 1; });
       });
     }
 
@@ -258,7 +265,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       score_e: r?.score_e ?? '',
       score_p: r?.score_p ?? '',
       score_total_manual: r?.score_total ?? '',
-      placement_manual: r?.placement ?? '',
+      placement_manual: manualPlacementOf(r),
       apparatus: entry.apparatus || '',
       _isCsepeli: isCsepeli
     });
@@ -372,6 +379,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         score_p: scoreP,
         score_total: total,
         placement: placementManual,
+        calculated_rank: null, // kézi (vagy üres) — a számoltat lezáráskor a placements.js írja
         modified_at: new Date().toISOString(),
         score_history: scoreHistory
       };
@@ -397,6 +405,9 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
           .update({ apparatus: apparatusToSave })
           .eq('id', entry.id);
       }
+
+      // Lezárt kategóriában a módosítás után a kézi nélküli sorok számolt helyezése frissül
+      if (category.is_finalized && !isTeam) await fillAutoPlacements(supabase, [category.id]);
 
       setSuccessMsg('Pontok mentve!');
       setEditingId(null);
@@ -448,6 +459,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
     if (nemPontozott > 0) {
       msg += `${nemPontozott} versenyzőnek még nincs pontja.\n`;
     }
+    if (!isTeam) msg += 'Ahol nincs kézi helyezés, oda a pontból számolt helyezés kerül.\n';
     msg += '\nVéglegesítés után csak edző és admin módosíthat. Folytatod?';
     
     if (!window.confirm(msg)) return;
@@ -470,6 +482,9 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
           .in('id', resultIds);
         if (updErr) throw updErr;
       }
+
+      // v0.9.49: a kézi helyezés nélküli sorokba a számolt helyezés
+      if (!isTeam) await fillAutoPlacements(supabase, [category.id]);
 
       // Kategória véglegesítése
       const { error: catErr } = await supabase
@@ -507,6 +522,8 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
           .in('id', resultIds);
         if (updErr) throw updErr;
       }
+      // v0.9.49: a lezáráskor beírt számolt helyezések törlése (a kézi marad)
+      if (!isTeam) await clearAutoPlacements(supabase, [category.id]);
       const { error: catErr } = await supabase
         .from('competition_categories')
         .update({ is_finalized: false, finalized_by: null, finalized_at: null })
