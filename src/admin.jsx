@@ -2451,7 +2451,7 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
             position,
             team:team_id (
               id, name, age_range, placement, score, notes,
-              competition:competition_id (id, name, start_date, end_date)
+              competition:competition_id (id, name, start_date, end_date, is_finalized)
             )
           `)
           .eq('competitor_id', competitorId);
@@ -2499,7 +2499,9 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
             .map(tm => {
               const team = tm.team;
               const comp = team.competition;
-              const placement = team.placement;
+              // v0.9.49: eredmény (helyezés + pont) csak a jóváhagyott, lezárt versenyből
+              const finalized = !!comp?.is_finalized;
+              const placement = finalized ? team.placement : null;
               const placementColor = placement === 1 ? '#B45309' 
                 : placement === 2 ? '#6B7280' 
                 : placement === 3 ? '#92400E' 
@@ -2540,7 +2542,7 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
                         <div className="font-bold text-base" style={{ color: placementColor }}>
                           {placement}. hely
                         </div>
-                        {!hideScores && team.score !== null && team.score !== undefined && (
+                        {finalized && !hideScores && team.score !== null && team.score !== undefined && (
                           <div className="text-xs text-gray-500">
                             {parseFloat(team.score).toFixed(3)} pont
                           </div>
@@ -3852,7 +3854,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
       // Csapat-eredmények feldolgozása
       teamData.forEach(team => {
         const comp = team?.competition;
-        if (!team || !comp) return;
+        if (!team || !comp || !comp.is_finalized) return; // v0.9.49: csak lezárt versenyek (mint az egyéninél)
         const year = parseInt(comp.start_date?.slice(0, 4), 10);
         const key = `live_${comp.id}`;
         if (!compMap.has(key)) {

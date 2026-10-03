@@ -11,7 +11,6 @@ import {
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award
 } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
-import { seesAllScores, useOwnCompetitors } from './privacy';
 import { ScoringView } from './scoring';
 import { CompetitionTeamsView } from './teams';
 
@@ -3127,21 +3126,9 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 // Egy kártyán, csapatonként egy blokk: név + kategória + 1.bem + 2.bem + összpont + helyezés
 // Csak csepeli csapatok, amiknek VAN beírt helyezése (competition_teams.placement).
 // ───────────────────────────────────────────────────────────────────
-function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
+function CsepeliTeamResultsSection({ supabase, competition }) {
   const [teams, setTeams] = useState(null);
   const [error, setError] = useState(null);
-  // v0.9.49: bemutatás-pontok csak edzőnek / a saját (gyerek) csapatánál
-  const seesAll = seesAllScores(userRole);
-  const own = useOwnCompetitors(supabase, userRole);
-  const [ownTeamIds, setOwnTeamIds] = useState(new Set());
-  useEffect(() => {
-    if (seesAll || !own.ready || own.ownIds.size === 0) return;
-    let active = true;
-    supabase.from('competition_team_members').select('team_id').in('competitor_id', [...own.ownIds])
-      .then(({ data }) => { if (active) setOwnTeamIds(new Set((data || []).map(m => m.team_id))); });
-    return () => { active = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, seesAll, own.ready, own.ownIds.size]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3260,8 +3247,7 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
           const p1 = t.perf[1];
           const p2 = t.perf[2];
           const ossz = ((parseFloat(p1) || 0) + (parseFloat(p2) || 0));
-          const hasScore = (seesAll || ownTeamIds.has(t.team_id))
-            && ((p1 !== null && p1 !== undefined) || (p2 !== null && p2 !== undefined));
+          const hasScore = (p1 !== null && p1 !== undefined) || (p2 !== null && p2 !== undefined);
           const placementColor = t.placement === 1 ? '#B45309'
             : t.placement === 2 ? '#6B7280'
             : t.placement === 3 ? '#92400E'
@@ -3366,7 +3352,6 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
         <CsepeliTeamResultsSection
           supabase={supabase}
           competition={competition}
-          userRole={userRole}
         />
       )}
       {section === 'teams' && !isTeamCompetition && (
@@ -3400,8 +3385,6 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
   const canFinalize = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
   const canEdit = ['admin', 'szulo', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
   const isFinalized = competition?.is_finalized;
-  // v0.9.49: aki nem írhat (versenyző), az a helyezést mindenkinél, a pontot csak magánál látja
-  const own = useOwnCompetitors(supabase, userRole);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -3849,7 +3832,6 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                           placeholder="pont"
                           className="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
                           disabled={!canEdit}
-                          style={(!canEdit && !own.isOwn(compId)) ? { display: 'none' } : undefined}
                         />
                       </div>
                     </div>
@@ -3885,21 +3867,6 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                                 </>
                               )}
                             </div>
-                            {!canEdit && (vals.placement || vals.score_total) && (
-                              <div className="ml-8 text-sm flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                                {vals.placement && <span className="font-semibold" style={{ color: COLORS.red }}>{vals.placement}. hely</span>}
-                                {own.isOwn(compId) && (
-                                  <span className="text-xs text-gray-600">
-                                    {[['D', vals.score_d], ['A', vals.score_a], ['E', vals.score_e], ['P', vals.score_p]]
-                                      .filter(([, v]) => v !== '' && v !== null && v !== undefined)
-                                      .map(([k, v]) => `${k} ${v}`).join(' · ')}
-                                    {vals.score_total !== '' && vals.score_total !== null && vals.score_total !== undefined && (
-                                      <span className="font-semibold text-gray-800"> · Összesen {vals.score_total}</span>
-                                    )}
-                                  </span>
-                                )}
-                              </div>
-                            )}
                             {canEdit && (
                               <div className="grid grid-cols-4 sm:grid-cols-7 gap-1 ml-8">
                                 <NoSpinnerInput label="DB" value={vals.score_db} onChange={v => onChange('score_db', v)} />

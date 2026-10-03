@@ -17,7 +17,6 @@ import {
   Trophy, Star, Edit2, X, Check, RefreshCw, Award
 } from 'lucide-react';
 import { formatCompetitorName } from './names';
-import { seesAllScores, useOwnCompetitors } from './privacy';
 
 // ═══════════════════════════════════════════════════════════════════
 // KONSTANSOK
@@ -139,21 +138,6 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   const [editingId, setEditingId] = useState(null);  // melyik sor szerkesztés alatt
   const [editForm, setEditForm] = useState({});
   const [showRankings, setShowRankings] = useState(false);
-
-  // v0.9.49: pontszám csak a sajátnál (versenyző) / saját gyereknél (szülő); edző mindent lát
-  const seesAll = seesAllScores(userRole);
-  const own = useOwnCompetitors(supabase, userRole);
-  const [ownTeamIds, setOwnTeamIds] = useState(new Set());
-  useEffect(() => {
-    if (seesAll || !isTeam || !own.ready || own.ownIds.size === 0) return;
-    let active = true;
-    supabase.from('competition_team_members').select('team_id').in('competitor_id', [...own.ownIds])
-      .then(({ data }) => { if (active) setOwnTeamIds(new Set((data || []).map(m => m.team_id))); });
-    return () => { active = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, seesAll, isTeam, own.ready, own.ownIds.size]);
-  const canSeeScore = (entry) => seesAll || own.isOwn(entry.competitor_id)
-    || (!!entry.team_id && ownTeamIds.has(entry.team_id));
 
   const canFinalizeOrEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
   // v0.9.37: szülő pontozhat AKTÍV versenyen is (verseny közben segítségként).
@@ -619,7 +603,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       {/* Versenyzők lista */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {showRankings ? (
-          <RankingsView entries={entries} results={results} calculatedRankings={calculatedRankings} userRole={userRole} canSeeScore={canSeeScore} />
+          <RankingsView entries={entries} results={results} calculatedRankings={calculatedRankings} userRole={userRole} />
         ) : (
           <StartlistScoringView 
             entries={entries} 
@@ -638,7 +622,6 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
             userRole={userRole}
             isTeam={isTeam}
             error={error}
-            canSeeScore={canSeeScore}
           />
         )}
       </div>
@@ -664,7 +647,7 @@ function StartlistScoringView({
   entries, results, calculatedRankings,
   editingId, editForm, setEditForm,
   startEdit, cancelEdit, handleSave, handleDelete, saving,
-  canEdit, isFinalized, userRole, isTeam, error, canSeeScore
+  canEdit, isFinalized, userRole, isTeam, error
 }) {
   if (entries.length === 0) {
     return <div className="p-6 text-center text-sm text-gray-500">Nincs startlista bejegyzés.</div>;
@@ -691,11 +674,10 @@ function StartlistScoringView({
           const displayClub = entry.competitors ? 'Csepeli RG Club' : entry.external_club;
           const apparatusLabel = entry.apparatus ? formatApparatus(entry.apparatus) : 'Választott';
           const rank = calculatedRankings[entry.id];
-          const showScore = canSeeScore(entry);
-          const hasScore = showScore && r && r.score_total !== null && r.score_total !== undefined;
+          const hasScore = r && r.score_total !== null && r.score_total !== undefined;
 
           const details = [];
-          if (r && showScore) {
+          if (r) {
             if (r.score_d !== null && r.score_d !== undefined) details.push(`D ${formatNum(r.score_d)}`);
             if (r.score_a !== null && r.score_a !== undefined) details.push(`A ${formatNum(r.score_a)}`);
             if (r.score_e !== null && r.score_e !== undefined) details.push(`E ${formatNum(r.score_e)}`);
@@ -742,7 +724,7 @@ function StartlistScoringView({
                 ) : (
                   canEdit && <div className="text-xs font-medium" style={{ color: COLORS.blue }}>Pontozás</div>
                 )}
-                {r && showScore && (
+                {r && (
                   <div className="text-[11px]" style={{ color: r.is_provisional ? COLORS.amber : COLORS.green }}>
                     {r.is_provisional ? 'ideiglenes' : 'végleges'}
                   </div>
@@ -977,7 +959,7 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
 // Helyezések nézet
 // ═══════════════════════════════════════════════════════════════════
 
-function RankingsView({ entries, results, calculatedRankings, userRole, canSeeScore = () => true }) {
+function RankingsView({ entries, results, calculatedRankings, userRole }) {
   const sortedEntries = [...entries]
     .filter(e => {
       const r = results[e.id];
@@ -1013,7 +995,6 @@ function RankingsView({ entries, results, calculatedRankings, userRole, canSeeSc
           const apparatusLabel = entry.apparatus 
             ? formatApparatus(entry.apparatus) 
             : '—';
-          const showScore = canSeeScore(entry);
 
           return (
             <div 
@@ -1035,15 +1016,15 @@ function RankingsView({ entries, results, calculatedRankings, userRole, canSeeSc
                   )}
                 </div>
                 <div className="text-xs text-gray-500">{displayClub} · {apparatusLabel}</div>
-                {showScore && <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-2">
+                <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-2">
                   {r.score_d !== null && r.score_d !== undefined && <span>D: {formatNum(r.score_d)}</span>}
                   {r.score_a !== null && r.score_a !== undefined && <span>A: {formatNum(r.score_a)}</span>}
                   {r.score_e !== null && r.score_e !== undefined && <span>E: {formatNum(r.score_e)}</span>}
                   {r.score_p !== null && r.score_p !== undefined && r.score_p > 0 && <span>P: {formatNum(r.score_p)}</span>}
-                </div>}
+                </div>
               </div>
               <div className="text-right">
-                {showScore && <div className="text-lg font-semibold">{formatNum(r.score_total)}</div>}
+                <div className="text-lg font-semibold">{formatNum(r.score_total)}</div>
                 {r.is_provisional && (
                   <div className="text-xs" style={{ color: COLORS.amber }}>ideiglenes</div>
                 )}

@@ -1,13 +1,11 @@
 // ═══════════════════════════════════════════════════════════════════
-// Pontszám-láthatóság (v0.9.49)
-// Sándor 2026.10.03 (a gyerekek kérése): az eredményeknél ne csak a helyezés,
-// hanem a pontszám is látsszon — DE:
-//   - edző / admin / szülő-admin: mindenkiét látja
-//   - versenyző: csak a sajátját
-//   - szülő: csak a saját gyerekéét
-// A helyezés mindenkinél látszik. A szülő verseny közbeni pontbeírása
-// (segítő szerep) megmarad: a beíró lapon látja, amit beír.
-// FIGYELEM: ez megjelenítési szabály; az adatbázis-szintű védelem (RLS) külön feladat.
+// Pontszám-láthatóság az EREDMÉNYEKNÉL (v0.9.49)
+// Sándor 2026.10.03 (a gyerekek kérése): a lezárt, jóváhagyott versenyek
+// eredményeinél ne csak a helyezés, hanem a hozzá tartozó pont is látsszon:
+//   - edző / admin / szülő-admin: mindenkiét
+//   - versenyző: csak a sajátját;  szülő: csak a saját gyerekéét
+// A helyezés mindenkinél látszik. Az ÉLŐ pontozásra (verseny közben) ez NEM
+// vonatkozik: ott mindenki mindent lát.
 // ═══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState } from 'react';
