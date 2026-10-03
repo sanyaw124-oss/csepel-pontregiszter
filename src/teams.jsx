@@ -14,6 +14,7 @@ import {
   Plus, Save, Loader, AlertCircle, Check, X, Edit2, 
   Users, Trophy, ArrowLeft, Trash2
 } from 'lucide-react';
+import { formatCompetitorName, huSortByNickname } from './names';
 
 const COLORS = {
   primary: '#1F2937',
@@ -28,16 +29,7 @@ const COLORS = {
   gray200: '#E5E7EB'
 };
 
-function formatCompetitorName(c) {
-  if (!c) return '';
-  if (c.nickname) {
-    const parts = (c.full_name || '').split(' ');
-    if (parts.length >= 2) {
-      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
-    }
-  }
-  return c.full_name || '';
-}
+// v0.9.49: formatCompetitorName a names.js-ből (becenév elöl)
 
 // ═══════════════════════════════════════════════════════════════════
 // FŐ KOMPONENS — Klub-csapatok listája egy versenyhez
@@ -90,7 +82,7 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
       if (cErr) throw cErr;
 
       setTeams(clubTeams);
-      setCsepeliCompetitors(compsData || []);
+      setCsepeliCompetitors((compsData || []).slice().sort(huSortByNickname));
     } catch (err) {
       console.error('CompetitionTeamsView load error:', err);
       setError(err.message);

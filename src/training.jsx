@@ -22,6 +22,7 @@ import {
   Loader, AlertCircle, BookOpen, CheckSquare, Square, ArrowLeft, Users,
   BarChart3, ClipboardList
 } from 'lucide-react';
+import { formatCompetitorName } from './names';
 
 // ═══════════════════════════════════════════════════════════════════
 // KONSTANSOK
@@ -62,14 +63,7 @@ function formatDateHU(dateStr) {
 }
 
 
-function formatCompetitorName(c) {
-  if (!c) return '';
-  if (c.nickname) {
-    // "Völgyesi Noémi" + nickname "Ori" → "'Ori' Völgyesi Noémi"
-    return `"${c.nickname}" ${c.full_name || ''}`.trim();
-  }
-  return c.full_name || '';
-}
+// v0.9.49: formatCompetitorName a names.js-ből (becenév elöl)
 
 // ═══════════════════════════════════════════════════════════════════
 // FŐ KOMPONENS — Edző/Admin nézet

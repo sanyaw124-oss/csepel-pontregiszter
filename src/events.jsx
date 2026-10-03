@@ -9,6 +9,7 @@ import {
   Plus, Edit2, Trash2, Save, X, Loader, AlertCircle, Calendar,
   Clock, MapPin, Users, MessageCircle, Filter, ArrowLeft, Check, ChevronDown
 } from 'lucide-react';
+import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } from './names';
 
 const COLORS = {
   blue: '#1e3a8a',
@@ -294,7 +295,7 @@ function EventCard({ event, canManage, onEdit, onDelete }) {
                       {a.competitors.map((c, i) => (
                         <span key={i}>
                           {i > 0 && ', '}
-                          {c.competitor?.nickname ? `${c.competitor.full_name.split(' ')[0]} "${c.competitor.nickname}"` : c.competitor?.full_name}
+                          {formatCompetitorShortName(c.competitor)}
                         </span>
                       ))}
                     </div>
@@ -348,7 +349,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
       .eq('is_active', true)
       .eq('is_provisional', false)
       .order('full_name')
-      .then(({ data }) => setAllCompetitors(data || []));
+      .then(({ data }) => setAllCompetitors((data || []).slice().sort(huSortByNickname)));
   }, [supabase]);
 
   const save = async () => {
@@ -655,9 +656,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
                               onChange={() => toggleArrivalCompetitor(idx, c.id)}
                             />
                             <span>
-                              {c.nickname 
-                                ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
-                                : c.full_name}
+                              {formatCompetitorName(c)}
                               <span className="text-gray-400 ml-1">({c.kategoria} {c.korosztaly})</span>
                             </span>
                           </label>
@@ -863,9 +862,7 @@ export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
                                 👥 {a.competitors.map((c, i) => (
                                   <span key={i}>
                                     {i > 0 && ', '}
-                                    {c.competitor?.nickname 
-                                      ? `${c.competitor.full_name.split(' ')[0]} "${c.competitor.nickname}"` 
-                                      : c.competitor?.full_name}
+                                    {formatCompetitorShortName(c.competitor)}
                                   </span>
                                 ))}
                               </div>

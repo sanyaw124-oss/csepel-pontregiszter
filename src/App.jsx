@@ -15,6 +15,7 @@ import { CoachNotesView } from './coach-notes';
 import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
+import { formatCompetitorName, HU_COLLATOR, huSortByNickname } from './names';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -113,24 +114,20 @@ const hasParentRights = (role) => role === 'szulo' || role === 'szulo_admin';
 // Becenév-elsődlegesség: ha van becenév, az alapján rendezünk, különben a full_name alapján.
 // ═══════════════════════════════════════════════════════════════════
 
-const HU_COLLATOR = new Intl.Collator('hu', { sensitivity: 'base', numeric: true });
+// v0.9.49: a közös HU_COLLATOR / huSortByNickname / névformázás a names.js-ben
+
+// Verseny-besorolás kódjának egységesítése: a versenyek modulja 'mrgsz_reg' / 'klub'
+// kódot ír, az áttekintő statisztika 'mrgsz_regional' / 'club' kulccsal számol (v0.9.49)
+const normImportance = (imp) => (imp === 'mrgsz_reg' ? 'mrgsz_regional' : imp === 'klub' ? 'club' : imp);
+
+// Csepeli-e a csapat? Ugyanaz a szabály, mint a versenyek modul CsepeliTeamResultsSection-jében
+const isCsepeliTeamName = (name) => (name || '').toLowerCase().includes('csepel');
 
 // Magyar abc sortolás full_name szerint
 const huSortByName = (a, b) => HU_COLLATOR.compare(a?.full_name || '', b?.full_name || '');
 
-// Magyar abc sortolás becenév szerint (ha van), különben full_name szerint
-// Sándor 2026.05.17 döntése: becenév szerinti abc rendezés mindenhol
-const huSortByNickname = (a, b) => {
-  const aKey = (a?.nickname || a?.full_name || '').trim();
-  const bKey = (b?.nickname || b?.full_name || '').trim();
-  return HU_COLLATOR.compare(aKey, bKey);
-};
-
 // Exportáljuk hogy más fájlok is használhassák
 export { HU_COLLATOR, huSortByName, huSortByNickname };
-
-// eslint-disable-next-line no-unused-vars
-// formatCompetitorName helper - a 2. fázisban kerül használatba
 
 // ═══════════════════════════════════════════════════════════════════
 // AUTH HOOK
@@ -903,7 +900,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.48 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.49 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1057,7 +1054,7 @@ function DashboardView({ setActiveView }) {
           .in('id', childIds)
           .order('full_name');
         
-        if (mounted) setMyChildren(kids || []);
+        if (mounted) setMyChildren((kids || []).slice().sort(huSortByNickname));
       } catch (err) {
         console.error('Gyerekek betöltése hiba:', err);
       }
@@ -1146,9 +1143,7 @@ function DashboardView({ setActiveView }) {
                   className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm text-left hover:shadow-md transition-shadow"
                 >
                   <div className="font-semibold" style={{ color: COLORS.blueDark }}>
-                    ★ {c.nickname 
-                      ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
-                      : c.full_name}
+                    ★ {formatCompetitorName(c)}
                   </div>
                   <div className="text-xs text-gray-500 mt-1">
                     {c.kategoria} · {c.korosztaly} · született {c.birth_year}
@@ -1202,9 +1197,7 @@ function DashboardView({ setActiveView }) {
                      style={{ borderColor: '#fbbf24' }}>
                   <div>
                     <div className="font-medium text-sm" style={{ color: COLORS.blueDark }}>
-                      {c.nickname 
-                        ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}` 
-                        : c.full_name}
+                      {formatCompetitorName(c)}
                     </div>
                     <div className="text-xs text-gray-500">
                       {c.kategoria} · {c.korosztaly}{age ? ` · ${age} éves` : ''}
@@ -1317,9 +1310,7 @@ function BirthdayWidget({ supabase }) {
             const yearsOld = bd.getFullYear() - birth.getFullYear();
             items.push({
               id: c.id,
-              name: c.nickname 
-                ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}`
-                : c.full_name,
+              name: formatCompetitorName(c),
               diff,
               yearsOld,
               dateStr: `${String(month + 1).padStart(2, '0')}.${String(day).padStart(2, '0')}`
@@ -1487,8 +1478,8 @@ function NextCompetitionHero() {
 
   const importanceLabels = {
     'fig': 'FIG nemzetközi', 'mrgsz_mb': 'Magyar Bajnokság',
-    'mrgsz_regional': 'Regionális verseny', 'diakolimpia': 'Diákolimpia',
-    'club': 'Klubverseny', 'egyeb': 'Egyéb verseny'
+    'mrgsz_regional': 'Regionális verseny', 'mrgsz_reg': 'Regionális verseny', 'diakolimpia': 'Diákolimpia',
+    'club': 'Klubverseny', 'klub': 'Klubverseny', 'egyeb': 'Egyéb verseny'
   };
 
   const formatDate = (dateStr) => {
@@ -1589,6 +1580,8 @@ function RecentSuccessesWidget() {
         (teams || []).forEach(t => {
           const comp = compMap[t.competition_id];
           if (!comp) return;
+          // v0.9.49: csak csepeli csapat (a versenyek modul szabálya: a névben „csepel”)
+          if (!isCsepeliTeamName(t.name)) return;
           items.push({
             type: 'team', placement: t.placement, name: t.name,
             competitionName: comp.name, date: comp.start_date
@@ -1698,20 +1691,13 @@ function ClubPrideWidget() {
     return () => clearInterval(timer);
   }, [items]);
 
-  const formatCompName = (c) => {
-    if (!c) return '';
-    if (c.nickname) {
-      const parts = c.full_name.split(' ');
-      return `${parts[0]} "${c.nickname}" ${parts.slice(1).join(' ')}`;
-    }
-    return c.full_name;
-  };
+  const formatCompName = formatCompetitorName;
 
   const current = items && items.length > 0 ? items[currentIdx] : null;
   const competitors = current?.competitors
     ?.map(c => c.competitor)
     .filter(Boolean)
-    .sort((a, b) => (a?.full_name || '').localeCompare(b?.full_name || '', 'hu')) || [];
+    .sort(huSortByNickname) || [];
 
   return (
     <div 
@@ -1909,8 +1895,10 @@ function ClubRankingsWidget() {
         const compImportanceMap = {};
         const countByImp = {};
         (comps || []).forEach(c => {
-          compImportanceMap[c.id] = c.importance;
-          countByImp[c.importance] = (countByImp[c.importance] || 0) + 1;
+          // v0.9.49: a versenyek modulja 'mrgsz_reg' / 'klub' kódot ír, itt 'mrgsz_regional' / 'club' a kulcs
+          const imp = normImportance(c.importance);
+          compImportanceMap[c.id] = imp;
+          countByImp[imp] = (countByImp[imp] || 0) + 1;
         });
 
         // Klub-csapat eredmények (csapat versenyek)
@@ -1918,11 +1906,12 @@ function ClubRankingsWidget() {
         if (allCompIds.length > 0) {
           const { data: teams, error: tErr } = await supabase
             .from('competition_teams')
-            .select('competition_id, placement')
+            .select('competition_id, placement, name')
             .in('competition_id', allCompIds)
             .not('placement', 'is', null);
           if (tErr) throw tErr;
-          teamPlacements = teams || [];
+          // v0.9.49: csak a csepeli csapatok helyezései számítanak
+          teamPlacements = (teams || []).filter(t => isCsepeliTeamName(t.name));
         }
 
         // Egyéni eredmények csak csepeli versenyzőkre, csak véglegesített kategóriákban

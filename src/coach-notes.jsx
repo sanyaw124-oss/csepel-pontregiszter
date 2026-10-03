@@ -8,6 +8,7 @@ import {
   Plus, Edit2, Trash2, Save, X, Loader, AlertCircle, Search,
   MessageCircle, Lock, ArrowLeft, Calendar, User
 } from 'lucide-react';
+import { huSortByNickname } from './names';
 
 const COLORS = {
   blue: '#1e3a8a',
@@ -76,7 +77,7 @@ export function CoachNotesView({ supabase, userRole, profile }) {
       
       if (notesRes.error) throw notesRes.error;
       setNotes(notesRes.data || []);
-      setCompetitors(compRes.data || []);
+      setCompetitors((compRes.data || []).slice().sort(huSortByNickname));
 
       // Szerzők lekérdezése
       const authorIds = [...new Set((notesRes.data || []).map(n => n.created_by).filter(Boolean))];

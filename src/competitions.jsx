@@ -10,6 +10,7 @@ import {
   Calendar, MapPin, Plus, ArrowLeft, Save, Loader, AlertCircle,
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award
 } from 'lucide-react';
+import { formatCompetitorName, huSortByNickname } from './names';
 import { ScoringView } from './scoring';
 import { CompetitionTeamsView } from './teams';
 
@@ -1510,7 +1511,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         .eq('is_active', true)
         .eq('is_club_member', true)
         .order('full_name');
-      setCompetitors(comps || []);
+      setCompetitors((comps || []).slice().sort(huSortByNickname));
     } catch (err) {
       setError('Startlista betöltése sikertelen: ' + err.message);
       setEntries([]);
@@ -1669,9 +1670,7 @@ function StartlistRow({ entry, canManage, onEdit, onRemove }) {
   
   // Név formázás (becenévvel)
   const displayName = competitor 
-    ? (competitor.nickname 
-        ? `${competitor.full_name.split(' ')[0]} "${competitor.nickname}" ${competitor.full_name.split(' ').slice(1).join(' ')}`
-        : competitor.full_name)
+    ? (formatCompetitorName(competitor))
     : entry.external_name;
   
   const club = isCsepeli ? 'Csepeli RG Club' : (entry.external_club || '');
@@ -2001,7 +2000,7 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
                           )}
                         />
                         <span>
-                          {c.nickname ? `${c.full_name} ("${c.nickname}")` : c.full_name}
+                          {formatCompetitorName(c)}
                           <span className="text-gray-400"> · {c.kategoria} {c.korosztaly}</span>
                         </span>
                       </label>
@@ -2056,7 +2055,7 @@ function StartlistEntryForm({ supabase, competitionCategoryId, competitionId, ca
               <option value="">— válassz versenyzőt —</option>
               {competitors.map(c => (
                 <option key={c.id} value={c.id}>
-                  {c.nickname ? `${c.full_name} ("${c.nickname}")` : c.full_name} 
+                  {formatCompetitorName(c)} 
                   {' · '}{c.kategoria} {c.korosztaly}
                 </option>
               ))}
@@ -3790,9 +3789,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                 const cData = group.competitors[compId];
                 const aaKey = `${catId}__${compId}`;
                 const competitor = cData.competitor;
-                const name = competitor.nickname 
-                  ? `${competitor.full_name.split(' ')[0]} "${competitor.nickname}" ${competitor.full_name.split(' ').slice(1).join(' ')}`
-                  : competitor.full_name;
+                const name = formatCompetitorName(competitor);
                 
                 const sortedEntries = [...cData.entries].sort((a, b) => (a.start_order || 0) - (b.start_order || 0));
                 

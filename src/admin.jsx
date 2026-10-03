@@ -5,6 +5,7 @@ import {
   Star, ArrowUp, ArrowDown, BarChart3, Lock, MessageCircle,
   ToggleLeft, ToggleRight, Eye, EyeOff
 } from 'lucide-react';
+import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } from './names';
 // v0.9.37: Fejlődési grafikon importálása - eddig hiányzott, ezért nem jelent meg
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
@@ -15,15 +16,7 @@ import { CompetitorProgressChart } from './progress-chart';
 // HELPER: versenyző név formázás
 // ═══════════════════════════════════════════════════════════════════
 
-export function formatCompetitorName(c) {
-  if (!c) return '';
-  if (!c.nickname) return c.full_name;
-  const parts = c.full_name.trim().split(' ');
-  if (parts.length === 2) {
-    return `${parts[0]} "${c.nickname}" ${parts[1]}`;
-  }
-  return `${c.full_name} "${c.nickname}"`;
-}
+// v0.9.49: formatCompetitorName a names.js-ből (becenév elöl)
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPER: életkor számítás
@@ -654,7 +647,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           />
         </Field>
 
-        <Field label="Becenév" hint='Megjelenítés: Vezetéknév "Becenév" Keresztnév'>
+        <Field label="Becenév" hint='Megjelenítés: "Becenév" Vezetéknév Keresztnév'>
           <Input
             type="text"
             value={form.nickname}
@@ -1072,7 +1065,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
         .select('id, full_name, nickname, birth_year, kategoria')
         .eq('is_active', true)
         .order('full_name');
-      setCompetitors(c || []);
+      setCompetitors((c || []).slice().sort(huSortByNickname));
 
       if (!isNew) {
         const { data: links } = await supabase
@@ -1814,7 +1807,7 @@ function AdminLinks({ supabase, dataReloadKey }) {
           supabase.from('competitors').select('id, full_name, nickname, kategoria, birth_year, is_active').order('full_name'),
           supabase.from('parent_child_links').select('parent_user_id, competitor_id')
         ]);
-        setData({ parents: parents || [], competitors: competitors || [], links: links || [] });
+        setData({ parents: parents || [], competitors: (competitors || []).slice().sort(huSortByNickname), links: links || [] });
       } catch (err) {
         setError(err.message);
       }
@@ -2359,7 +2352,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
             />
           </Field>
 
-          <Field label="Becenév" hint='Megjelenítés: Vezetéknév "Becenév" Keresztnév'>
+          <Field label="Becenév" hint='Megjelenítés: "Becenév" Vezetéknév Keresztnév'>
             <Input
               type="text"
               value={form.nickname}
@@ -3339,7 +3332,7 @@ function AdminClubPride({ supabase }) {
         .order('full_name');
       
       setItems(prides || []);
-      setAllCompetitors(comps || []);
+      setAllCompetitors((comps || []).slice().sort(huSortByNickname));
     } catch (err) {
       setError(err.message);
     }
@@ -3448,9 +3441,7 @@ function AdminClubPride({ supabase }) {
                         className="inline-flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded text-xs"
                         style={{ color: '#92400e', border: '1px solid #fbbf24' }}
                       >
-                        ★ {c.competitor.nickname 
-                          ? `${c.competitor.full_name.split(' ')[0]} "${c.competitor.nickname}"` 
-                          : c.competitor.full_name}
+                        ★ {formatCompetitorShortName(c.competitor)}
                       </span>
                     ))}
                   </div>
@@ -3663,9 +3654,7 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
             ) : (
               filteredCompetitors.map(c => {
                 const checked = form.competitor_ids.includes(c.id);
-                const name = c.nickname 
-                  ? `${c.full_name.split(' ')[0]} "${c.nickname}" ${c.full_name.split(' ').slice(1).join(' ')}`
-                  : c.full_name;
+                const name = formatCompetitorName(c);
                 return (
                   <label
                     key={c.id}
@@ -3961,8 +3950,8 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
 
   const importanceLabels = {
     'fig': 'FIG', 'mrgsz_mb': 'Magyar Bajnokság',
-    'mrgsz_regional': 'Regionális', 'diakolimpia': 'Diákolimpia',
-    'club': 'Klubverseny', 'egyeb': 'Egyéb'
+    'mrgsz_regional': 'Regionális', 'mrgsz_reg': 'Regionális', 'diakolimpia': 'Diákolimpia',
+    'club': 'Klubverseny', 'klub': 'Klubverseny', 'egyeb': 'Egyéb'
   };
 
   return (
