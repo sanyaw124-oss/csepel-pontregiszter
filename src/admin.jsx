@@ -9,6 +9,7 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 // v0.9.37: Fejlődési grafikon importálása - eddig hiányzott, ezért nem jelent meg
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
+import { useOwnCompetitors, loadTeamScoreSums } from './privacy';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -2070,6 +2071,11 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, 
   const effectiveUserRole = (userRole === 'szulo' && Array.isArray(ownChildIds) && !ownChildIds.includes(competitor.id))
     ? 'vendeg'
     : userRole;
+
+  // v0.9.49: klubtárs profilján a pontszám csak edzőnek / saját (gyerek) profilon látszik;
+  // a helyezések mindenkinek. A fejlődési grafikon pontszám-alapú, ezért az is rejtve.
+  const own = useOwnCompetitors(supabase, userRole);
+  const hideScores = !own.isOwn(competitor.id);
   
   return (
     <div>
@@ -2095,17 +2101,17 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, 
       </div>
 
       {/* Érem-összesítő évvégi statisztika — profilnézetben alapból az aktuális év */}
-      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} defaultYear={String(new Date().getFullYear())} />
+      <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} defaultYear={String(new Date().getFullYear())} hideScores={hideScores} />
 
       {/* v0.9.37: Fejlődési grafikon - eddig hiányzott a publikus profilból! */}
-      <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
+      {!hideScores && <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />}
 
       {/* Csapat-eredmények */}
-      <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+      <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} hideScores={hideScores} />
 
       {/* Korábbi eredmények - publikus nézet
           v0.9.46: szülőnél csak saját gyereknél lehet "+ Új eredmény"-t hozzáadni */}
-      <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={effectiveUserRole} />
+      <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={effectiveUserRole} hideScores={hideScores} />
     </div>
   );
 }
@@ -2427,7 +2433,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
 // Megjelenik a versenyző adatlapján: minden csapat ahol részt vett
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorTeamResults({ supabase, competitorId }) {
+export function CompetitorTeamResults({ supabase, competitorId, hideScores = false }) {
   const [teams, setTeams] = useState(null);
   const [error, setError] = useState(null);
 
@@ -2450,7 +2456,12 @@ export function CompetitorTeamResults({ supabase, competitorId }) {
           `)
           .eq('competitor_id', competitorId);
         if (err) throw err;
-        if (active) setTeams(data || []);
+        // v0.9.49: EKCS-csapatnál a team.score üres — a bemutatások pontjainak összege
+        const sums = await loadTeamScoreSums(supabase, (data || []).map(m => m.team?.id).filter(Boolean));
+        const withScore = (data || []).map(m => (m.team && (m.team.score === null || m.team.score === undefined) && sums[m.team.id] !== undefined)
+          ? { ...m, team: { ...m.team, score: sums[m.team.id] } }
+          : m);
+        if (active) setTeams(withScore);
       } catch (err) {
         if (active) setError(err.message);
       }
@@ -2529,7 +2540,7 @@ export function CompetitorTeamResults({ supabase, competitorId }) {
                         <div className="font-bold text-base" style={{ color: placementColor }}>
                           {placement}. hely
                         </div>
-                        {team.score && (
+                        {!hideScores && team.score !== null && team.score !== undefined && (
                           <div className="text-xs text-gray-500">
                             {parseFloat(team.score).toFixed(3)} pont
                           </div>
@@ -2714,7 +2725,7 @@ const VERSENY_BESOROLAS_LIST = [
   { value: 'egyeb', label: 'Egyéb' }
 ];
 
-export function CompetitorHistoricalResults({ supabase, competitorId, userRole }) {
+export function CompetitorHistoricalResults({ supabase, competitorId, userRole, hideScores = false }) {
   const [items, setItems] = useState(null);
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | item
@@ -2792,7 +2803,7 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole }
 
       <div className="space-y-2">
         {(items || []).map(item => (
-          <HistoricalResultCard
+          <HistoricalResultCard hideScores={hideScores}
             key={item.id}
             item={item}
             onEdit={canEdit ? () => setEditing(item) : null}
@@ -2805,7 +2816,7 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole }
 }
 
 // Egy korábbi eredmény kártyája (megjelenítéshez)
-function HistoricalResultCard({ item, onEdit, onDelete }) {
+function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
   const typeLabel = COMPETITION_TYPE_LIST.find(t => t.value === item.competition_type)?.label || item.competition_type;
   const besorolas = VERSENY_BESOROLAS_LIST.find(v => v.value === item.importance)?.label;
   const results = item.results || {};
@@ -2881,7 +2892,7 @@ function HistoricalResultCard({ item, onEdit, onDelete }) {
                       <div key={a.key} className="flex items-center gap-1.5 bg-gray-50 px-2 py-1 rounded">
                         <span className="text-gray-600 min-w-[55px]">{a.label}:</span>
                         {r.placement && <span className="font-semibold" style={{ color: placementColor(r.placement) }}>{r.placement}. hely</span>}
-                        {r.score && <span className="text-gray-500">({r.score})</span>}
+                        {r.score && !hideScores && <span className="text-gray-500">({r.score})</span>}
                       </div>
                     );
                   })}
@@ -2891,7 +2902,7 @@ function HistoricalResultCard({ item, onEdit, onDelete }) {
                 <div className="flex items-center gap-1.5 bg-yellow-50 px-2 py-1 rounded">
                   <span className="text-gray-600 font-medium min-w-[120px]">Egyéni Összetett:</span>
                   {results.osszetett.placement && <span className="font-semibold" style={{ color: placementColor(results.osszetett.placement) }}>{results.osszetett.placement}. hely</span>}
-                  {results.osszetett.score && <span className="text-gray-500">({results.osszetett.score})</span>}
+                  {results.osszetett.score && !hideScores && <span className="text-gray-500">({results.osszetett.score})</span>}
                 </div>
               )}
             </>
@@ -2904,7 +2915,7 @@ function HistoricalResultCard({ item, onEdit, onDelete }) {
                 {item.competition_type === 'egyeni' ? 'Klub csapat:' : 'Csapat eredmény:'}
               </span>
               {results.csapat.placement && <span className="font-semibold" style={{ color: placementColor(results.csapat.placement) }}>{results.csapat.placement}. hely</span>}
-              {results.csapat.score && <span className="text-gray-500">({results.csapat.score})</span>}
+              {results.csapat.score && !hideScores && <span className="text-gray-500">({results.csapat.score})</span>}
             </div>
           )}
         </div>
@@ -3715,7 +3726,7 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
 // 3 forrásból gyűjti: results + competition_teams + historical_results
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitorYearlyStats({ supabase, competitorId, competitorName, defaultYear = 'all' }) {
+export function CompetitorYearlyStats({ supabase, competitorId, competitorName, defaultYear = 'all', hideScores = false }) {
   const [year, setYear] = useState(defaultYear); // 'all' | year (int)
   const [availableYears, setAvailableYears] = useState([]);
   const [stats, setStats] = useState(null);
@@ -3775,13 +3786,16 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         const { data: teamsRaw, error: teamErr } = await supabase
           .from('competition_teams')
           .select(`
-            id, name, placement, competition_id,
+            id, name, placement, score, competition_id,
             competition:competition_id (id, name, start_date, importance, is_finalized)
           `)
           .in('id', teamIds);
         
         if (teamErr) console.error('Csapat query hiba:', teamErr);
         teamData = teamsRaw || [];
+        // v0.9.49: a csapat pontszáma (EKCS-nél a bemutatások összege) — eddig null volt
+        const sums = await loadTeamScoreSums(supabase, teamData.map(t => t.id));
+        teamData = teamData.map(t => ({ ...t, _score: (t.score !== null && t.score !== undefined) ? t.score : sums[t.id] }));
         console.log('Csapat-eredmények talált:', teamData.length, teamData);
       }
 
@@ -3850,7 +3864,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         if (team.placement) {
           compMap.get(key).items.push({
             type: 'team', label: `Csapat (${team.name})`,
-            placement: team.placement, score: null
+            placement: team.placement, score: team._score ?? null
           });
         }
       });
@@ -4052,7 +4066,9 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
                       >
                         {medalEmoji(item.placement) || `${item.placement}.`}
                         <span>{item.label}</span>
-                        {item.score && <span className="opacity-70">({item.score})</span>}
+                        {!hideScores && item.score !== null && item.score !== undefined && item.score !== '' && (
+                          <span className="opacity-70">({isNaN(parseFloat(item.score)) ? item.score : parseFloat(item.score).toFixed(3)})</span>
+                        )}
                       </span>
                     ))}
                   </div>
