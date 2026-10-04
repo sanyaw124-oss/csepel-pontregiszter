@@ -781,6 +781,17 @@ function AppShell() {
   const { key: dataReloadKey, reload: reloadData } = useDataReload();
   const online = useConnectionStatus();
   const [activeView, setActiveView] = useState('dashboard');
+  // v0.9.59: a Frissítés gomb a nyitott oldalt teljesen újratölti (újramountolja),
+  // mert sok doboz nem figyel a dataReloadKey-re. Az automatikus (fülváltás / net
+  // visszajön) frissítés ettől független, félig kitöltött űrlap nem vész el.
+  const [manualReloadKey, setManualReloadKey] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshPage = () => {
+    setRefreshing(true);
+    reloadData();
+    setManualReloadKey(k => k + 1);
+    setTimeout(() => setRefreshing(false), 800);
+  };
 
   const visibleNavItems = NAV_ITEMS.filter(item =>
     item.roles === 'all' || item.roles.includes(profile.role)
@@ -817,11 +828,12 @@ function AppShell() {
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={reloadData}
+              onClick={refreshPage}
+              disabled={refreshing}
               className="p-2 rounded-lg hover:bg-gray-100 text-gray-600 flex items-center gap-1 text-sm"
-              title="Adatok frissítése"
+              title="Az oldal adatainak újratöltése"
             >
-              <RefreshCw className="w-4 h-4" />
+              <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">Frissítés</span>
             </button>
             <button
@@ -860,7 +872,7 @@ function AppShell() {
         </div>
       </nav>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+      <main key={manualReloadKey} className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {/* Áttekintés: VERSENYZŐ → saját vidám, MÁS → klubos áttekintés */}
         {/* Áttekintés: MINDENKINEK ugyanaz (versenyzőnek is - személyes blokk felül) */}
         {activeView === 'dashboard' && (
