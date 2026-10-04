@@ -79,13 +79,133 @@ export function TrainingView({ supabase, userRole, dataReloadKey, profile }) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// VERSENYZŐI saját edzések nézet (csak olvasás + "Hamarosan" jelzés)
+// VERSENYZŐI saját edzések nézet (v0.9.53: saját rögzítéssel)
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// SAJÁT EDZÉS-RÖGZÍTÉS (v0.9.53) — Sándor 2026.10.04: „Katának nem lesz rá ideje”
+// A versenyző (és a szülő a saját gyerekének) maga jelöli: mai nap + elmúlt 7 nap,
+// edzés / egész napos. Azonnal számít; „saját rögzítés” jelöléssel, az edző törölheti.
+// Az írás az adatbázis self_report_training függvényén megy át (ellenőrzi, kinek
+// és melyik napra szabad) — docs/sql/2026-10-04_v0.9.53_edzes-onrogzites.sql
+// ═══════════════════════════════════════════════════════════════════
+
+const SELF_TYPES = [
+  { value: 'edzes', label: '💪 Edzés' },
+  { value: 'egesznapos', label: '☀️ Egész napos' }
+];
+
+function budapestTodayISO() {
+  // 'sv-SE' → ÉÉÉÉ-HH-NN; a budapesti naptári nap (az adatbázis is ezt nézi)
+  return new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Budapest' });
+}
+
+function shiftISO(iso, days) {
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+export function SelfTrainingReport({ supabase, competitorId, title = 'Edzéseim rögzítése', onChanged }) {
+  const today = budapestTodayISO();
+  const days = Array.from({ length: 8 }, (_, i) => shiftISO(today, -i)); // ma + 7 nap
+  const [marks, setMarks] = useState({}); // 'nap|típus' → { self: bool }
+  const [busyKey, setBusyKey] = useState(null);
+  const [error, setError] = useState(null);
+
+  const load = useCallback(async () => {
+    if (!competitorId) return;
+    const { data, error: err } = await supabase
+      .from('training_attendance')
+      .select('self_reported, training_sessions!inner(date, session_type)')
+      .eq('competitor_id', competitorId)
+      .gte('training_sessions.date', days[days.length - 1])
+      .lte('training_sessions.date', today);
+    if (err) { setError(err.message); return; }
+    const m = {};
+    (data || []).forEach(a => {
+      const s = a.training_sessions;
+      if (s) m[`${s.date}|${s.session_type}`] = { self: !!a.self_reported };
+    });
+    setMarks(m);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, competitorId, today]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const toggle = async (date, type) => {
+    const key = `${date}|${type}`;
+    const cur = marks[key];
+    if (cur && !cur.self) return; // az edző rögzítette — a gyerek nem veheti vissza
+    setBusyKey(key);
+    setError(null);
+    try {
+      const { error: err } = await supabase.rpc('self_report_training', {
+        p_competitor: competitorId, p_date: date, p_type: type, p_present: !cur
+      });
+      if (err) throw err;
+      await load();
+      if (onChanged) onChanged();
+    } catch (err) {
+      setError(err.message || 'Nem sikerült menteni');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
+  const dayLabel = (iso) => {
+    if (iso === today) return 'Ma';
+    if (iso === shiftISO(today, -1)) return 'Tegnap';
+    return new Date(iso + 'T12:00:00Z').toLocaleDateString('hu-HU', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200">
+      <div className="p-3 border-b border-gray-200">
+        <div className="text-sm font-semibold text-gray-800">{title}</div>
+        <div className="text-xs text-gray-500 mt-0.5">
+          Koppints, ha ott voltál. A mai napot és az elmúlt 7 napot jelölheted; tábort az edző rögzít.
+        </div>
+      </div>
+      {error && <div className="mx-3 mt-2 text-xs text-red-600">{error}</div>}
+      <div className="divide-y divide-gray-100">
+        {days.map(date => (
+          <div key={date} className="px-3 py-2 flex items-center gap-2">
+            <div className="w-24 text-sm text-gray-700 flex-shrink-0">{dayLabel(date)}</div>
+            <div className="flex gap-2 flex-wrap">
+              {SELF_TYPES.map(t => {
+                const key = `${date}|${t.value}`;
+                const m = marks[key];
+                const coachMarked = m && !m.self;
+                return (
+                  <button
+                    key={t.value}
+                    onClick={() => toggle(date, t.value)}
+                    disabled={busyKey === key || coachMarked}
+                    title={coachMarked ? 'Az edző rögzítette' : (m ? 'Visszavonás' : 'Ott voltam')}
+                    className="px-3 py-1.5 rounded-full text-xs font-medium border transition disabled:cursor-default"
+                    style={m
+                      ? { backgroundColor: coachMarked ? '#DBEAFE' : '#D1FAE5', borderColor: coachMarked ? '#93C5FD' : '#6EE7B7', color: coachMarked ? '#1D4ED8' : '#047857' }
+                      : { backgroundColor: 'white', borderColor: '#E5E7EB', color: '#6B7280' }}
+                  >
+                    {busyKey === key ? '…' : (m ? '✓ ' : '')}{t.label}{coachMarked ? ' (edző)' : ''}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function MyTrainingsView({ supabase, profile }) {
   const [trainings, setTrainings] = useState([]);
   const [stats, setStats] = useState({ edzes: 0, egesznapos: 0, tabor: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [year] = useState(new Date().getFullYear());
+  const [myCompetitorId, setMyCompetitorId] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -97,6 +217,7 @@ function MyTrainingsView({ supabase, profile }) {
           if (fb.data?.id) competitorId = fb.data.id;
         }
         if (!competitorId) { if (mounted) setLoading(false); return; }
+        if (mounted) setMyCompetitorId(competitorId);
 
         const { data } = await supabase
           .from('training_attendance')
@@ -125,7 +246,7 @@ function MyTrainingsView({ supabase, profile }) {
     };
     load();
     return () => { mounted = false; };
-  }, [supabase, profile?.competitor_id, profile?.id, profile?.full_name, year]);
+  }, [supabase, profile?.competitor_id, profile?.id, profile?.full_name, year, reloadKey]);
 
   if (loading) return <div className="py-12 text-center"><Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" /></div>;
 
@@ -137,6 +258,12 @@ function MyTrainingsView({ supabase, profile }) {
           <h1 className="text-lg font-semibold">Edzéseim ({year})</h1>
         </div>
       </div>
+
+      {/* v0.9.53: saját rögzítés */}
+      {myCompetitorId && (
+        <SelfTrainingReport supabase={supabase} competitorId={myCompetitorId}
+                            onChanged={() => setReloadKey(k => k + 1)} />
+      )}
 
       {/* Statisztika */}
       <div className="grid grid-cols-3 gap-2">
@@ -186,12 +313,6 @@ function MyTrainingsView({ supabase, profile }) {
         )}
       </div>
 
-      {/* "Hamarosan" jelzés */}
-      <div className="bg-gray-50 rounded-lg border border-gray-200 p-3 text-center">
-        <div className="text-xs text-gray-500 flex items-center justify-center gap-1">
-          ⏳ Hamarosan: <strong>saját edzés rögzítés</strong> — ha az edző jóváhagyja!
-        </div>
-      </div>
     </div>
   );
 }
@@ -248,6 +369,7 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
   const [existingSession, setExistingSession] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [originalSelectedIds, setOriginalSelectedIds] = useState(new Set());
+  const [selfReportedIds, setSelfReportedIds] = useState(new Set()); // v0.9.53: a gyerek / szülő jelölte
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -296,14 +418,19 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
       if (sErr2) throw sErr2;
 
       let attendIds = new Set();
+      const selfIds = new Set();
       if (sess) {
         const { data: atts, error: aErr } = await supabase
           .from('training_attendance')
-          .select('competitor_id')
+          .select('competitor_id, self_reported')
           .eq('session_id', sess.id);
         if (aErr) throw aErr;
-        (atts || []).forEach(a => attendIds.add(a.competitor_id));
+        (atts || []).forEach(a => {
+          attendIds.add(a.competitor_id);
+          if (a.self_reported) selfIds.add(a.competitor_id);
+        });
       }
+      setSelfReportedIds(selfIds);
 
       setCompetitors(sortedComps);
       setYearlyStats(statsMap);
@@ -570,6 +697,13 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium" style={checked ? { color: meta.color } : {}}>
                     {formatCompetitorName(c)}
+                    {checked && selfReportedIds.has(c.id) && (
+                      <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium align-middle"
+                            style={{ backgroundColor: '#D1FAE5', color: '#047857' }}
+                            title="A versenyző vagy a szülője jelölte">
+                        saját
+                      </span>
+                    )}
                   </div>
                   <div className="text-xs text-gray-500">
                     {c.kategoria} · {c.korosztaly}

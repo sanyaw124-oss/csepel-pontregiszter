@@ -9,6 +9,7 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 // v0.9.37: Fejlődési grafikon importálása - eddig hiányzott, ezért nem jelent meg
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
+import { SelfTrainingReport } from './training';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -2291,6 +2292,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
     };
     return map[lower] || 'serdülő';
   };
+  const [trainingVersion, setTrainingVersion] = useState(0); // v0.9.53: saját rögzítés után frissül
   const [form, setForm] = useState({
     full_name: competitor.full_name,
     nickname: competitor.nickname || '',
@@ -2380,9 +2382,16 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole="szulo" />
         )}
 
+        {/* v0.9.53: a szülő rögzítheti a gyereke edzését (ma + elmúlt 7 nap) */}
+        {competitor?.id && (
+          <SelfTrainingReport supabase={supabase} competitorId={competitor.id}
+                              title="Edzés rögzítése a gyermekemnek"
+                              onChanged={() => setTrainingVersion(v => v + 1)} />
+        )}
+
         {/* Edzések */}
         {competitor?.id && (
-          <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
+          <CompetitorTrainingHistory key={trainingVersion} supabase={supabase} competitorId={competitor.id} />
         )}
 
         {/* Edzői privát megjegyzések - szülő csak olvashat */}
