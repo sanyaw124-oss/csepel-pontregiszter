@@ -913,7 +913,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.60 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.61 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1136,6 +1136,12 @@ function DashboardView({ setActiveView }) {
       </div>
 
       {/* ÚJ: szülő/szülő-admin saját gyerekek */}
+      {/* v0.9.61: értesítés az új edzői napló bejegyzésekről (szülőnek) */}
+      {isParentLike && myChildren && myChildren.length > 0 && (
+        <CoachNotesNotice profileId={profile.id} kids={myChildren}
+                          onOpen={() => setActiveView('coach-notes')} />
+      )}
+
       {isParentLike && (
         <div className="mb-6">
           <h3 className="font-semibold text-lg mb-3 flex items-center gap-2" style={{ color: COLORS.blueDark }}>
@@ -1553,6 +1559,73 @@ function SloganHero() {
       </div>
       <div className="text-xs sm:text-sm text-amber-800 mt-2 opacity-90">
         Csepel SC · Ritmikus Gimnasztika · MRGSZ
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// EDZŐI NAPLÓ ÉRTESÍTŐ (v0.9.61) — a szülő Áttekintésén, ha az utolsó megnézés
+// (profiles.coach_notes_seen_at) óta új bejegyzés jött valamelyik gyerekéhez.
+// Az Edzői napló megnyitása vagy a „Láttam” gomb nullázza.
+// ═══════════════════════════════════════════════════════════════════
+
+function CoachNotesNotice({ profileId, kids, onOpen }) {
+  const [counts, setCounts] = useState(null); // [{ child, count }]
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const { data: prof } = await supabase
+          .from('profiles').select('coach_notes_seen_at').eq('id', profileId).maybeSingle();
+        const since = prof?.coach_notes_seen_at;
+        if (!since) { if (active) setCounts([]); return; }
+        const ids = kids.map(c => c.id);
+        const { data: notes } = await supabase
+          .from('coach_notes').select('competitor_id').in('competitor_id', ids).gt('created_at', since);
+        const per = {};
+        (notes || []).forEach(n => { per[n.competitor_id] = (per[n.competitor_id] || 0) + 1; });
+        if (active) setCounts(kids.filter(c => per[c.id]).map(c => ({ child: c, count: per[c.id] })));
+      } catch (err) {
+        console.error('CoachNotesNotice:', err);
+        if (active) setCounts([]);
+      }
+    })();
+    return () => { active = false; };
+  }, [profileId, kids]);
+
+  const markSeen = async () => {
+    setCounts([]);
+    await supabase.from('profiles').update({ coach_notes_seen_at: new Date().toISOString() }).eq('id', profileId);
+  };
+
+  if (!counts || counts.length === 0) return null;
+  const total = counts.reduce((s, x) => s + x.count, 0);
+
+  return (
+    <div className="mb-4 rounded-xl border-2 p-4 flex items-start gap-3 flex-wrap shadow-sm"
+         style={{ backgroundColor: '#fffbeb', borderColor: '#f59e0b' }}>
+      <div className="text-2xl">📝</div>
+      <div className="flex-1 min-w-[180px]">
+        <div className="font-semibold" style={{ color: '#92400e' }}>
+          {total} új edzői bejegyzés
+        </div>
+        <div className="text-sm text-amber-900 mt-0.5">
+          {counts.map((x, i) => (
+            <span key={x.child.id}>{i > 0 && ' · '}{formatCompetitorName(x.child)} ({x.count})</span>
+          ))}
+        </div>
+      </div>
+      <div className="flex gap-2 flex-shrink-0">
+        <button onClick={onOpen} className="px-3 py-1.5 rounded-lg text-white text-sm font-medium"
+                style={{ backgroundColor: '#d97706' }}>
+          Megnyitom
+        </button>
+        <button onClick={markSeen} className="px-3 py-1.5 rounded-lg border text-sm"
+                style={{ borderColor: '#f59e0b', color: '#92400e' }}>
+          Láttam
+        </button>
       </div>
     </div>
   );

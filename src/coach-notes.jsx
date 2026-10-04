@@ -35,6 +35,14 @@ export function CoachNotesView({ supabase, userRole, profile }) {
   // v0.9.46: szülő csak saját gyerekei megjegyzéseit lássa
   const isParent = userRole === 'szulo';
 
+  // v0.9.61: a szülő (és a szülő-admin) megnyitáskor „látta” az edzői naplót —
+  // az Áttekintés értesítője ettől az időponttól számolja az újakat
+  useEffect(() => {
+    if (!profile?.id || !['szulo', 'szulo_admin'].includes(userRole)) return;
+    supabase.from('profiles').update({ coach_notes_seen_at: new Date().toISOString() }).eq('id', profile.id)
+      .then(({ error: err }) => { if (err) console.error('coach_notes_seen_at:', err); });
+  }, [supabase, profile?.id, userRole]);
+
   const load = useCallback(async () => {
     setError(null);
     try {
