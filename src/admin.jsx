@@ -2828,6 +2828,7 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
         .select('*')
         .eq('competitor_id', competitorId)
         .order('year', { ascending: false })
+        .order('competition_date', { ascending: false, nullsFirst: false }) // v0.9.57
         .order('created_at', { ascending: false });
       if (err) throw err;
       setItems(data || []);
@@ -2929,7 +2930,7 @@ function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="font-medium" style={{ color: '#7c3aed' }}>
-            {item.year} · {item.competition_name}
+            {item.competition_date ? item.competition_date.replace(/-/g, '.') + '.' : item.year} · {item.competition_name}
           </div>
           <div className="text-xs text-gray-500 mt-0.5 flex flex-wrap gap-2">
             <span>{typeLabel}</span>
@@ -3028,6 +3029,8 @@ function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
 function HistoricalResultForm({ supabase, competitorId, item, existingItems, onSaved, onCancel }) {
   const [form, setForm] = useState({
     year: item?.year ?? new Date().getFullYear() - 1,
+    // v0.9.57: pontos dátum (a fejlődési grafikonhoz); az év ebből számolódik
+    competition_date: item?.competition_date ?? '',
     competition_name: item?.competition_name ?? '',
     competition_type: item?.competition_type ?? 'egyeni',
     importance: item?.importance ?? 'club',
@@ -3081,10 +3084,14 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
     setSaving(true);
     setError(null);
     try {
-      if (!form.year || !form.competition_name) {
-        throw new Error('Az év és a verseny neve kötelező!');
+      if (!form.competition_name) {
+        throw new Error('A verseny neve kötelező!');
       }
-      const year = parseInt(form.year, 10);
+      // Új bejegyzésnél a dátum kötelező; régi (csak évszámos) bejegyzés dátum nélkül is menthető
+      if (!form.competition_date && !item) {
+        throw new Error('A verseny dátuma kötelező!');
+      }
+      const year = form.competition_date ? parseInt(form.competition_date.slice(0, 4), 10) : parseInt(form.year, 10);
       if (isNaN(year) || year < 2000 || year > 2100) {
         throw new Error('Érvényes évet adj meg (2000-2100)!');
       }
@@ -3150,6 +3157,7 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
       const payload = {
         competitor_id: competitorId,
         year,
+        competition_date: form.competition_date || null,
         competition_name: form.competition_name.trim(),
         competition_type: form.competition_type,
         importance: form.importance,
@@ -3190,14 +3198,23 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
 
       <div className="space-y-2">
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Év *">
+          <Field label="Verseny dátuma *">
             <Input
-              type="number"
-              min="2000"
-              max="2100"
-              value={form.year}
-              onChange={(e) => setForm({ ...form, year: e.target.value })}
+              type="date"
+              min="2000-01-01"
+              max={new Date().toISOString().slice(0, 10)}
+              value={form.competition_date}
+              onChange={(e) => setForm({
+                ...form,
+                competition_date: e.target.value,
+                year: e.target.value ? parseInt(e.target.value.slice(0, 4), 10) : form.year
+              })}
             />
+            {item && !item.competition_date && !form.competition_date && (
+              <div className="text-xs text-amber-700 mt-1">
+                Régi bejegyzés: csak az év ismert ({item.year}). Add meg a pontos dátumot, hogy a grafikonon a helyére kerüljön.
+              </div>
+            )}
           </Field>
           <Field label="Verseny besorolása *">
             <Select value={form.importance} onChange={(e) => setForm({ ...form, importance: e.target.value })}>
@@ -4121,7 +4138,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         if (items.length > 0) {
           compMap.set(key, {
             name: h.competition_name, year: h.year,
-            date: `${h.year}-01-01`, importance: h.importance,
+            date: h.competition_date || `${h.year}-01-01`, importance: h.importance, // v0.9.57
             items, source: 'historical'
           });
         }

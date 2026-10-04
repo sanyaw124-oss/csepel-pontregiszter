@@ -71,6 +71,7 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
               competition_category:competition_categories!inner(
                 competition_day:competition_days!inner(
                   competition_id,
+                  date,
                   competition:competitions!inner(id, name, start_date, is_finalized)
                 )
               )
@@ -86,6 +87,7 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
             competition_category:competition_categories!inner(
               competition_day:competition_days!inner(
                 competition_id,
+                date,
                 competition:competitions!inner(id, name, start_date, is_finalized)
               )
             )
@@ -95,7 +97,7 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
         // 3) Korábbi (historical) eredmények — VALÓS mezőkkel
         supabase
           .from('historical_results')
-          .select('id, year, competition_name, results')
+          .select('id, year, competition_date, competition_name, results')
           .eq('competitor_id', competitorId)
           .order('year', { ascending: true })
       ]);
@@ -113,12 +115,15 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
 
       // Live egyéni eredmények
       for (const r of resData) {
-        const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
+        const day = r.startlist_entry?.competition_category?.competition_day;
+        const comp = day?.competition;
         if (!comp || !comp.is_finalized) continue;
-        const key = `live-${comp.id}`;
+        // v0.9.57: a versenynap tényleges dátuma (többnapos versenynél napokra bontva)
+        const dayDate = day?.date || comp.start_date;
+        const key = `live-${comp.id}-${dayDate}`;
         if (!map.has(key)) {
           map.set(key, {
-            key, name: comp.name, date: comp.start_date,
+            key, name: comp.name, date: dayDate,
             szerek: {}, osszetett: 0
           });
         }
@@ -132,12 +137,14 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
 
       // Live összetett eredmények
       for (const a of aaData) {
-        const comp = a.competition_category?.competition_day?.competition;
+        const aDay = a.competition_category?.competition_day;
+        const comp = aDay?.competition;
         if (!comp || !comp.is_finalized) continue;
-        const key = `live-${comp.id}`;
+        const aDate = aDay?.date || comp.start_date;
+        const key = `live-${comp.id}-${aDate}`;
         if (!map.has(key)) {
           map.set(key, {
-            key, name: comp.name, date: comp.start_date,
+            key, name: comp.name, date: aDate,
             szerek: {}, osszetett: 0
           });
         }
@@ -155,7 +162,7 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
           map.set(key, {
             key,
             name: h.competition_name || 'Korábbi verseny',
-            date: h.year ? `${h.year}-01-01` : null,
+            date: h.competition_date || (h.year ? `${h.year}-01-01` : null), // v0.9.57: pontos dátum, ha van
             szerek: {},
             osszetett: 0
           });
