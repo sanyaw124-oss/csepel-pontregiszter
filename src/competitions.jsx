@@ -37,6 +37,7 @@ const COLORS = {
   // verseny komolysága szerint színek
   importance: {
     fig: { bg: '#fef3c7', text: '#92400e', label: 'FIG nemzetközi' },
+    nemzetkozi: { bg: '#ffedd5', text: '#9a3412', label: 'Nemzetközi' }, // v0.9.56
     mrgsz_mb: { bg: '#dbeafe', text: '#1e40af', label: 'MRGSZ Magyar Bajnokság' },
     mrgsz_reg: { bg: '#e0e7ff', text: '#3730a3', label: 'MRGSZ Regionális' },
     diakolimpia: { bg: '#fce7f3', text: '#9d174d', label: 'Diákolimpia' },
@@ -51,6 +52,7 @@ const COLORS = {
 
 const IMPORTANCE_OPTIONS = [
   { value: 'fig', label: 'FIG nemzetközi' },
+  { value: 'nemzetkozi', label: 'Nemzetközi verseny' }, // v0.9.56
   { value: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
   { value: 'mrgsz_reg', label: 'MRGSZ Regionális verseny' },
   { value: 'diakolimpia', label: 'Diákolimpia' },

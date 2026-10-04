@@ -2805,6 +2805,7 @@ const COMPETITION_TYPE_LIST = [
 
 const VERSENY_BESOROLAS_LIST = [
   { value: 'fig', label: 'FIG nemzetközi' },
+  { value: 'nemzetkozi', label: 'Nemzetközi' }, // v0.9.56
   { value: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
   { value: 'mrgsz_regional', label: 'MRGSZ Regionális verseny' },
   { value: 'diakolimpia', label: 'Diákolimpia' },
@@ -4177,7 +4178,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
   const medalEmoji = (p) => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : null;
 
   const importanceLabels = {
-    'fig': 'FIG', 'mrgsz_mb': 'Magyar Bajnokság',
+    'fig': 'FIG', 'nemzetkozi': 'Nemzetközi', 'mrgsz_mb': 'Magyar Bajnokság',
     'mrgsz_regional': 'Regionális', 'mrgsz_reg': 'Regionális', 'diakolimpia': 'Diákolimpia',
     'club': 'Klubverseny', 'klub': 'Klubverseny', 'egyeb': 'Egyéb'
   };

@@ -901,7 +901,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.55 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.56 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1481,7 +1481,7 @@ function NextCompetitionHero() {
   else if (diffDays > 0) dayLabel = `📅 ${diffDays} NAP MÚLVA`;
 
   const importanceLabels = {
-    'fig': 'FIG nemzetközi', 'mrgsz_mb': 'Magyar Bajnokság',
+    'fig': 'FIG nemzetközi', 'nemzetkozi': 'Nemzetközi verseny', 'mrgsz_mb': 'Magyar Bajnokság',
     'mrgsz_regional': 'Regionális verseny', 'mrgsz_reg': 'Regionális verseny', 'diakolimpia': 'Diákolimpia',
     'club': 'Klubverseny', 'klub': 'Klubverseny', 'egyeb': 'Egyéb verseny'
   };
@@ -1933,6 +1933,7 @@ function ClubRankingsWidget() {
 
   const IMPORTANCE_ROWS = [
     { key: 'fig', label: 'FIG nemzetközi' },
+    { key: 'nemzetkozi', label: 'Nemzetközi' }, // v0.9.56
     { key: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
     { key: 'mrgsz_regional', label: 'MRGSZ Regionális' },
     { key: 'diakolimpia', label: 'Diákolimpia' },
@@ -2179,6 +2180,7 @@ function ClubRankingsWidget() {
 
   const importanceLabel = (key) => {
     if (key === 'fig') return 'FIG';
+    if (key === 'nemzetkozi') return 'Nemz.';
     if (key === 'mrgsz_mb') return 'MB';
     if (key === 'mrgsz_regional') return 'Reg.';
     if (key === 'diakolimpia') return 'Diák';
