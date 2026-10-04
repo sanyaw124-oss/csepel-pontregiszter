@@ -10,6 +10,7 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
+import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -639,6 +640,9 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       </div>
 
       <div className="space-y-3">
+        {!isNew && competitor?.id && (
+          <CompetitorPhoto supabase={supabase} competitor={competitor} userRole={userRole} size={88} />
+        )}
         <Field label="Teljes név *">
           <Input
             type="text"
@@ -2063,6 +2067,48 @@ export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) 
 // Mutatja: érem-összesítő, csapat-eredmények, korábbi eredmények
 // (de NEM mutatja az edzői privát megjegyzéseket vagy szerkesztési mezőket)
 // ═══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════
+// PROFILKÉP az adatlapon (v0.9.50): mindenki látja, aki belép; a vezető
+// szerepek elrejthetik (avatar.js) — a gyerek értesítést kap a programban
+// ═══════════════════════════════════════════════════════════════════
+function CompetitorPhoto({ supabase, competitor, userRole, size = 96 }) {
+  const [version, setVersion] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const photo = useAvatarUrl(supabase, competitor, version);
+  const moderator = canModerate(userRole);
+
+  const hide = async () => {
+    if (!window.confirm('Elrejted ezt a profilképet? A kép törlődik, a versenyző értesítést kap, hogy töltsön fel újat.')) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await rejectAvatar(supabase, competitor);
+      setVersion(v => v + 1);
+    } catch (err) {
+      setError('Nem sikerült elrejteni: ' + err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="text-center mb-2">
+      <AvatarImage url={photo.url} emoji={competitor.avatar_emoji || '🎀'} size={size} />
+      {moderator && photo.url && (
+        <button onClick={hide} disabled={busy}
+          className="mt-2 text-xs px-3 py-1 rounded border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50">
+          {busy ? 'Elrejtés…' : 'Kép elrejtése (nem megfelelő)'}
+        </button>
+      )}
+      {moderator && photo.rejected && (
+        <div className="mt-1 text-xs text-amber-700">A kép el van rejtve; a versenyző új képre vár.</div>
+      )}
+      {error && <div className="mt-1 text-xs text-red-600">{error}</div>}
+    </div>
+  );
+}
+
 function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, onBack }) {
   const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
   
@@ -2090,7 +2136,7 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, 
 
       {/* Versenyző fejléc */}
       <div className="bg-white rounded-lg border p-4 mb-3 text-center" style={{ borderColor: COLORS.gray200 }}>
-        <div className="text-5xl mb-2">{competitor.avatar_emoji || '🎀'}</div>
+        <CompetitorPhoto supabase={supabase} competitor={competitor} userRole={userRole} size={104} />
         <div className="text-lg font-bold" style={{ color: COLORS.blueDark }}>
           {formatCompetitorName(competitor)}
         </div>

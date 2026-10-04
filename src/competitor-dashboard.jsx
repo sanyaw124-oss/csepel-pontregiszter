@@ -21,6 +21,7 @@
 
 import { useEffect, useState } from 'react';
 import { Loader, AlertCircle } from 'lucide-react';
+import { useAvatarUrl, AvatarImage } from './avatar';
 
 // HELPER
 function getGreeting(name) {
@@ -79,6 +80,7 @@ function MySelfBlock({ supabase, profile }) {
   const [weekStreak, setWeekStreak] = useState(0);
   const [progressTrend, setProgressTrend] = useState(null);
   const [loading, setLoading] = useState(true);
+  const photo = useAvatarUrl(supabase, competitor); // v0.9.50: profilkép + elrejtés-értesítés
 
   useEffect(() => {
     let mounted = true;
@@ -99,7 +101,7 @@ function MySelfBlock({ supabase, profile }) {
 
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji')
+            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path')
             .eq('id', competitorId).maybeSingle()
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
@@ -246,6 +248,14 @@ function MySelfBlock({ supabase, profile }) {
         </div>
       </div>
 
+      {/* v0.9.50: értesítés, ha az edző elrejtette a profilképet */}
+      {photo.rejected && (
+        <div className="rounded-2xl p-3 mb-3 border-2 text-sm" style={{ backgroundColor: '#FEF3C7', borderColor: '#F59E0B', color: '#92400E' }}>
+          <div className="font-bold">📷 A profilképed nem megfelelő, ezért az edző elrejtette.</div>
+          <div className="text-xs mt-1">Tölts fel egy új, RG témájú képet a Profil menüben — addig az avatarod látszik.</div>
+        </div>
+      )}
+
       {/* Saját éremfal */}
       {stats && stats.osszes > 0 && (
         <div className="rounded-2xl p-4 mb-3 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
@@ -344,7 +354,9 @@ function MySelfBlock({ supabase, profile }) {
       <div className="rounded-2xl p-4 text-center" style={{
         background: 'linear-gradient(135deg, #DDD6FE 0%, #C7D2FE 100%)'
       }}>
-        <div className="text-3xl mb-1">{competitor.avatar_emoji || '🎀'}</div>
+        <div className="mb-1 flex justify-center">
+          <AvatarImage url={photo.url} emoji={competitor.avatar_emoji || '🎀'} size={56} />
+        </div>
         <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>
           {competitor.nickname ? `"${competitor.nickname}" ` : ''}{competitor.full_name}
         </div>

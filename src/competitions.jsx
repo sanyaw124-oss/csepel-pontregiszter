@@ -8,7 +8,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, MapPin, Plus, ArrowLeft, Save, Loader, AlertCircle,
-  ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award
+  ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award,
+  ChevronUp, ChevronDown, UserX, UserCheck
 } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
 import { fillAutoPlacements, clearAutoPlacements } from './placements';
@@ -1497,7 +1498,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club, 
-          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly,
+          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly, did_not_start,
           competitor:competitors(id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -1538,6 +1539,44 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
     }
   };
   
+  // v0.9.50: verseny napi változások — „nem indult” és sorrendcsere, csak a vezető szerepeknek
+  const canAdminStartlist = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
+
+  const toggleDidNotStart = async (entry) => {
+    const next = !entry.did_not_start;
+    const name = entry.competitor ? formatCompetitorName(entry.competitor) : entry.external_name;
+    if (next && !window.confirm(`${name}: nem indult? A sor marad, de nem pontozható és nem számít a helyezésbe.`)) return;
+    try {
+      const { error: uErr } = await supabase.from('startlist_entries').update({ did_not_start: next }).eq('id', entry.id);
+      if (uErr) throw uErr;
+      load();
+    } catch (err) {
+      setError('Mentés sikertelen: ' + err.message);
+    }
+  };
+
+  // Szomszéddal helyet cserél (a sorszámok cseréje, átmeneti sorszámmal)
+  const moveEntry = async (entry, dir) => {
+    const list = entries || [];
+    const idx = list.findIndex(e => e.id === entry.id);
+    const other = list[idx + dir];
+    if (!other) return;
+    try {
+      const tmp = 100000 + Math.floor(Math.random() * 100000);
+      const steps = [
+        [entry.id, tmp], [other.id, entry.start_order], [entry.id, other.start_order]
+      ];
+      for (const [id, order] of steps) {
+        const { error: uErr } = await supabase.from('startlist_entries').update({ start_order: order }).eq('id', id);
+        if (uErr) throw uErr;
+      }
+      load();
+    } catch (err) {
+      setError('Sorrend mentése sikertelen: ' + err.message);
+      load();
+    }
+  };
+
   if (editingEntry !== null) {
     return (
       <StartlistEntryForm
@@ -1555,6 +1594,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
   }
   
   const csepeliCount = (entries || []).filter(e => e.competitor_id).length;
+  const dnsCount = (entries || []).filter(e => e.did_not_start).length;
   const externalCount = (entries || []).filter(e => !e.competitor_id).length;
   
   // Ha pontozás módban vagyunk, mutassuk a ScoringView-t
@@ -1638,17 +1678,22 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
       ) : (
         <div className="bg-white rounded-lg border overflow-hidden mb-3" style={{ borderColor: COLORS.gray200 }}>
           <div className="bg-gray-50 px-3 py-2 text-xs text-gray-600 flex justify-between">
-            <span>{entries.length} sor</span>
+            <span>{entries.length} sor{dnsCount > 0 ? ` · ${dnsCount} nem indult` : ''}</span>
             <span>{csepeliCount} csepeli · {externalCount} külsős</span>
           </div>
           <div className="divide-y" style={{ borderColor: COLORS.gray200 }}>
-            {entries.map(entry => (
+            {entries.map((entry, idx) => (
               <StartlistRow
                 key={entry.id}
                 entry={entry}
                 canManage={canManage}
+                canAdmin={canAdminStartlist}
+                isFirst={idx === 0}
+                isLast={idx === entries.length - 1}
                 onEdit={() => setEditingEntry(entry)}
                 onRemove={() => removeEntry(entry.id)}
+                onToggleDidNotStart={() => toggleDidNotStart(entry)}
+                onMove={(dir) => moveEntry(entry, dir)}
               />
             ))}
           </div>
@@ -1665,8 +1710,9 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
   );
 }
 
-function StartlistRow({ entry, canManage, onEdit, onRemove }) {
+function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onRemove, onToggleDidNotStart, onMove }) {
   const isCsepeli = !!entry.competitor_id;
+  const dns = !!entry.did_not_start;
   const competitor = entry.competitor;
   
   // Név formázás (becenévvel)
@@ -1682,17 +1728,32 @@ function StartlistRow({ entry, canManage, onEdit, onRemove }) {
   return (
     <div 
       className="flex items-center gap-2 px-3 py-2 hover:bg-gray-50"
-      style={{ backgroundColor: isCsepeli ? COLORS.redLight : 'white' }}
+      style={{ backgroundColor: dns ? COLORS.gray100 || '#F3F4F6' : (isCsepeli ? COLORS.redLight : 'white'), opacity: dns ? 0.75 : 1 }}
     >
+      {canAdmin && (
+        <div className="flex flex-col flex-shrink-0">
+          <button onClick={() => onMove(-1)} disabled={isFirst} className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-20" title="Feljebb">
+            <ChevronUp className="w-3.5 h-3.5" />
+          </button>
+          <button onClick={() => onMove(1)} disabled={isLast} className="p-0.5 rounded hover:bg-gray-200 disabled:opacity-20" title="Lejjebb">
+            <ChevronDown className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
       <div className="w-8 text-right text-sm font-semibold flex-shrink-0" style={{ color: COLORS.gray700 }}>
         {entry.start_order}.
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
           {isCsepeli && <span style={{ color: COLORS.red }}>★</span>}
-          <span className={`text-sm truncate ${isCsepeli ? 'font-semibold' : ''}`} style={{ color: COLORS.blueDark }}>
+          <span className={`text-sm truncate ${isCsepeli ? 'font-semibold' : ''} ${dns ? 'line-through' : ''}`} style={{ color: COLORS.blueDark }}>
             {displayName}
           </span>
+          {dns && (
+            <span className="text-xs px-1.5 py-0.5 rounded flex-shrink-0 font-medium" style={{ backgroundColor: '#E5E7EB', color: '#374151' }}>
+              Nem indult
+            </span>
+          )}
           {entry.performance_number && (
             <span className="text-xs px-1.5 py-0.5 rounded flex-shrink-0" style={{ backgroundColor: COLORS.blueBg, color: COLORS.blue }}>
               {entry.performance_number}. bem.
@@ -1706,8 +1767,17 @@ function StartlistRow({ entry, canManage, onEdit, onRemove }) {
       <div className="text-sm flex-shrink-0">
         {apparatus}
       </div>
-      {canManage && (
+      {(canManage || canAdmin) && (
         <div className="flex gap-1 flex-shrink-0">
+          {canAdmin && (
+            <button
+              onClick={onToggleDidNotStart}
+              className="p-1.5 hover:bg-gray-200 rounded text-gray-600"
+              title={dns ? 'Mégis indul' : 'Nem indult'}
+            >
+              {dns ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+            </button>
+          )}
           <button
             onClick={onEdit}
             className="p-1.5 hover:bg-gray-200 rounded text-gray-600"

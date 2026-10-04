@@ -156,7 +156,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club,
-          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year,
+          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year, did_not_start,
           competitors:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -229,6 +229,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       // Egyéni: v0.9.49 — szerenként rangsorolunk (mint a Csepeli fül és a lezáráskor
       // mentett helyezés, placements.js), hogy a látott és a mentett helyezés egyezzen
       const withResults = entries.filter(e => {
+        if (e.did_not_start) return false; // v0.9.50: nem indult — nem rangsoroljuk
         const r = results[e.id];
         return r && r.score_total !== null && r.score_total !== undefined;
       });
@@ -453,7 +454,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       setError('Még nincs egyetlen pontozás sem.');
       return;
     }
-    const nemPontozott = entries.length - pontozott.length;
+    const nemPontozott = entries.filter(e => !e.did_not_start).length - pontozott.length;
     
     let msg = `${pontozott.length} versenyző pontozva.\n`;
     if (nemPontozott > 0) {
@@ -584,7 +585,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         </h1>
         <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
           <div className="text-sm text-gray-600">
-            Pontozva: <span className="font-semibold">{pontozottCount} / {entries.length}</span>
+            Pontozva: <span className="font-semibold">{pontozottCount} / {entries.filter(e => !e.did_not_start).length}</span>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowRankings(!showRankings)} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50 flex items-center gap-1">
@@ -672,7 +673,8 @@ function StartlistScoringView({
 
   const editingIdx = entries.findIndex(e => e.id === editingId);
   const editingEntry = editingIdx >= 0 ? entries[editingIdx] : null;
-  const nextEntry = editingIdx >= 0 && editingIdx < entries.length - 1 ? entries[editingIdx + 1] : null;
+  // a következő INDULÓ versenyző (a „nem indult” sorokat átugorjuk)
+  const nextEntry = editingIdx >= 0 ? entries.slice(editingIdx + 1).find(e => !e.did_not_start) || null : null;
 
   const saveAndNext = async () => {
     const ok = await handleSave(editingEntry);
@@ -701,14 +703,19 @@ function StartlistScoringView({
             if (r.score_p !== null && r.score_p !== undefined && r.score_p > 0) details.push(`P ${formatNum(r.score_p)}`);
           }
 
-          const Row = canEdit ? 'button' : 'div';
+          const dns = !!entry.did_not_start;
+          const clickable = canEdit && !dns;
+          const Row = clickable ? 'button' : 'div';
           return (
             <Row
               key={entry.id}
-              type={canEdit ? 'button' : undefined}
-              onClick={canEdit ? () => startEdit(entry) : undefined}
-              className={`w-full text-left px-3 py-2.5 flex items-center gap-3 ${canEdit ? 'active:bg-gray-100 hover:bg-gray-50' : ''}`}
-              style={isCsepeli ? { backgroundColor: COLORS.redPink, borderLeft: `3px solid ${COLORS.red}` } : {}}
+              type={clickable ? 'button' : undefined}
+              onClick={clickable ? () => startEdit(entry) : undefined}
+              className={`w-full text-left px-3 py-2.5 flex items-center gap-3 ${clickable ? 'active:bg-gray-100 hover:bg-gray-50' : ''}`}
+              style={{
+                ...(isCsepeli ? { backgroundColor: COLORS.redPink, borderLeft: `3px solid ${COLORS.red}` } : {}),
+                ...(dns ? { backgroundColor: COLORS.gray100, opacity: 0.7 } : {})
+              }}
             >
               {/* Helyezés-jelvény (amíg nincs helyezés: a rajtszám) */}
               {rank ? (
@@ -724,7 +731,7 @@ function StartlistScoringView({
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium flex items-center gap-1 min-w-0">
                   {isCsepeli && <Star className="w-3 h-3 flex-shrink-0" style={{ color: COLORS.red, fill: COLORS.red }} />}
-                  <span className="truncate" style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
+                  <span className={`truncate ${dns ? 'line-through' : ''}`} style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
                 </div>
                 <div className="text-xs text-gray-600 truncate">
                   {displayClub} · {apparatusLabel}
@@ -736,7 +743,9 @@ function StartlistScoringView({
               </div>
 
               <div className="text-right flex-shrink-0">
-                {hasScore ? (
+                {dns ? (
+                  <div className="text-xs font-medium text-gray-600">Nem indult</div>
+                ) : hasScore ? (
                   <div className="text-base font-semibold tabular-nums">{formatNum(r.score_total)}</div>
                 ) : (
                   canEdit && <div className="text-xs font-medium" style={{ color: COLORS.blue }}>Pontozás</div>

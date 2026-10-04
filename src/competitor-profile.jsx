@@ -15,6 +15,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { Loader, AlertCircle, X, Search } from 'lucide-react';
 import { safeQuery } from './competitor-dashboard';
 import { CompetitorProgressChart } from './progress-chart';
+import { useAvatarUrl, uploadAvatar, AvatarImage, AVATAR_RULES_TEXT } from './avatar';
 
 const RG_AVATARS = [
   '🤸‍♀️', '🩰', '🎯', '🏆', '🏅', '🎖️', '🥇', '🥈', '🥉',
@@ -77,6 +78,13 @@ export default function CompetitorProfileView({ supabase, profile }) {
   const [competitionsThisYear, setCompetitionsThisYear] = useState(0);
   const [medalsThisYear, setMedalsThisYear] = useState(0);
   const [loading, setLoading] = useState(true);
+  // v0.9.50: profilkép
+  const [avatarVersion, setAvatarVersion] = useState(0);
+  const [showPhotoUpload, setShowPhotoUpload] = useState(false);
+  const [photoRulesOk, setPhotoRulesOk] = useState(false);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [photoError, setPhotoError] = useState(null);
+  const photo = useAvatarUrl(supabase, competitor, avatarVersion);
 
   useEffect(() => {
     let mounted = true;
@@ -99,7 +107,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
         // 2) Saját competitor (külön mert kell hozzá a best_friend_competitor_id)
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, best_friend_competitor_id')
+            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path, best_friend_competitor_id')
             .eq('id', competitorId).maybeSingle()
         );
         if (!compRes.data || !mounted) { setLoading(false); return; }
@@ -294,6 +302,26 @@ export default function CompetitorProfileView({ supabase, profile }) {
     }
   };
 
+  const onPhotoSelected = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !competitor) return;
+    setPhotoBusy(true);
+    setPhotoError(null);
+    try {
+      const path = await uploadAvatar(supabase, competitor, file);
+      setCompetitor({ ...competitor, avatar_path: path });
+      setAvatarVersion(v => v + 1);
+      setShowPhotoUpload(false);
+      setPhotoRulesOk(false);
+    } catch (err) {
+      console.error('Profilkép feltöltés:', err);
+      setPhotoError('A feltöltés nem sikerült: ' + (err.message || 'ismeretlen hiba'));
+    } finally {
+      setPhotoBusy(false);
+    }
+  };
+
   const saveBestFriend = async (friend) => {
     if (!competitor?.id) return;
     const friendId = friend?.id || null;
@@ -367,7 +395,15 @@ export default function CompetitorProfileView({ supabase, profile }) {
 
       {/* 1. AVATAR + NÉV */}
       <div className="rounded-2xl p-5 bg-white text-center border-2" style={{ borderColor: '#FBCFE8' }}>
-        <div className="text-7xl mb-2">{selectedAvatar}</div>
+        <div className="mb-2 flex justify-center">
+          <AvatarImage url={photo.url} emoji={selectedAvatar} size={112} />
+        </div>
+        {photo.rejected && (
+          <div className="mb-3 rounded-xl p-3 text-sm text-left border-2" style={{ backgroundColor: '#FEF3C7', borderColor: '#F59E0B', color: '#92400E' }}>
+            <div className="font-bold">A képed nem megfelelő, ezért az edző elrejtette.</div>
+            <div className="text-xs mt-1">Tölts fel egy új, RG témájú képet — addig az avatarod látszik.</div>
+          </div>
+        )}
         <div className="text-xl font-bold" style={{ color: COLORS.purpleDeep }}>
           {competitor.nickname ? `"${competitor.nickname}"` : competitor.full_name}
         </div>
@@ -390,6 +426,37 @@ export default function CompetitorProfileView({ supabase, profile }) {
         >
           {showAvatarPicker ? '✕ Bezár' : '🎨 Avatar változtatása'}
         </button>
+        <button
+          onClick={() => { setShowPhotoUpload(!showPhotoUpload); setPhotoError(null); }}
+          className="mt-3 ml-2 px-4 py-2 rounded-full text-xs font-bold transition"
+          style={{
+            background: showPhotoUpload ? '#EDE9FE' : 'linear-gradient(135deg, #8B5CF6, #6D28D9)',
+            color: showPhotoUpload ? '#5B21B6' : 'white',
+            border: showPhotoUpload ? '2px solid #8B5CF6' : 'none'
+          }}
+        >
+          {showPhotoUpload ? '✕ Bezár' : (photo.url ? '📷 Kép cseréje' : '📷 Profilkép feltöltése')}
+        </button>
+
+        {showPhotoUpload && (
+          <div className="mt-3 rounded-xl p-3 text-left border-2" style={{ borderColor: '#C4B5FD', backgroundColor: '#F5F3FF' }}>
+            <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>Fontos!</div>
+            <div className="text-xs mt-1 text-gray-700">{AVATAR_RULES_TEXT}</div>
+            <div className="text-xs mt-1 text-gray-500">A képedet a klub minden bejelentkezett tagja látja.</div>
+            <label className="flex items-start gap-2 mt-3 text-xs font-medium text-gray-800 cursor-pointer">
+              <input type="checkbox" checked={photoRulesOk} onChange={e => setPhotoRulesOk(e.target.checked)} className="mt-0.5" />
+              Elolvastam: RG témájú képet töltök fel magamról.
+            </label>
+            <label
+              className={`mt-3 inline-block px-4 py-2 rounded-full text-xs font-bold text-white ${photoRulesOk && !photoBusy ? 'cursor-pointer' : 'opacity-50 cursor-not-allowed'}`}
+              style={{ background: 'linear-gradient(135deg, #8B5CF6, #6D28D9)' }}
+            >
+              {photoBusy ? 'Feltöltés…' : 'Kép kiválasztása'}
+              <input type="file" accept="image/*" className="hidden" disabled={!photoRulesOk || photoBusy} onChange={onPhotoSelected} />
+            </label>
+            {photoError && <div className="text-xs text-red-600 mt-2">{photoError}</div>}
+          </div>
+        )}
       </div>
 
       {showAvatarPicker && (

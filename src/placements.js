@@ -23,7 +23,7 @@ async function loadRows(supabase, categoryIds) {
   if (!categoryIds || categoryIds.length === 0) return [];
   const { data: entries, error: eErr } = await supabase
     .from('startlist_entries')
-    .select('id, competition_category_id, apparatus')
+    .select('id, competition_category_id, apparatus, did_not_start')
     .in('competition_category_id', categoryIds);
   if (eErr) throw eErr;
   const entryMap = {};
@@ -42,7 +42,8 @@ async function loadRows(supabase, categoryIds) {
 export async function fillAutoPlacements(supabase, categoryIds) {
   const rows = await loadRows(supabase, categoryIds);
   const groups = {};
-  rows.filter(r => r.score_total !== null && r.score_total !== undefined).forEach(r => {
+  // v0.9.50: a „nem indult” sor nem kap helyezést
+  rows.filter(r => r.score_total !== null && r.score_total !== undefined && !r._entry.did_not_start).forEach(r => {
     const key = `${r._entry.competition_category_id}__${r._entry.apparatus || '__none__'}`;
     (groups[key] = groups[key] || []).push(r);
   });
