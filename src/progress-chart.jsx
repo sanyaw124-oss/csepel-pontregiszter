@@ -69,6 +69,7 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
             startlist_entry:startlist_entries!inner(
               competitor_id,
               competition_category:competition_categories!inner(
+                type,
                 competition_day:competition_days!inner(
                   competition_id,
                   date,
@@ -97,7 +98,7 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
         // 3) Korábbi (historical) eredmények — VALÓS mezőkkel
         supabase
           .from('historical_results')
-          .select('id, year, competition_date, competition_name, results')
+          .select('id, year, competition_date, competition_name, competition_type, results')
           .eq('competitor_id', competitorId)
           .order('year', { ascending: true })
       ]);
@@ -115,6 +116,8 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
 
       // Live egyéni eredmények
       for (const r of resData) {
+        // v0.9.58: a grafikon csak egyéni eredményt mutat (csapat-kategória kimarad)
+        if (r.startlist_entry?.competition_category?.type === 'csapat') continue;
         const day = r.startlist_entry?.competition_category?.competition_day;
         const comp = day?.competition;
         if (!comp || !comp.is_finalized) continue;
@@ -155,6 +158,8 @@ export function CompetitorProgressChart({ supabase, competitorId }) {
 
       // Historical eredmények — JSONB struktúrából olvasunk
       for (const h of histData) {
+        // v0.9.58: csak egyéni versenyszám (az együttes és a klub-csapat kimarad)
+        if (h.competition_type && h.competition_type !== 'egyeni') continue;
         const key = `hist-${h.id}`;
         const results = h.results || {};
 

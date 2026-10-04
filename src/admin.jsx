@@ -3958,6 +3958,13 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
 // 3 forrásból gyűjti: results + competition_teams + historical_results
 // ═══════════════════════════════════════════════════════════════════
 
+// v0.9.58: az eredmény-összesítő három blokkja
+const RESULT_GROUPS = [
+  { key: 'egyeni', title: '🤸 Egyéni eredmények', color: '#1D4ED8' },
+  { key: 'ekcs', title: '👯 EKCS — együttes csapat', color: '#BE185D' },
+  { key: 'klub', title: '🏅 Klub-csapat', color: '#7c3aed' }
+];
+
 export function CompetitorYearlyStats({ supabase, competitorId, competitorName, defaultYear = 'all', hideScores = false }) {
   const [year, setYear] = useState(defaultYear); // 'all' | year (int)
   const [availableYears, setAvailableYears] = useState([]);
@@ -3978,6 +3985,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
           startlist_entry:startlist_entries!inner(
             competitor_id,
             competition_category:competition_categories!inner(
+              type,
               competition_day:competition_days!inner(
                 competition_id,
                 competition:competitions!inner(id, name, start_date, importance, is_finalized)
@@ -4028,6 +4036,10 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         // v0.9.49: a csapat pontszáma (EKCS-nél a bemutatások összege) — eddig null volt
         const sums = await loadTeamScoreSums(supabase, teamData.map(t => t.id));
         teamData = teamData.map(t => ({ ...t, _score: (t.score !== null && t.score !== undefined) ? t.score : sums[t.id] }));
+        // v0.9.58: EKCS-csapat = startlista-sor mutat rá (bemutatásai vannak); különben klub-csapat
+        const { data: linked } = await supabase.from('startlist_entries').select('team_id').in('team_id', teamData.map(t => t.id));
+        const ekcsIds = new Set((linked || []).map(l => l.team_id));
+        teamData = teamData.map(t => ({ ...t, _group: ekcsIds.has(t.id) ? 'ekcs' : 'klub' }));
         console.log('Csapat-eredmények talált:', teamData.length, teamData);
       }
 
@@ -4055,8 +4067,9 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         }
         if (r.placement) {
           compMap.get(key).items.push({
-            type: 'apparatus', label: r.apparatus,
-            placement: r.placement, score: r.score_total
+            type: 'apparatus', label: apparatusLabel(r.apparatus) || r.apparatus,
+            placement: r.placement, score: r.score_total,
+            group: r.startlist_entry?.competition_category?.type === 'csapat' ? 'ekcs' : 'egyeni'
           });
         }
       });
@@ -4076,7 +4089,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         if (a.placement) {
           compMap.get(key).items.push({
             type: 'allaround', label: 'Egyéni Összetett',
-            placement: a.placement, score: a.score_total
+            placement: a.placement, score: a.score_total, group: 'egyeni'
           });
         }
       });
@@ -4096,7 +4109,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         if (team.placement) {
           compMap.get(key).items.push({
             type: 'team', label: `Csapat (${team.name})`,
-            placement: team.placement, score: team._score ?? null
+            placement: team.placement, score: team._score ?? null, group: team._group || 'klub'
           });
         }
       });
@@ -4114,7 +4127,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
                              buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél' };
             items.push({
               type: 'apparatus', label: labels[a],
-              placement: results[a].placement, score: results[a].score
+              placement: results[a].placement, score: results[a].score, group: 'egyeni'
             });
           }
         });
@@ -4123,15 +4136,17 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         if (results.osszetett?.placement) {
           items.push({
             type: 'allaround', label: 'Egyéni Összetett',
-            placement: results.osszetett.placement, score: results.osszetett.score
+            placement: results.osszetett.placement, score: results.osszetett.score, group: 'egyeni'
           });
         }
         
         // Csapat
         if (results.csapat?.placement) {
+          // v0.9.58: együttes = EKCS; klub-csapat és az egyéni verseny klub-csapata = klub
           items.push({
             type: 'team', label: h.team_name || 'Csapat',
-            placement: results.csapat.placement, score: results.csapat.score
+            placement: results.csapat.placement, score: results.csapat.score,
+            group: h.competition_type === 'egyuttes' ? 'ekcs' : 'klub'
           });
         }
         
@@ -4139,6 +4154,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
           compMap.set(key, {
             name: h.competition_name, year: h.year,
             date: h.competition_date || `${h.year}-01-01`, importance: h.importance, // v0.9.57
+            dateKnown: !!h.competition_date,
             items, source: 'historical'
           });
         }
@@ -4257,55 +4273,72 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
             </div>
           </div>
 
-          {/* Versenyek listája */}
+          {/* v0.9.58: három külön blokk — Egyéni / EKCS / Klub-csapat; mindegyikben
+              versenyenként csoportosítva, időrendben (legrégebbi elöl) */}
           {details.length === 0 ? (
             <div className="text-xs text-gray-500 italic text-center py-3">
               Nincs eredmény {year === 'all' ? '' : year + '-ben'}.
             </div>
           ) : (
-            <div className="space-y-1.5">
-              <div className="text-xs font-semibold text-gray-700 mb-1">📋 Részletes lista</div>
-              {details.map((c, idx) => (
-                <div 
-                  key={idx} 
-                  className="bg-white rounded p-2 border-l-4 text-xs"
-                  style={{ 
-                    borderLeftColor: c.source === 'historical' ? '#7c3aed' : COLORS.blue,
-                    borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px'
-                  }}
-                >
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div className="flex-1 min-w-0">
-                      <span className="font-semibold" style={{ color: c.source === 'historical' ? '#7c3aed' : COLORS.blueDark }}>
-                        {c.year} · {c.name}
-                      </span>
-                      {c.importance && (
-                        <span className="text-gray-500 ml-1.5">
-                          ({importanceLabels[c.importance] || c.importance})
-                        </span>
-                      )}
+            <div className="space-y-3">
+              {RESULT_GROUPS.map(g => {
+                const comps = details
+                  .map(c => ({ ...c, items: c.items.filter(i => (i.group || 'egyeni') === g.key) }))
+                  .filter(c => c.items.length > 0)
+                  .sort((x, y) => (x.date || '').localeCompare(y.date || ''));
+                if (comps.length === 0) return null;
+                return (
+                  <div key={g.key}>
+                    <div className="text-xs font-semibold mb-1" style={{ color: g.color }}>
+                      {g.title} ({comps.length})
+                    </div>
+                    <div className="space-y-1.5">
+                      {comps.map((c, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-white rounded p-2 border-l-4 text-xs"
+                          style={{
+                            borderLeftColor: g.color,
+                            borderColor: COLORS.gray200, borderWidth: '0.5px', borderStyle: 'solid', borderLeftWidth: '3px'
+                          }}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <div className="flex-1 min-w-0">
+                              <span className="font-semibold" style={{ color: COLORS.blueDark }}>
+                                {(c.source === 'live' || c.dateKnown) && c.date ? c.date.replace(/-/g, '.') + '.' : c.year} · {c.name}
+                              </span>
+                              {c.importance && (
+                                <span className="text-gray-500 ml-1.5">
+                                  ({importanceLabels[c.importance] || c.importance})
+                                </span>
+                              )}
+                              {c.source === 'historical' && <span className="text-gray-400 ml-1.5">· korábbi</span>}
+                            </div>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {c.items.map((item, i) => (
+                              <span
+                                key={i}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
+                                style={{
+                                  backgroundColor: item.placement <= 3 ? '#fef3c7' : '#f3f4f6',
+                                  color: placementColor(item.placement)
+                                }}
+                              >
+                                {medalEmoji(item.placement) || `${item.placement}.`}
+                                <span>{item.label}</span>
+                                {!hideScores && item.score !== null && item.score !== undefined && item.score !== '' && (
+                                  <span className="opacity-70">({isNaN(parseFloat(item.score)) ? item.score : parseFloat(item.score).toFixed(3)})</span>
+                                )}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {c.items.map((item, i) => (
-                      <span 
-                        key={i}
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-xs"
-                        style={{ 
-                          backgroundColor: item.placement <= 3 ? '#fef3c7' : '#f3f4f6',
-                          color: placementColor(item.placement)
-                        }}
-                      >
-                        {medalEmoji(item.placement) || `${item.placement}.`}
-                        <span>{item.label}</span>
-                        {!hideScores && item.score !== null && item.score !== undefined && item.score !== '' && (
-                          <span className="opacity-70">({isNaN(parseFloat(item.score)) ? item.score : parseFloat(item.score).toFixed(3)})</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </>
