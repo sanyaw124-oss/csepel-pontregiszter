@@ -900,7 +900,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.50 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.51 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1108,6 +1108,9 @@ function DashboardView({ setActiveView }) {
       {isVersenyzo && (
         <MySelfBlock supabase={supabase} profile={profile} />
       )}
+
+      {/* v0.9.51: a klub csapatindulója — mindenkinek, csak kattintásra szól */}
+      <AnthemPlayer />
 
       {/* HERO + Születésnap + Események - MINDENKINEK */}
       <NextCompetitionHero />
@@ -1538,6 +1541,45 @@ function SloganHero() {
       <div className="text-xs sm:text-sm text-amber-800 mt-2 opacity-90">
         Csepel SC · Ritmikus Gimnasztika · MRGSZ
       </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// CSAPATINDULÓ (v0.9.51) — „Ügyesen, Okosan, Mosoly” (Völgyesi Sándor)
+// A fájl a weboldal része (public/zene), nem a Supabase-tárhelyé.
+// Csak kattintásra szól; letöltés gomb nincs (a böngésző menüjéből elrejtve).
+// ═══════════════════════════════════════════════════════════════════
+
+const ANTHEM_URL = '/zene/csapatindulo.mp3';
+
+function AnthemPlayer() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mb-4 rounded-xl border p-3 flex items-center gap-3 flex-wrap shadow-sm"
+         style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #b91c1c 100%)', borderColor: COLORS.blue }}>
+      <div className="text-white flex-1 min-w-[160px]">
+        <div className="text-xs uppercase tracking-wide opacity-80">Csapatindulónk</div>
+        <div className="font-bold">„Ügyesen, Okosan, Mosoly”</div>
+      </div>
+      {open ? (
+        <audio
+          src={ANTHEM_URL}
+          controls
+          autoPlay
+          controlsList="nodownload noplaybackrate"
+          onContextMenu={e => e.preventDefault()}
+          style={{ height: 36, maxWidth: '100%' }}
+        />
+      ) : (
+        <button
+          onClick={() => setOpen(true)}
+          className="px-4 py-2 rounded-full bg-white font-semibold text-sm shadow"
+          style={{ color: COLORS.blueDark }}
+        >
+          ▶ Lejátszás
+        </button>
+      )}
     </div>
   );
 }
