@@ -3002,7 +3002,15 @@ function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
                 {item.competition_type === 'egyeni' ? 'Klub csapat:' : 'Csapat eredmény:'}
               </span>
               {results.csapat.placement && <span className="font-semibold" style={{ color: placementColor(results.csapat.placement) }}>{results.csapat.placement}. hely</span>}
-              {results.csapat.score && !hideScores && <span className="text-gray-500">({results.csapat.score})</span>}
+              {results.csapat.score && !hideScores && (
+                (results.csapat.perf1 !== undefined || results.csapat.perf2 !== undefined) ? (
+                  <span className="text-gray-500">
+                    (1. bem. {results.csapat.perf1 ?? '—'} · 2. bem. {results.csapat.perf2 ?? '—'} · össz. {results.csapat.score})
+                  </span>
+                ) : (
+                  <span className="text-gray-500">({results.csapat.score})</span>
+                )
+              )}
             </div>
           )}
         </div>
@@ -3104,6 +3112,28 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
         // Csapat: mindhárom típusnál engedélyezett
         // (egyéninél = klub csapat eredmény, csapatosnál = csapat eredmény)
         
+        const num = (x) => {
+          if (x === null || x === undefined || x === '') return null;
+          const n = parseFloat(String(x).replace(',', '.'));
+          return isNaN(n) ? null : n;
+        };
+
+        // v0.9.55: együttesnél a csapat két bemutatása külön pont, az összpont a kettő összege
+        if (key === 'csapat' && type === 'egyuttes' && val && typeof val === 'object') {
+          const p1 = num(val.perf1);
+          const p2 = num(val.perf2);
+          const hasPerf = p1 !== null || p2 !== null;
+          const score = hasPerf ? Math.round(((p1 || 0) + (p2 || 0)) * 1000) / 1000 : num(val.score);
+          if (val.placement || score !== null) {
+            cleanResults[key] = {
+              placement: val.placement ? parseInt(val.placement, 10) : null,
+              score,
+              ...(hasPerf ? { perf1: p1, perf2: p2 } : {})
+            };
+          }
+          return;
+        }
+
         // Normál {placement, score} struktúra
         if (val && typeof val === 'object' && (val.placement || val.score)) {
           cleanResults[key] = {
@@ -3309,13 +3339,10 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
                 </div>
               </div>
               <div className="border-t pt-2">
-                <ApparatusResultRow
-                  label="Csapat eredmény"
-                  placement={form.results.csapat?.placement || ''}
-                  score={form.results.csapat?.score || ''}
-                  onPlacementChange={v => updateResult('csapat', 'placement', v)}
-                  onScoreChange={v => updateResult('csapat', 'score', v)}
-                  highlight="blue"
+                {/* v0.9.55: csapatversenyen két bemutatás külön ponttal, egy helyezés az összpontra */}
+                <TeamTwoPerformanceRow
+                  value={form.results.csapat || {}}
+                  onChange={(field, v) => updateResult('csapat', field, v)}
                 />
               </div>
             </div>
@@ -3367,6 +3394,55 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
             Mégse
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// v0.9.55: csapat (együttes) eredmény — két bemutatás külön ponttal, egy helyezés.
+// Régi bejegyzésnél, ahol csak összpont van, az összpont szerkeszthető marad.
+function TeamTwoPerformanceRow({ value, onChange }) {
+  const num = (x) => {
+    const n = parseFloat(String(x ?? '').replace(',', '.'));
+    return isNaN(n) ? null : n;
+  };
+  const p1 = num(value.perf1);
+  const p2 = num(value.perf2);
+  const hasPerf = (value.perf1 ?? '') !== '' || (value.perf2 ?? '') !== '';
+  const total = hasPerf ? (p1 || 0) + (p2 || 0) : null;
+  const inputCls = 'w-20 px-1.5 py-1 text-sm border border-gray-300 rounded text-center';
+  return (
+    <div className="p-2 rounded space-y-2" style={{ backgroundColor: '#eff6ff' }}>
+      <div className="text-xs font-medium text-gray-700">Csapat eredmény</div>
+      <div className="flex flex-wrap items-end gap-3">
+        <label className="text-xs text-gray-600">
+          <div className="mb-0.5">1. bemutatás</div>
+          <input type="text" inputMode="decimal" value={value.perf1 ?? ''} placeholder="pont"
+                 onChange={e => onChange('perf1', e.target.value)} className={inputCls} />
+        </label>
+        <label className="text-xs text-gray-600">
+          <div className="mb-0.5">2. bemutatás</div>
+          <input type="text" inputMode="decimal" value={value.perf2 ?? ''} placeholder="pont"
+                 onChange={e => onChange('perf2', e.target.value)} className={inputCls} />
+        </label>
+        <label className="text-xs text-gray-600">
+          <div className="mb-0.5">Összpont</div>
+          {hasPerf ? (
+            <div className="w-20 px-1.5 py-1 text-sm font-semibold text-center">{total.toFixed(3)}</div>
+          ) : (
+            <input type="text" inputMode="decimal" value={value.score ?? ''} placeholder="pont"
+                   onChange={e => onChange('score', e.target.value)} className={inputCls}
+                   title="Ha a két bemutatás pontja nem ismert, csak az összpont" />
+          )}
+        </label>
+        <label className="text-xs text-gray-600">
+          <div className="mb-0.5">Helyezés</div>
+          <input type="text" inputMode="numeric" value={value.placement ?? ''} placeholder="hely"
+                 onChange={e => onChange('placement', e.target.value)} className="w-16 px-1.5 py-1 text-sm border border-gray-300 rounded text-center font-semibold" />
+        </label>
+      </div>
+      <div className="text-[11px] text-gray-500">
+        A helyezés a két bemutatás összpontjára jár. Ha csak az összpontot tudod, hagyd üresen a bemutatásokat.
       </div>
     </div>
   );
