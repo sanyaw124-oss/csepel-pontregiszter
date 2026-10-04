@@ -29,6 +29,22 @@ const EVENT_TYPES = [
   { value: 'egyeb', label: 'Egyéb', icon: '📋', color: '#6B7280', bg: '#F3F4F6' }
 ];
 
+// v0.9.60: időpont egységes alakra — „1620” → 16:20, „7” → 07:00, „7.30” → 07:30.
+// Ha nem értelmezhető, változatlanul hagyja (pl. „délután”).
+export function normalizeTime(v) {
+  const s = String(v || '').trim();
+  if (!s) return s;
+  let m = s.match(/^(\d{1,2})[:.,\s]?(\d{2})$/);
+  if (!m) {
+    const only = s.match(/^(\d{1,2})$/);
+    if (only) m = [s, only[1], '00'];
+  }
+  if (!m) return s;
+  const h = parseInt(m[1], 10), min = parseInt(m[2], 10);
+  if (h > 23 || min > 59) return s;
+  return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
+}
+
 const KATEGORIAK = ['BNK', 'SZK', 'VSK I', 'VSK II'];
 const KOROSZTALYOK = ['Mini', 'Kisgyermek', 'Gyermek', 'Serdülő', 'Junior', 'Ifjúsági', 'Felnőtt'];
 
@@ -231,6 +247,10 @@ function EventCard({ event, canManage, onEdit, onDelete }) {
           <div className="font-semibold text-base flex items-center gap-2 flex-wrap" style={{ color: typeInfo.color }}>
             <span className="text-xl">{typeInfo.icon}</span>
             <span>{event.title}</span>
+            {/* v0.9.60: a bejegyzés típusa szöveggel is (eddig csak az ikon jelezte) */}
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-white/80" style={{ color: typeInfo.color }}>
+              {typeInfo.label}
+            </span>
             {isToday && (
               <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full font-medium">
                 MA
@@ -257,7 +277,7 @@ function EventCard({ event, canManage, onEdit, onDelete }) {
           {event.event_time && (
             <>
               <Clock className="w-3.5 h-3.5 ml-2" />
-              <span className="font-medium">{event.event_time}</span>
+              <span className="font-medium">{normalizeTime(event.event_time)}</span>
             </>
           )}
         </div>
@@ -288,7 +308,7 @@ function EventCard({ event, canManage, onEdit, onDelete }) {
             <div className="space-y-1">
               {arrivals.map(a => (
                 <div key={a.id} className="bg-white/70 rounded p-1.5 text-xs">
-                  <span className="font-semibold">{a.arrival_time}</span>
+                  <span className="font-semibold">{normalizeTime(a.arrival_time)}</span>
                   {a.group_label && <span className="text-gray-600"> · {a.group_label}</span>}
                   {a.competitors && a.competitors.length > 0 && (
                     <div className="ml-3 text-gray-600 mt-0.5">
@@ -367,7 +387,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
         title: form.title.trim(),
         description: form.description || null,
         event_date: form.event_date,
-        event_time: form.event_time || null,
+        event_time: normalizeTime(form.event_time) || null,
         venue: form.venue || null,
         audience_type: form.audience_type,
         audience_category: form.audience_type === 'category' ? form.audience_category : null,
@@ -399,7 +419,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
           .from('event_arrival_times')
           .insert({
             event_id: eventId,
-            arrival_time: a.arrival_time,
+            arrival_time: normalizeTime(a.arrival_time),
             group_label: a.group_label || null,
             note: a.note || null,
             display_order: i
@@ -510,6 +530,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
               type="text"
               value={form.event_time}
               onChange={(e) => setForm({ ...form, event_time: e.target.value })}
+              onBlur={() => setForm(f => ({ ...f, event_time: normalizeTime(f.event_time) }))}
               placeholder="Pl. 16:00"
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg"
             />
@@ -618,6 +639,7 @@ function EventForm({ supabase, event, onSaved, onCancel }) {
                       type="text"
                       value={a.arrival_time}
                       onChange={(e) => updateArrival(idx, 'arrival_time', e.target.value)}
+                      onBlur={(e) => updateArrival(idx, 'arrival_time', normalizeTime(e.target.value))}
                       placeholder="Pl. 7:00"
                       className="w-20 px-2 py-1 text-sm border border-gray-300 rounded"
                     />
@@ -817,8 +839,9 @@ export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
                     </span>
                   </div>
                   <div className="text-xs text-gray-600 flex flex-wrap gap-x-2 gap-y-0.5 mt-0.5">
+                    <span className="font-medium" style={{ color: typeInfo.color }}>{typeInfo.label}</span>
                     <span>📅 {formatDate(e.event_date)}</span>
-                    {e.event_time && <span>⏰ {e.event_time}</span>}
+                    {e.event_time && <span>⏰ {normalizeTime(e.event_time)}</span>}
                     {e.venue && <span>📍 {e.venue}</span>}
                     <span>👥 {audienceLabel(e)}</span>
                   </div>
@@ -854,7 +877,7 @@ export function UpcomingEventsWidget({ supabase, onOpenEvents }) {
                         {arrivals.map(a => (
                           <div key={a.id} className="bg-white/70 rounded p-1.5 text-xs">
                             <div>
-                              <span className="font-semibold">{a.arrival_time}</span>
+                              <span className="font-semibold">{normalizeTime(a.arrival_time)}</span>
                               {a.group_label && <span className="text-gray-600"> · {a.group_label}</span>}
                             </div>
                             {a.competitors && a.competitors.length > 0 && (
