@@ -1551,13 +1551,16 @@ function SloganHero() {
 // Csak kattintásra szól; letöltés gomb nincs (a böngésző menüjéből elrejtve).
 // ═══════════════════════════════════════════════════════════════════
 
-const ANTHEM_URL = '/zene/csapatindulo.mp3';
+const ANTHEM_URL = '/zene/csapatindulo.mp3?v=2'; // ?v=2: új borító (a böngésző ne a régit adja)
 
 function AnthemPlayer() {
   const [open, setOpen] = useState(false);
   return (
     <div className="mb-4 rounded-xl border p-3 flex items-center gap-3 flex-wrap shadow-sm"
          style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #b91c1c 100%)', borderColor: COLORS.blue }}>
+      <img src="/zene/borito.jpg" alt="" width="56" height="56" draggable="false"
+           onContextMenu={e => e.preventDefault()}
+           className="rounded-lg shadow flex-shrink-0" style={{ width: 56, height: 56 }} />
       <div className="text-white flex-1 min-w-[160px]">
         <div className="text-xs uppercase tracking-wide opacity-80">Csapatindulónk</div>
         <div className="font-bold">„Ügyesen, Okosan, Mosoly”</div>
