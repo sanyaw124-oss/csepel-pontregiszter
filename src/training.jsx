@@ -31,7 +31,9 @@ import { formatCompetitorName } from './names';
 const SESSION_TYPES = [
   { value: 'edzes',      label: 'Edzés',            color: '#1D4ED8', bg: '#DBEAFE' },
   { value: 'egesznapos', label: 'Egésznapos edzés', color: '#15803D', bg: '#D1FAE5' },
-  { value: 'tabor',      label: 'Tábor',            color: '#B45309', bg: '#FEF3C7' }
+  { value: 'tabor',      label: 'Tábor',            color: '#B45309', bg: '#FEF3C7' },
+  // v0.9.54: balett — bármelyik fő edzésforma mellé járhat
+  { value: 'balett',     label: 'Balett',           color: '#BE185D', bg: '#FCE7F3' }
 ];
 
 function getSessionTypeMeta(value) {
@@ -89,10 +91,13 @@ export function TrainingView({ supabase, userRole, dataReloadKey, profile }) {
 // és melyik napra szabad) — docs/sql/2026-10-04_v0.9.53_edzes-onrogzites.sql
 // ═══════════════════════════════════════════════════════════════════
 
-const SELF_TYPES = [
+// v0.9.54: naponta EGY fő edzésforma (edzés / egész napos / tábor), mellé bármikor balett
+const MAIN_TYPES = [
   { value: 'edzes', label: '💪 Edzés' },
-  { value: 'egesznapos', label: '☀️ Egész napos' }
+  { value: 'egesznapos', label: '☀️ Egész napos' },
+  { value: 'tabor', label: '🏕️ Tábor' }
 ];
+const BALETT = { value: 'balett', label: '🩰 Balett' };
 
 function budapestTodayISO() {
   // 'sv-SE' → ÉÉÉÉ-HH-NN; a budapesti naptári nap (az adatbázis is ezt nézi)
@@ -135,10 +140,11 @@ export function SelfTrainingReport({ supabase, competitorId, title = 'Edzéseim 
   const toggle = async (date, type) => {
     const key = `${date}|${type}`;
     const cur = marks[key];
-    if (cur && !cur.self) return; // az edző rögzítette — a gyerek nem veheti vissza
+    if (cur && !cur.self) return; // az edző rögzítette — nem vehető vissza
     setBusyKey(key);
     setError(null);
     try {
+      // fő formánál a másik (saját) jelölést az adatbázis-függvény magától leveszi
       const { error: err } = await supabase.rpc('self_report_training', {
         p_competitor: competitorId, p_date: date, p_type: type, p_present: !cur
       });
@@ -158,42 +164,51 @@ export function SelfTrainingReport({ supabase, competitorId, title = 'Edzéseim 
     return new Date(iso + 'T12:00:00Z').toLocaleDateString('hu-HU', { weekday: 'short', month: 'short', day: 'numeric' });
   };
 
+  const chip = (date, type, label, locked) => {
+    const key = `${date}|${type}`;
+    const m = marks[key];
+    const coachMarked = m && !m.self;
+    return (
+      <button
+        key={type}
+        onClick={() => toggle(date, type)}
+        disabled={busyKey === key || coachMarked || (locked && !m)}
+        title={coachMarked ? 'Az edző rögzítette' : (locked && !m ? 'Erre a napra az edző már másik formát rögzített' : (m ? 'Visszavonás' : 'Ott voltam'))}
+        className="px-3 py-1.5 rounded-full text-xs font-medium border transition disabled:cursor-default"
+        style={m
+          ? { backgroundColor: coachMarked ? '#DBEAFE' : '#D1FAE5', borderColor: coachMarked ? '#93C5FD' : '#6EE7B7', color: coachMarked ? '#1D4ED8' : '#047857' }
+          : { backgroundColor: 'white', borderColor: '#E5E7EB', color: '#6B7280', opacity: locked ? 0.4 : 1 }}
+      >
+        {busyKey === key ? '…' : (m ? '✓ ' : '')}{label}{coachMarked ? ' (edző)' : ''}
+      </button>
+    );
+  };
+
   return (
     <div className="bg-white rounded-lg border border-gray-200">
       <div className="p-3 border-b border-gray-200">
         <div className="text-sm font-semibold text-gray-800">{title}</div>
         <div className="text-xs text-gray-500 mt-0.5">
-          Koppints, ha ott voltál. A mai napot és az elmúlt 7 napot jelölheted; tábort az edző rögzít.
+          Naponta egyet választhatsz: edzés, egész napos vagy tábor — mellé jelölheted a balettet is.
+          A mai napot és az elmúlt 7 napot rögzítheted.
         </div>
       </div>
       {error && <div className="mx-3 mt-2 text-xs text-red-600">{error}</div>}
       <div className="divide-y divide-gray-100">
-        {days.map(date => (
-          <div key={date} className="px-3 py-2 flex items-center gap-2">
-            <div className="w-24 text-sm text-gray-700 flex-shrink-0">{dayLabel(date)}</div>
-            <div className="flex gap-2 flex-wrap">
-              {SELF_TYPES.map(t => {
-                const key = `${date}|${t.value}`;
-                const m = marks[key];
-                const coachMarked = m && !m.self;
-                return (
-                  <button
-                    key={t.value}
-                    onClick={() => toggle(date, t.value)}
-                    disabled={busyKey === key || coachMarked}
-                    title={coachMarked ? 'Az edző rögzítette' : (m ? 'Visszavonás' : 'Ott voltam')}
-                    className="px-3 py-1.5 rounded-full text-xs font-medium border transition disabled:cursor-default"
-                    style={m
-                      ? { backgroundColor: coachMarked ? '#DBEAFE' : '#D1FAE5', borderColor: coachMarked ? '#93C5FD' : '#6EE7B7', color: coachMarked ? '#1D4ED8' : '#047857' }
-                      : { backgroundColor: 'white', borderColor: '#E5E7EB', color: '#6B7280' }}
-                  >
-                    {busyKey === key ? '…' : (m ? '✓ ' : '')}{t.label}{coachMarked ? ' (edző)' : ''}
-                  </button>
-                );
-              })}
+        {days.map(date => {
+          // ha az edző már rögzített egy fő formát, a másik kettő nem választható
+          const coachMain = MAIN_TYPES.find(t => marks[`${date}|${t.value}`] && !marks[`${date}|${t.value}`].self);
+          return (
+            <div key={date} className="px-3 py-2 flex items-center gap-2 flex-wrap">
+              <div className="w-20 text-sm text-gray-700 flex-shrink-0">{dayLabel(date)}</div>
+              <div className="flex gap-1.5 flex-wrap flex-1">
+                {MAIN_TYPES.map(t => chip(date, t.value, t.label, !!coachMain && coachMain.value !== t.value))}
+                <span className="w-px bg-gray-200 mx-1" />
+                {chip(date, BALETT.value, BALETT.label, false)}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -201,7 +216,7 @@ export function SelfTrainingReport({ supabase, competitorId, title = 'Edzéseim 
 
 function MyTrainingsView({ supabase, profile }) {
   const [trainings, setTrainings] = useState([]);
-  const [stats, setStats] = useState({ edzes: 0, egesznapos: 0, tabor: 0, total: 0 });
+  const [stats, setStats] = useState({ edzes: 0, egesznapos: 0, tabor: 0, balett: 0, total: 0 });
   const [loading, setLoading] = useState(true);
   const [year] = useState(new Date().getFullYear());
   const [myCompetitorId, setMyCompetitorId] = useState(null);
@@ -231,12 +246,13 @@ function MyTrainingsView({ supabase, profile }) {
 
         if (data && mounted) {
           setTrainings(data);
-          const counts = { edzes: 0, egesznapos: 0, tabor: 0 };
+          const counts = { edzes: 0, egesznapos: 0, tabor: 0, balett: 0 };
           data.forEach(t => {
             const type = t.training_sessions?.session_type;
             if (type && counts[type] !== undefined) counts[type]++;
           });
-          setStats({ ...counts, total: data.length });
+          // az „összesen” a fő edzésformák napjai (a balett mellettük jár)
+          setStats({ ...counts, total: data.length - counts.balett });
         }
       } catch (err) {
         console.error('MyTrainings load:', err);
@@ -266,7 +282,7 @@ function MyTrainingsView({ supabase, profile }) {
       )}
 
       {/* Statisztika */}
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-4 gap-2">
         <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
           <div className="text-2xl font-bold text-blue-700">{stats.edzes}</div>
           <div className="text-xs text-gray-500">edzés</div>
@@ -278,6 +294,10 @@ function MyTrainingsView({ supabase, profile }) {
         <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
           <div className="text-2xl font-bold text-amber-700">{stats.tabor}</div>
           <div className="text-xs text-gray-500">tábor</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold" style={{ color: '#BE185D' }}>{stats.balett}</div>
+          <div className="text-xs text-gray-500">balett</div>
         </div>
       </div>
 
@@ -294,7 +314,8 @@ function MyTrainingsView({ supabase, profile }) {
               const session = t.training_sessions;
               if (!session) return null;
               const typeLabel = session.session_type === 'edzes' ? '💪 Edzés' :
-                                session.session_type === 'egesznapos' ? '☀️ Egész napos' : '🏕️ Tábor';
+                                session.session_type === 'egesznapos' ? '☀️ Egész napos' :
+                                session.session_type === 'balett' ? '🩰 Balett' : '🏕️ Tábor';
               return (
                 <div key={t.id} className="p-3 flex items-center justify-between text-sm">
                   <div>
@@ -370,6 +391,7 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [originalSelectedIds, setOriginalSelectedIds] = useState(new Set());
   const [selfReportedIds, setSelfReportedIds] = useState(new Set()); // v0.9.53: a gyerek / szülő jelölte
+  const [otherMain, setOtherMain] = useState({}); // v0.9.54: competitor_id → aznapi MÁSIK fő forma címkéje
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -401,7 +423,7 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
       // 2. Éves összesítés (view)
       const { data: stats, error: sErr } = await supabase
         .from('v_training_yearly_summary')
-        .select('competitor_id, year, edzes_count, egesznapos_count, tabor_count')
+        .select('competitor_id, year, edzes_count, egesznapos_count, tabor_count, balett_count')
         .eq('year', year);
       if (sErr) throw sErr;
 
@@ -431,6 +453,21 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
         });
       }
       setSelfReportedIds(selfIds);
+
+      // v0.9.54: naponta egy fő forma — ki szerepel már aznap másik fő formában?
+      const others = {};
+      if (sessionType !== 'balett') {
+        const { data: otherAtts, error: oErr } = await supabase
+          .from('training_attendance')
+          .select('competitor_id, training_sessions!inner(date, session_type)')
+          .eq('training_sessions.date', date)
+          .in('training_sessions.session_type', ['edzes', 'egesznapos', 'tabor'].filter(x => x !== sessionType));
+        if (oErr) throw oErr;
+        (otherAtts || []).forEach(a => {
+          others[a.competitor_id] = getSessionTypeMeta(a.training_sessions.session_type).label;
+        });
+      }
+      setOtherMain(others);
 
       setCompetitors(sortedComps);
       setYearlyStats(statsMap);
@@ -537,7 +574,7 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
   };
 
   const selectAll = () => {
-    setSelectedIds(new Set(competitors.map(c => c.id)));
+    setSelectedIds(new Set(competitors.filter(c => !otherMain[c.id]).map(c => c.id)));
   };
 
   const clearAll = () => {
@@ -679,6 +716,7 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
             </div>
           ) : competitors.map(c => {
             const checked = selectedIds.has(c.id);
+            const blockedBy = !checked ? otherMain[c.id] : null; // aznap már másik fő formában
             const stats = yearlyStats[c.id];
             const age = c.birth_year ? (year - c.birth_year) : null;
 
@@ -691,12 +729,19 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
                 <input
                   type="checkbox"
                   checked={checked}
+                  disabled={!!blockedBy}
                   onChange={() => toggleCompetitor(c.id)}
                   className="w-4 h-4 flex-shrink-0"
                 />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium" style={checked ? { color: meta.color } : {}}>
                     {formatCompetitorName(c)}
+                    {blockedBy && (
+                      <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium align-middle bg-gray-100 text-gray-600"
+                            title="Naponta csak egy fő edzésforma lehet (a balett mellé járhat)">
+                        aznap: {blockedBy}
+                      </span>
+                    )}
                     {checked && selfReportedIds.has(c.id) && (
                       <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded font-medium align-middle"
                             style={{ backgroundColor: '#D1FAE5', color: '#047857' }}
@@ -713,7 +758,7 @@ function CoachLogView({ supabase, userRole, dataReloadKey }) {
                 <div className="text-right text-xs text-gray-500 hidden sm:block">
                   {stats ? (
                     <>
-                      {year}: {stats.edzes_count} edzés · {stats.egesznapos_count} egésznap · {stats.tabor_count} tábor
+                      {year}: {stats.edzes_count} edzés · {stats.egesznapos_count} egésznap · {stats.tabor_count} tábor{stats.balett_count ? ` · ${stats.balett_count} balett` : ''}
                     </>
                   ) : (
                     `${year}: 0 alkalom`
@@ -791,7 +836,7 @@ export function ParentTrainingView({ supabase, competitorId, year }) {
         // Éves összesítés
         const { data: yStats } = await supabase
           .from('v_training_yearly_summary')
-          .select('edzes_count, egesznapos_count, tabor_count, total_count')
+          .select('edzes_count, egesznapos_count, tabor_count, total_count, balett_count')
           .eq('competitor_id', competitorId)
           .eq('year', targetYear)
           .maybeSingle();
@@ -799,7 +844,7 @@ export function ParentTrainingView({ supabase, competitorId, year }) {
         // Havi bontás
         const { data: mStats } = await supabase
           .from('v_training_monthly_summary')
-          .select('month, edzes_count, egesznapos_count, tabor_count')
+          .select('month, edzes_count, egesznapos_count, tabor_count, balett_count')
           .eq('competitor_id', competitorId)
           .eq('year', targetYear)
           .order('month');
@@ -815,7 +860,7 @@ export function ParentTrainingView({ supabase, competitorId, year }) {
           .limit(5);
 
         if (!active) return;
-        setYearStats(yStats || { edzes_count: 0, egesznapos_count: 0, tabor_count: 0, total_count: 0 });
+        setYearStats(yStats || { edzes_count: 0, egesznapos_count: 0, tabor_count: 0, total_count: 0, balett_count: 0 });
         setMonthStats(mStats || []);
         setRecent(recentSess || []);
       } catch (err) {
@@ -847,8 +892,8 @@ export function ParentTrainingView({ supabase, competitorId, year }) {
 
   return (
     <div className="space-y-3">
-      {/* 3 stat kártya */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* 4 stat kártya (v0.9.54: + balett) */}
+      <div className="grid grid-cols-4 gap-2">
         <div className="bg-gray-50 rounded p-3 text-center">
           <div className="text-xs text-gray-500 mb-0.5">Edzés</div>
           <div className="text-2xl font-semibold">{yearStats.edzes_count}</div>
@@ -860,6 +905,10 @@ export function ParentTrainingView({ supabase, competitorId, year }) {
         <div className="bg-gray-50 rounded p-3 text-center">
           <div className="text-xs text-gray-500 mb-0.5">Tábor</div>
           <div className="text-2xl font-semibold">{yearStats.tabor_count}</div>
+        </div>
+        <div className="bg-gray-50 rounded p-3 text-center">
+          <div className="text-xs text-gray-500 mb-0.5">Balett</div>
+          <div className="text-2xl font-semibold">{yearStats.balett_count || 0}</div>
         </div>
       </div>
 
@@ -942,14 +991,14 @@ function ClubTrainingSummary({ supabase }) {
         queries.push(
           supabase
             .from('v_training_yearly_summary')
-            .select('competitor_id, edzes_count, egesznapos_count, tabor_count')
+            .select('competitor_id, edzes_count, egesznapos_count, tabor_count, balett_count')
             .eq('year', year)
         );
       } else {
         queries.push(
           supabase
             .from('v_training_monthly_summary')
-            .select('competitor_id, edzes_count, egesznapos_count, tabor_count, total_count')
+            .select('competitor_id, edzes_count, egesznapos_count, tabor_count, total_count, balett_count')
             .eq('year', year)
             .eq('month', month)
         );
@@ -1001,13 +1050,14 @@ function ClubTrainingSummary({ supabase }) {
 
   // Klub-szintű összesítés a fejléchez
   const clubTotal = useMemo(() => {
-    let edzes = 0, egesznapos = 0, tabor = 0;
+    let edzes = 0, egesznapos = 0, tabor = 0, balett = 0;
     Object.values(stats).forEach(s => {
       edzes += s.edzes_count || 0;
       egesznapos += s.egesznapos_count || 0;
       tabor += s.tabor_count || 0;
+      balett += s.balett_count || 0;
     });
-    return { edzes, egesznapos, tabor };
+    return { edzes, egesznapos, tabor, balett };
   }, [stats]);
 
   if (loading) {
@@ -1092,8 +1142,8 @@ function ClubTrainingSummary({ supabase }) {
         </div>
       )}
 
-      {/* Klub-szintű 3 stat kártya */}
-      <div className="grid grid-cols-3 gap-2">
+      {/* Klub-szintű 4 stat kártya (v0.9.54: + balett) */}
+      <div className="grid grid-cols-4 gap-2">
         <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
           <div className="text-2xl font-bold text-blue-700">{clubTotal.edzes}</div>
           <div className="text-xs text-gray-500">edzés (klub össz.)</div>
@@ -1105,6 +1155,10 @@ function ClubTrainingSummary({ supabase }) {
         <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
           <div className="text-2xl font-bold text-amber-700">{clubTotal.tabor}</div>
           <div className="text-xs text-gray-500">tábor</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
+          <div className="text-2xl font-bold" style={{ color: '#BE185D' }}>{clubTotal.balett}</div>
+          <div className="text-xs text-gray-500">balett</div>
         </div>
       </div>
 
@@ -1126,7 +1180,8 @@ function ClubTrainingSummary({ supabase }) {
               const edzes = s?.edzes_count || 0;
               const egesznapos = s?.egesznapos_count || 0;
               const tabor = s?.tabor_count || 0;
-              const total = edzes + egesznapos + tabor;
+              const balett = s?.balett_count || 0;
+              const total = edzes + egesznapos + tabor; // a balett a fő edzés mellett jár, nem duplázza a napot
               const age = c.birth_year ? (year - c.birth_year) : null;
 
               return (
@@ -1158,6 +1213,11 @@ function ClubTrainingSummary({ supabase }) {
                     <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-amber-50">
                       <div className="text-xl font-bold text-amber-700 leading-none">{tabor}</div>
                       <div className="text-[11px] text-amber-600 mt-0.5">tábor</div>
+                    </div>
+                    {/* Balett (rózsaszín) */}
+                    <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-pink-50">
+                      <div className="text-xl font-bold leading-none" style={{ color: '#BE185D' }}>{balett}</div>
+                      <div className="text-[11px] mt-0.5" style={{ color: '#DB2777' }}>balett</div>
                     </div>
                     {/* Összesen (szürke) */}
                     <div className="text-center min-w-[48px] px-2 py-1.5 rounded bg-gray-100 ml-1">

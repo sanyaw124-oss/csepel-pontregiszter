@@ -2664,7 +2664,7 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
         // Idei évi összesítő
         const { data: yStats } = await supabase
           .from('v_training_yearly_summary')
-          .select('edzes_count, egesznapos_count, tabor_count, total_count')
+          .select('edzes_count, egesznapos_count, tabor_count, total_count, balett_count')
           .eq('competitor_id', competitorId)
           .eq('year', currentYear)
           .maybeSingle();
@@ -2672,7 +2672,7 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
         // Tavalyi évi összesítő
         const { data: prevStats } = await supabase
           .from('v_training_yearly_summary')
-          .select('edzes_count, egesznapos_count, tabor_count, total_count')
+          .select('edzes_count, egesznapos_count, tabor_count, total_count, balett_count')
           .eq('competitor_id', competitorId)
           .eq('year', lastYear)
           .maybeSingle();
@@ -2688,7 +2688,7 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
         if (rErr) throw rErr;
 
         if (!active) return;
-        setYearStats(yStats || { edzes_count: 0, egesznapos_count: 0, tabor_count: 0, total_count: 0 });
+        setYearStats(yStats || { edzes_count: 0, egesznapos_count: 0, tabor_count: 0, total_count: 0, balett_count: 0 });
         setPreviousYearStats(prevStats);
         setRecent(recentSess || []);
       } catch (err) {
@@ -2704,6 +2704,7 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
     if (type === 'edzes') return { label: 'Edzés', color: '#1D4ED8', bg: '#DBEAFE' };
     if (type === 'egesznapos') return { label: 'Egésznapos', color: '#15803D', bg: '#D1FAE5' };
     if (type === 'tabor') return { label: 'Tábor', color: '#B45309', bg: '#FEF3C7' };
+    if (type === 'balett') return { label: 'Balett', color: '#BE185D', bg: '#FCE7F3' };
     return { label: type, color: COLORS.gray700, bg: '#F3F4F6' };
   };
 
@@ -2720,8 +2721,8 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
         <div className="text-xs text-red-600">Hiba a betöltéskor: {error}</div>
       )}
 
-      {/* Idei évi 3 stat kártya */}
-      <div className="grid grid-cols-3 gap-2 mb-3">
+      {/* Idei évi 4 stat kártya (v0.9.54: + balett) */}
+      <div className="grid grid-cols-4 gap-2 mb-3">
         <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
           <div className="text-xs text-gray-500 mb-0.5">Edzés</div>
           <div className="text-lg font-semibold" style={{ color: '#1D4ED8' }}>{yearStats.edzes_count}</div>
@@ -2734,12 +2735,16 @@ function CompetitorTrainingHistory({ supabase, competitorId }) {
           <div className="text-xs text-gray-500 mb-0.5">Tábor</div>
           <div className="text-lg font-semibold" style={{ color: '#B45309' }}>{yearStats.tabor_count}</div>
         </div>
+        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
+          <div className="text-xs text-gray-500 mb-0.5">Balett</div>
+          <div className="text-lg font-semibold" style={{ color: '#BE185D' }}>{yearStats.balett_count || 0}</div>
+        </div>
       </div>
 
       {/* Tavalyi év (ha van) */}
       {previousYearStats && previousYearStats.total_count > 0 && (
         <div className="text-xs text-gray-500 mb-3">
-          {lastYear}: {previousYearStats.edzes_count} edzés · {previousYearStats.egesznapos_count} egésznap · {previousYearStats.tabor_count} tábor
+          {lastYear}: {previousYearStats.edzes_count} edzés · {previousYearStats.egesznapos_count} egésznap · {previousYearStats.tabor_count} tábor{previousYearStats.balett_count ? ` · ${previousYearStats.balett_count} balett` : ''}
         </div>
       )}
 
