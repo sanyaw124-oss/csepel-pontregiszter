@@ -901,7 +901,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.58 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.59 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1960,6 +1960,10 @@ function ClubRankingsWidget() {
             if (!isNaN(y)) yearSet.add(y);
           }
         });
+        // v0.9.59: az utólag rögzített eredmények évei is
+        const { data: hy } = await supabase.from('historical_results').select('year');
+        if (!active) return;
+        (hy || []).forEach(h => { if (h.year) yearSet.add(h.year); });
         
         const years = Array.from(yearSet).sort((a, b) => b - a); // csökkenő
         setAvailableYears(years);
@@ -2040,7 +2044,7 @@ function ClubRankingsWidget() {
             if (categoryIds.length > 0) {
               const { data: entries, error: eErr } = await supabase
                 .from('startlist_entries')
-                .select('id, competition_category_id, competitor_id')
+                .select('id, competition_category_id, competitor_id, apparatus, did_not_start')
                 .in('competition_category_id', categoryIds)
                 .not('competitor_id', 'is', null);
               if (eErr) throw eErr;
@@ -2054,18 +2058,26 @@ function ClubRankingsWidget() {
               if (entryIds.length > 0) {
                 const { data: results, error: rErr } = await supabase
                   .from('results')
-                  .select('startlist_entry_id, score_total, score_e, score_d, score_a')
-                  .in('startlist_entry_id', entryIds)
-                  .not('score_total', 'is', null);
+                  .select('startlist_entry_id, score_total, score_e, score_d, score_a, placement')
+                  .in('startlist_entry_id', entryIds);
                 if (rErr) throw rErr;
 
                 // Helyezések számítása kategóriánként
                 // Csoportosítás kategóriánként, majd rendezés
+                // v0.9.59: a mentett (hivatalos / lezáráskor beírt) helyezés az irányadó;
+                // ahol nincs, ott szerenként számolunk (mint a pontozó és a lezárás)
                 const resultsByCategory = {};
                 (results || []).forEach(r => {
                   const entry = entries.find(e => e.id === r.startlist_entry_id);
-                  if (!entry) return;
-                  const catId = entry.competition_category_id;
+                  if (!entry || entry.did_not_start) return;
+                  if (r.placement) {
+                    if (r.placement <= 8) {
+                      individualPlacements.push({ placement: r.placement, competition_id: entryToCompMap[r.startlist_entry_id] });
+                    }
+                    return;
+                  }
+                  if (r.score_total === null || r.score_total === undefined) return;
+                  const catId = `${entry.competition_category_id}__${entry.apparatus || '__none__'}`;
                   if (!resultsByCategory[catId]) resultsByCategory[catId] = [];
                   resultsByCategory[catId].push({ ...r, _entry: entry });
                 });
@@ -2091,6 +2103,44 @@ function ClubRankingsWidget() {
               }
             }
           }
+        }
+
+        // v0.9.59: utólag rögzített (korábbi) eredmények az adott évből — egyéni
+        // (szerek + összetett) és EKCS (együttes csapat). A csapat eredményét minden
+        // csapattag külön rögzíti, ezért csapatonként csak EGYSZER számoljuk.
+        const histIndividual = []; // { placement, imp }
+        const histTeam = [];       // { placement, imp }
+        const histComps = new Set();
+        {
+          const { data: hist, error: hErr } = await supabase
+            .from('historical_results')
+            .select('year, competition_date, competition_name, competition_type, importance, team_name, results')
+            .eq('year', year);
+          if (hErr) throw hErr;
+          const seenTeams = new Set();
+          (hist || []).forEach(h => {
+            const imp = normImportance(h.importance);
+            const r = h.results || {};
+            const compKey = `${(h.competition_name || '').trim().toLowerCase()}|${h.competition_date || h.year}|${imp}`;
+            let counted = false;
+            if (h.competition_type === 'egyeni') {
+              ['szabad', 'karika', 'labda', 'buzogany', 'szalag', 'kotel', 'osszetett'].forEach(k => {
+                const pl = r[k]?.placement;
+                if (pl >= 1 && pl <= 8) { histIndividual.push({ placement: pl, imp }); counted = true; }
+              });
+            } else if (h.competition_type === 'egyuttes') {
+              const pl = r.csapat?.placement;
+              if (pl >= 1 && pl <= 8) {
+                const teamKey = `${compKey}|${(h.team_name || '').trim().toLowerCase()}|${pl}`;
+                if (!seenTeams.has(teamKey)) { seenTeams.add(teamKey); histTeam.push({ placement: pl, imp }); }
+                counted = true;
+              }
+            }
+            if (counted && !histComps.has(compKey)) {
+              histComps.add(compKey);
+              countByImp[imp] = (countByImp[imp] || 0) + 1;
+            }
+          });
         }
 
         // Számolás: kategóriánként + típus szerint
@@ -2119,10 +2169,14 @@ function ClubRankingsWidget() {
           }
         });
 
+        histIndividual.forEach(h => { if (result[h.imp]) result[h.imp].individual[h.placement]++; });
+        histTeam.forEach(h => { if (result[h.imp]) result[h.imp].team[h.placement]++; });
+
         if (!active) return;
         setRankings(result);
         setCompetitionCount({
-          total: (comps || []).length,
+          total: (comps || []).length + histComps.size,
+          historical: histComps.size,
           byImportance: countByImp
         });
       } catch (err) {
@@ -2210,7 +2264,7 @@ function ClubRankingsWidget() {
           {!loading && (
             <div className="text-xs text-gray-500 mt-0.5">
               {competitionCount.total > 0 
-                ? `${competitionCount.total} véglegesített verseny: ${compSummary()}`
+                ? `${competitionCount.total} verseny${competitionCount.historical ? ` (ebből ${competitionCount.historical} utólag rögzített)` : ''}: ${compSummary()}`
                 : 'Még nincs véglegesített verseny ebben az évben'}
             </div>
           )}
