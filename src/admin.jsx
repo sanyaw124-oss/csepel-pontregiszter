@@ -11,6 +11,7 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 import { CompetitorProgressChart } from './progress-chart';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
+import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
 
@@ -3455,6 +3456,7 @@ function AdminClubPride({ supabase }) {
     if (!window.confirm(`Biztos törlöd? "${item.title}"`)) return;
     try {
       await supabase.from('club_pride').delete().eq('id', item.id);
+      await deletePrideFile(supabase, item.photo_path); // v0.9.52: a fotó is törlődik
       await load();
     } catch (err) {
       setError(err.message);
@@ -3592,6 +3594,13 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [search, setSearch] = useState('');
+  // v0.9.52: fotó — kiválasztott új fájl, előnézet, eltávolítás jelzése
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const [photoRemove, setPhotoRemove] = useState(false);
+  const existingPhotoUrl = usePridePhotoUrl(supabase, item?.photo_path);
+  useEffect(() => () => { if (photoPreview) URL.revokeObjectURL(photoPreview); }, [photoPreview]);
+  const shownPhoto = photoPreview || (!photoRemove ? existingPhotoUrl : null);
 
   const EMOJI_OPTIONS = ['⭐', '🌟', '✨', '🏆', '🥇', '🥈', '🥉', '🎖️', '💪', '🌸', '🇭🇺', '👑', '💖', '🎉', '🔥'];
 
@@ -3644,6 +3653,13 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
           .single();
         if (insErr) throw insErr;
         prideId = created.id;
+      }
+
+      // v0.9.52: fotó feltöltése / eltávolítása
+      if (photoFile) {
+        await uploadPridePhoto(supabase, prideId, photoFile, item?.photo_path);
+      } else if (photoRemove && item?.photo_path) {
+        await removePridePhoto(supabase, prideId, item.photo_path);
       }
 
       // Új versenyző-kapcsolatok beillesztése
@@ -3722,6 +3738,42 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
               className="w-20 px-2 py-1 text-sm border rounded"
               style={{ borderColor: COLORS.gray200 }}
             />
+          </div>
+        </Field>
+
+        <Field label="Fotó (opcionális)">
+          {shownPhoto && (
+            <div
+              className="w-full max-w-sm rounded-lg mb-2 border"
+              onContextMenu={e => e.preventDefault()}
+              style={{ aspectRatio: '4 / 3', backgroundImage: `url("${shownPhoto}")`, backgroundSize: 'cover',
+                       backgroundPosition: 'center', borderColor: COLORS.gray200 }}
+            />
+          )}
+          <div className="flex flex-wrap gap-2 items-center">
+            <label className="px-3 py-1.5 rounded border text-sm cursor-pointer bg-white hover:bg-amber-50"
+                   style={{ borderColor: '#f59e0b', color: '#92400e' }}>
+              {shownPhoto ? 'Másik fotó' : 'Fotó kiválasztása'}
+              <input type="file" accept="image/*" className="hidden"
+                     onChange={e => {
+                       const f = e.target.files?.[0];
+                       e.target.value = '';
+                       if (!f) return;
+                       if (photoPreview) URL.revokeObjectURL(photoPreview);
+                       setPhotoFile(f);
+                       setPhotoPreview(URL.createObjectURL(f));
+                       setPhotoRemove(false);
+                     }} />
+            </label>
+            {shownPhoto && (
+              <button type="button" className="text-sm text-red-600 hover:underline"
+                      onClick={() => { setPhotoFile(null); setPhotoPreview(null); setPhotoRemove(true); }}>
+                Fotó eltávolítása
+              </button>
+            )}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">
+            Csak bejelentkezett klubtagok látják. Mentéskor a program kicsinyíti (kb. 150 KB).
           </div>
         </Field>
 

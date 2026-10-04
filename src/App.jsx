@@ -16,6 +16,7 @@ import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
 import { formatCompetitorName, HU_COLLATOR, huSortByNickname } from './names';
+import { usePridePhotoUrl } from './pridePhoto';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -900,7 +901,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.51 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.52 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1552,38 +1553,77 @@ function SloganHero() {
 // ═══════════════════════════════════════════════════════════════════
 
 const ANTHEM_URL = '/zene/csapatindulo.mp3?v=2'; // ?v=2: új borító (a böngésző ne a régit adja)
+const ANTHEM_COVER_SMALL = '/zene/borito.jpg';
+const ANTHEM_COVER_BIG = '/zene/borito_nagy.jpg';
 
+// v0.9.52: kattintásra felugró ablak nagy borítóval. Az ablak bezárása után
+// a zene tovább szól (az audio elem a lejátszás indulása után a helyén marad).
 function AnthemPlayer() {
-  const [open, setOpen] = useState(false);
+  const [started, setStarted] = useState(false);  // egyszer elindult → audio elem él
+  const [open, setOpen] = useState(false);        // felugró ablak látszik
+  const noMenu = e => e.preventDefault();
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = e => { if (e.key === 'Escape') setOpen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+
+  const openPlayer = () => { setStarted(true); setOpen(true); };
+
   return (
-    <div className="mb-4 rounded-xl border p-3 flex items-center gap-3 flex-wrap shadow-sm"
-         style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #b91c1c 100%)', borderColor: COLORS.blue }}>
-      <img src="/zene/borito.jpg" alt="" width="56" height="56" draggable="false"
-           onContextMenu={e => e.preventDefault()}
-           className="rounded-lg shadow flex-shrink-0" style={{ width: 56, height: 56 }} />
-      <div className="text-white flex-1 min-w-[160px]">
-        <div className="text-xs uppercase tracking-wide opacity-80">Csapatindulónk</div>
-        <div className="font-bold">„Ügyesen, Okosan, Mosoly”</div>
-      </div>
-      {open ? (
-        <audio
-          src={ANTHEM_URL}
-          controls
-          autoPlay
-          controlsList="nodownload noplaybackrate"
-          onContextMenu={e => e.preventDefault()}
-          style={{ height: 36, maxWidth: '100%' }}
-        />
-      ) : (
-        <button
-          onClick={() => setOpen(true)}
-          className="px-4 py-2 rounded-full bg-white font-semibold text-sm shadow"
-          style={{ color: COLORS.blueDark }}
+    <>
+      <button
+        type="button"
+        onClick={openPlayer}
+        className="mb-4 w-full rounded-xl border p-3 flex items-center gap-3 shadow-sm text-left"
+        style={{ background: 'linear-gradient(135deg, #1e3a8a 0%, #b91c1c 100%)', borderColor: COLORS.blue }}
+      >
+        <img src={ANTHEM_COVER_SMALL} alt="" width="56" height="56" draggable="false" onContextMenu={noMenu}
+             className="rounded-lg shadow flex-shrink-0" style={{ width: 56, height: 56 }} />
+        <div className="text-white flex-1 min-w-0">
+          <div className="text-xs uppercase tracking-wide opacity-80">Csapatindulónk</div>
+          <div className="font-bold truncate">„Ügyesen, Okosan, Mosoly”</div>
+        </div>
+        <span className="px-4 py-2 rounded-full bg-white font-semibold text-sm shadow flex-shrink-0"
+              style={{ color: COLORS.blueDark }}>
+          {started ? '♪ Megnyitás' : '▶ Lejátszás'}
+        </span>
+      </button>
+
+      {started && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(0,0,0,0.75)', display: open ? 'flex' : 'none' }}
+          onClick={() => setOpen(false)}
         >
-          ▶ Lejátszás
-        </button>
+          <div className="w-full max-w-md bg-white rounded-2xl overflow-hidden shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="relative">
+              <img src={ANTHEM_COVER_BIG} alt="Csepel RG csapatinduló" draggable="false" onContextMenu={noMenu}
+                   className="w-full block" style={{ aspectRatio: '1 / 1', objectFit: 'cover' }} />
+              <button onClick={() => setOpen(false)} aria-label="Bezárás"
+                      className="absolute top-2 right-2 w-9 h-9 rounded-full bg-black/50 text-white text-lg leading-none">
+                ✕
+              </button>
+            </div>
+            <div className="p-3">
+              <div className="font-bold text-center mb-2" style={{ color: COLORS.blueDark }}>
+                „Ügyesen, Okosan, Mosoly”
+              </div>
+              <audio
+                src={ANTHEM_URL}
+                controls
+                autoPlay
+                controlsList="nodownload noplaybackrate"
+                onContextMenu={noMenu}
+                className="w-full"
+              />
+            </div>
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
@@ -1739,6 +1779,7 @@ function ClubPrideWidget() {
   const formatCompName = formatCompetitorName;
 
   const current = items && items.length > 0 ? items[currentIdx] : null;
+  const photoUrl = usePridePhotoUrl(supabase, current?.photo_path); // v0.9.52
   const competitors = current?.competitors
     ?.map(c => c.competitor)
     .filter(Boolean)
@@ -1777,6 +1818,16 @@ function ClubPrideWidget() {
       
       {!loading && current && (
         <div className="text-sm" style={{ animation: 'fadeIn 0.5s ease-in' }}>
+          {photoUrl && (
+            <div
+              role="img"
+              aria-label={current.title}
+              onContextMenu={e => e.preventDefault()}
+              className="w-full rounded-lg mb-2 shadow-sm"
+              style={{ aspectRatio: '16 / 9', backgroundImage: `url("${photoUrl}")`, backgroundSize: 'cover',
+                       backgroundPosition: 'center', border: '1px solid #fbbf24' }}
+            />
+          )}
           <div className="font-semibold text-amber-900 flex items-center gap-1.5 text-base">
             {current.icon && <span>{current.icon}</span>}
             <span>{current.title}</span>

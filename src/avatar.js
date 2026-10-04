@@ -24,13 +24,14 @@ export const AVATAR_RULES_TEXT =
   'Csak RG témájú képet tölthetsz fel: téged ábrázoló edzés-, verseny- vagy dresszes képet. ' +
   'Más kép (barátok, állatok, mémek, más emberek) nem lehet — az edzők elrejtik.';
 
-// Kép kicsinyítése a böngészőben: a hosszabbik oldal legfeljebb 512 px, JPEG
-function resizeImage(file) {
+// Kép kicsinyítése a böngészőben: a hosszabbik oldal legfeljebb maxSide px, JPEG
+// (a klub büszkesége fotói is ezt használják)
+export function resizeImage(file, maxSide = MAX_SIDE) {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      const scale = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
+      const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
       const canvas = document.createElement('canvas');
