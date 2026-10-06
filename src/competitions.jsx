@@ -122,11 +122,18 @@ function ApparatusList({ apparatuses, empty = '—' }) {
       {list.map((a, i) => (
         <React.Fragment key={i}>
           {i > 0 && !APPARATUS_LABELS[a] && <span>,</span>}
-          <ApparatusMark value={a} size={16} />
+          <ApparatusMark value={a} size={22} />
         </React.Fragment>
       ))}
     </span>
   );
+}
+
+// v0.9.63: lezártnak számít a verseny, ha le van zárva, vagy minden kategóriája lezárt
+function isCompetitionClosed(c) {
+  if (c.is_finalized) return true;
+  const cats = (c.days || []).flatMap(d => d.categories || []);
+  return cats.length > 0 && cats.every(k => k.is_finalized);
 }
 
 // v0.9.63: a TELJES verseny lezárása / újranyitása (minden kategória, minden sor):
@@ -162,6 +169,11 @@ async function setCompetitionFinalized(supabase, competitionId, finalize) {
     if (aaErr) throw aaErr;
     if (finalize) await fillAutoPlacements(supabase, catIds);
     else await clearAutoPlacements(supabase, catIds);
+    const catStamp = finalize
+      ? { is_finalized: true, finalized_by: stamp.finalized_by, finalized_at: stamp.finalized_at }
+      : { is_finalized: false, finalized_by: null, finalized_at: null };
+    const { error: catErr } = await supabase.from('competition_categories').update(catStamp).in('id', catIds);
+    if (catErr) throw catErr;
   }
   const { error } = await supabase.from('competitions').update({ is_finalized: finalize }).eq('id', competitionId);
   if (error) throw error;
@@ -305,7 +317,7 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
         .select(`
           id, name, start_date, end_date, importance, is_finalized,
           venue:venues(id, name, city, country),
-          days:competition_days(id, day_number, date, type)
+          days:competition_days(id, day_number, date, type, categories:competition_categories(id, is_finalized))
         `)
         .order('start_date', { ascending: false });
       if (error) throw error;
@@ -330,9 +342,10 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
 
   // Csoportosítás: közelgő / élő / lezárt
   const today = new Date().toISOString().split('T')[0];
-  const upcoming = filtered.filter(c => c.start_date > today);
-  const live = filtered.filter(c => c.start_date <= today && c.end_date >= today);
-  const past = filtered.filter(c => c.end_date < today);
+  // v0.9.63 (Sándor): „nem élő csak az a verseny, amiben minden le van zárva”
+  const upcoming = filtered.filter(c => c.start_date > today && !isCompetitionClosed(c));
+  const live = filtered.filter(c => c.start_date <= today && c.end_date >= today && !isCompetitionClosed(c));
+  const past = filtered.filter(c => !upcoming.includes(c) && !live.includes(c));
 
   return (
     <div>
@@ -452,7 +465,7 @@ function CompetitionCard({ competition, onClick }) {
             const isLive = competition.start_date <= today && competition.end_date >= today;
             const isPast = competition.end_date < today;
             
-            if (competition.is_finalized) {
+            if (isCompetitionClosed(competition)) {
               return (
                 <span className="text-xs px-2 py-0.5 rounded-full font-medium"
                       style={{ backgroundColor: '#D1FAE5', color: '#15803D' }}>
@@ -658,8 +671,8 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
   const toggleFinalized = async () => {
     const finalize = !isFinalized;
     const msg = finalize
-      ? 'Lezárod a versenyt? Minden pont végleges lesz, és ahol nincs kézi helyezés, oda a pontból számolt kerül. (Újranyitható.)'
-      : 'Újranyitod a versenyt? A pontok ismét ideiglenesek és szerkeszthetők lesznek; a kézzel beírt helyezések megmaradnak.';
+      ? 'Lezárod a versenyt? Minden kategória lezárul és nem lesz pontozható; ahol nincs kézi helyezés, oda a pontból számolt kerül. (Újranyitható.)'
+      : 'Újranyitod a versenyt? Minden kategória feloldódik, a pontok ismét ideiglenesek és pontozhatók lesznek; a kézzel beírt helyezések megmaradnak.';
     if (!window.confirm(msg)) return;
     setSaving(true);
     setError(null);
@@ -1175,8 +1188,18 @@ function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpen
           {category.time_range && (
             <span className="text-xs text-gray-500">{category.time_range}</span>
           )}
+          {/* v0.9.63: lezárt kategória jelölése */}
+          {category.is_finalized ? (
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#D1FAE5', color: '#15803D' }}>
+              🔒 Lezárt
+            </span>
+          ) : (
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
+              ● Élő
+            </span>
+          )}
         </div>
-        <div className="text-xs text-gray-500 mt-0.5">
+        <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1 flex-wrap">
           Szerek: {(category.apparatuses || []).length === 0 
             ? <span className="italic">— nincs megadva —</span>
             : <ApparatusList apparatuses={category.apparatuses} />}
@@ -1831,7 +1854,7 @@ function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onR
     : entry.external_name;
   
   const club = isCsepeli ? 'Csepeli RG Club' : (entry.external_club || '');
-  const apparatus = <ApparatusMark value={entry.apparatus} size={20} fallback={<span className="italic text-gray-500">Választott</span>} />; // v0.9.63
+  const apparatus = <ApparatusMark value={entry.apparatus} size={26} fallback={<span className="italic text-gray-500">Választott</span>} />; // v0.9.63
   
   return (
     <div 
@@ -3562,8 +3585,9 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
   const [successMsg, setSuccessMsg] = useState(null);
 
   const canFinalize = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
-  const canEdit = ['admin', 'szulo', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
   const isFinalized = competition?.is_finalized;
+  // v0.9.63: lezárt versenyen senki nem módosít — előbb újra kell nyitni
+  const canEdit = ['admin', 'szulo', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole) && !isFinalized;
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -3876,8 +3900,8 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       // v0.9.49: ahol nincs kézi helyezés, oda a pontból számolt kerül (placements.js)
       await fillAutoPlacements(supabase, Object.keys(groupedByCategoryAndCompetitor));
       
-      // verseny lezárása
-      await supabase.from('competitions').update({ is_finalized: true }).eq('id', competition.id);
+      // verseny lezárása (v0.9.63: minden kategóriával együtt)
+      await setCompetitionFinalized(supabase, competition.id, true);
       
       setSuccessMsg('Verseny lezárva!');
       if (onCompetitionChange) onCompetitionChange({ ...competition, is_finalized: true });
@@ -3902,7 +3926,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       }
       // v0.9.49: a lezáráskor beírt számolt helyezések törlése (a kézi marad)
       await clearAutoPlacements(supabase, Object.keys(groupedByCategoryAndCompetitor));
-      await supabase.from('competitions').update({ is_finalized: false }).eq('id', competition.id);
+      await setCompetitionFinalized(supabase, competition.id, false); // v0.9.63: a kategóriák is
       setSuccessMsg('Verseny visszanyitva.');
       if (onCompetitionChange) onCompetitionChange({ ...competition, is_finalized: false });
       await loadData();
@@ -4024,7 +4048,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                     <div className="space-y-2">
                       {sortedEntries.map(entry => {
                         const apparatusLabel = entry.apparatus
-                          ? <span className="inline-flex items-center gap-1"><ApparatusMark value={entry.apparatus} size={18} /> {APPARATUS_LABELS[entry.apparatus] || entry.apparatus}</span>
+                          ? <span className="inline-flex items-center gap-1"><ApparatusMark value={entry.apparatus} size={24} /> {APPARATUS_LABELS[entry.apparatus] || entry.apparatus}</span>
                           : 'Választott';
                         const vals = editValues[entry.id] || {};
                         const onChange = (field, value) => setEditValues(prev => ({

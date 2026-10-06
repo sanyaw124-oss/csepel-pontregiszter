@@ -140,6 +140,9 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   const [editingId, setEditingId] = useState(null);  // melyik sor szerkesztés alatt
   const [editForm, setEditForm] = useState({});
   const [showRankings, setShowRankings] = useState(false);
+  // v0.9.63: lezárás — a kategória ÉS a verseny állapota (lezárt versenyen nincs pontozás)
+  const [catFinalized, setCatFinalized] = useState(!!category.is_finalized);
+  const [comp, setComp] = useState(null); // { id, is_finalized }
 
   const canFinalizeOrEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
   // v0.9.37: szülő pontozhat AKTÍV versenyen is (verseny közben segítségként).
@@ -174,6 +177,17 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
     setError(null);
     setSuccessMsg(null);
     try {
+      // 0. v0.9.63: a kategória és a verseny friss lezárási állapota
+      const { data: catRow } = await supabase
+        .from('competition_categories')
+        .select('is_finalized, competition_days!inner(competition_id, competitions!inner(id, is_finalized))')
+        .eq('id', category.id)
+        .maybeSingle();
+      if (catRow) {
+        setCatFinalized(!!catRow.is_finalized);
+        setComp(catRow.competition_days?.competitions || null);
+      }
+
       // 1. Startlista
       const { data: entriesData, error: eErr } = await supabase
         .from('startlist_entries')
@@ -521,7 +535,18 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .eq('id', category.id);
       if (catErr) throw catErr;
 
-      setSuccessMsg('Kategória véglegesítve!');
+      // v0.9.63: ha a verseny minden kategóriája lezárt, maga a verseny is lezárt
+      if (comp?.id) {
+        const { data: others } = await supabase
+          .from('competition_categories')
+          .select('is_finalized, competition_days!inner(competition_id)')
+          .eq('competition_days.competition_id', comp.id);
+        if ((others || []).length > 0 && others.every(c => c.is_finalized)) {
+          await supabase.from('competitions').update({ is_finalized: true }).eq('id', comp.id);
+        }
+      }
+
+      setSuccessMsg('Kategória lezárva!');
       await loadData();
       if (onChange) onChange();
     } catch (err) {
@@ -534,7 +559,9 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   // ─── Kategória újranyitása (édző/admin) ───────────────────────
   const handleReopen = async () => {
     if (!canFinalizeOrEdit) return;
-    if (!window.confirm('Visszanyitod a kategóriát? A pontok ismét "Ideiglenes" állapotba kerülnek.')) return;
+    if (!window.confirm(comp?.is_finalized
+      ? 'A verseny le van zárva. Ha ezt a kategóriát feloldod, a verseny is újra élő lesz (a többi kategória lezárva marad). Folytatod?'
+      : 'Feloldod a kategóriát? A pontok ismét ideiglenesek és pontozhatók lesznek.')) return;
     
     setSaving(true);
     try {
@@ -553,7 +580,12 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .update({ is_finalized: false, finalized_by: null, finalized_at: null })
         .eq('id', category.id);
       if (catErr) throw catErr;
-      setSuccessMsg('Kategória újranyitva');
+      // v0.9.63: egy feloldott kategória = a verseny ismét élő
+      if (comp?.id && comp.is_finalized) {
+        const { error: compErr } = await supabase.from('competitions').update({ is_finalized: false }).eq('id', comp.id);
+        if (compErr) throw compErr;
+      }
+      setSuccessMsg('Kategória feloldva');
       await loadData();
       if (onChange) onChange();
     } catch (err) {
@@ -572,10 +604,11 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
     );
   }
 
-  const isFinalized = category.is_finalized;
+  // v0.9.63 (Sándor): lezárt kategória / lezárt verseny NEM pontozható — senkinek;
+  // módosításhoz előbb fel kell oldani
+  const isFinalized = catFinalized || !!comp?.is_finalized;
   const pontozottCount = Object.values(results).filter(r => r.score_total !== null).length;
-  // canEdit: csak admin/edző/szülő-admin szerkeszthet, versenyző és szülő SOHA
-  const canEdit = canInputProvisional && (!isFinalized || canFinalizeOrEdit);
+  const canEdit = canInputProvisional && !isFinalized;
   // Csak nézés mód jelzése
   const isReadOnly = !canInputProvisional;
 
@@ -589,11 +622,11 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
           </button>
           {isFinalized ? (
             <span className="px-2 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: COLORS.greenLight, color: COLORS.green }}>
-              <Lock className="w-3 h-3 inline mr-1" />Véglegesítve
+              <Lock className="w-3 h-3 inline mr-1" />{comp?.is_finalized && !catFinalized ? 'Lezárt verseny' : 'Lezárt kategória'}
             </span>
           ) : (
-            <span className="px-2 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: COLORS.amberLight, color: COLORS.amber }}>
-              <Unlock className="w-3 h-3 inline mr-1" />Ideiglenes
+            <span className="px-2 py-1 rounded-md text-xs font-medium" style={{ backgroundColor: COLORS.blueLight, color: COLORS.blue }}>
+              <Unlock className="w-3 h-3 inline mr-1" />Élő — pontozható
             </span>
           )}
         </div>
@@ -615,12 +648,12 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
               <Award className="w-3 h-3" /> {showRankings ? 'Startlista' : 'Helyezések'}
             </button>
             {canFinalizeOrEdit && (isFinalized ? (
-              <button onClick={handleReopen} disabled={saving} className="text-xs px-3 py-1.5 rounded border border-gray-300 hover:bg-gray-50">
-                Újranyitás
+              <button onClick={handleReopen} disabled={saving} className="text-xs px-3 py-1.5 rounded border border-gray-300 bg-white hover:bg-gray-50 font-medium">
+                <Unlock className="w-3 h-3 inline mr-1" />Kategória feloldása
               </button>
             ) : (
               <button onClick={handleFinalize} disabled={saving || pontozottCount === 0} className="text-xs px-3 py-1.5 rounded text-white font-medium disabled:opacity-50" style={{ backgroundColor: COLORS.green }}>
-                <Lock className="w-3 h-3 inline mr-1" />Véglegesítés
+                <Lock className="w-3 h-3 inline mr-1" />Kategória lezárása
               </button>
             ))}
           </div>
@@ -714,7 +747,7 @@ function StartlistScoringView({
             ? formatCompetitorName(entry.competitors)
             : entry.external_name;
           const displayClub = entry.competitors ? 'Csepeli RG Club' : entry.external_club;
-          const apparatusMark = <ApparatusMark value={entry.apparatus} size={16} fallback={<span className="italic">Választott</span>} />;
+          const apparatusMark = <ApparatusMark value={entry.apparatus} size={22} fallback={<span className="italic">Választott</span>} />;
           const rank = calculatedRankings[entry.id];
           const hasScore = r && r.score_total !== null && r.score_total !== undefined;
 
@@ -865,7 +898,7 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
             </div>
             <div className="text-xs text-gray-600 truncate">
               {displayClub}
-              {entry.apparatus ? <> · <ApparatusMark value={entry.apparatus} size={16} /> {formatApparatus(entry.apparatus)}</> : ''}
+              {entry.apparatus ? <> · <ApparatusMark value={entry.apparatus} size={26} /> {formatApparatus(entry.apparatus)}</> : ''}
               {entry.performance_number ? ` · ${entry.performance_number}. bem.` : ''}
             </div>
           </div>
@@ -1045,7 +1078,7 @@ function RankingsView({ entries, results, calculatedRankings, userRole }) {
           const displayClub = entry.competitors 
             ? 'Csepeli RG Club'
             : entry.external_club;
-          const apparatusLabel = <ApparatusMark value={entry.apparatus} size={16} fallback="—" />;
+          const apparatusLabel = <ApparatusMark value={entry.apparatus} size={22} fallback="—" />;
 
           return (
             <div 
