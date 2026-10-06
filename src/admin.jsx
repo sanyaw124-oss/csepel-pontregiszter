@@ -13,6 +13,7 @@ import { SelfTrainingReport, TrainingSummary } from './training';
 import { BadgesPanel } from './badges';
 import { CompetitorStatsPanel } from './stats';
 import { SeasonSummaryButton } from './seasonSummary';
+import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
@@ -2423,6 +2424,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* Edzések */}
         {competitor?.id && (
           <CompetitorTrainingHistory key={trainingVersion} supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* v0.9.67: edzői értékelés (az edző írja a Statisztika menüben) */}
+        {competitor?.id && (
+          <EvaluationsView supabase={supabase} competitorId={competitor.id} />
         )}
 
         {/* v0.9.64: kitűzők + kedvencek és célok (a szülő is beírhatja a gyerek helyett) */}

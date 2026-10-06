@@ -29,6 +29,8 @@ export function ClubStatsWidget({ supabase }) {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
   const [tab, setTab] = useState('training');
+  const [fAge, setFAge] = useState('');   // v0.9.67: célzott lekérdezés — korosztály
+  const [fCat, setFCat] = useState('');   // és kategória szerint
 
   useEffect(() => {
     let active = true;
@@ -107,7 +109,8 @@ export function ClubStatsWidget({ supabase }) {
     );
   }
 
-  const byId = Object.fromEntries(data.comps.map(c => [c.id, c]));
+  const fComps = data.comps.filter(c => (!fAge || c.korosztaly === fAge) && (!fCat || c.kategoria === fCat));
+  const byId = Object.fromEntries(fComps.map(c => [c.id, c]));
   const nameOf = (id) => (byId[id] ? formatCompetitorName(byId[id]) : '—');
 
   // ── Edzéslátogatás a hónapban
@@ -120,7 +123,7 @@ export function ClubStatsWidget({ supabase }) {
     if (TRAINING_TYPES.includes(s.session_type)) c.all += 1;
     if (MONTHLY_TYPES.includes(s.session_type)) c.monthly += 1;
   });
-  const attendance = [...data.comps].sort(huSortByNickname)
+  const attendance = [...fComps].sort(huSortByNickname)
     .map(c => ({ c, n: counts[c.id]?.all || 0, m: counts[c.id]?.monthly || 0 }))
     .sort((a, b) => b.n - a.n);
   const maxN = Math.max(1, ...attendance.map(a => a.n));
@@ -182,6 +185,17 @@ export function ClubStatsWidget({ supabase }) {
     <div className="bg-white rounded-lg border p-4" style={{ borderColor: '#E5E7EB' }}>
       {header}
       {tabs}
+      <div className="flex gap-2 flex-wrap mb-3">
+        <select value={fAge} onChange={e => setFAge(e.target.value)} className="text-xs px-2 py-1 border border-gray-300 rounded bg-white">
+          <option value="">Minden korosztály</option>
+          {Array.from(new Set(data.comps.map(c => c.korosztaly).filter(Boolean))).sort((a, b) => ageRank(a) - ageRank(b)).map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <select value={fCat} onChange={e => setFCat(e.target.value)} className="text-xs px-2 py-1 border border-gray-300 rounded bg-white">
+          <option value="">Minden kategória</option>
+          {Array.from(new Set(data.comps.map(c => c.kategoria).filter(Boolean))).sort().map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <span className="text-xs text-gray-500 self-center">{fComps.length} versenyző</span>
+      </div>
       {error && <div className="text-xs text-red-600 mb-2">Hiba a betöltéskor: {error}</div>}
 
       {tab === 'training' && (

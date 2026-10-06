@@ -15,6 +15,7 @@ import { STORY_KINDS } from './stories';
 import { ApparatusIcon } from './apparatusIcons';
 import { formatCompetitorName } from './names';
 import { CSEPEL_RG_LOGO } from './logos';
+import { loadEvaluation } from './evaluation';
 
 const APP_KEYS = ['szabad', 'karika', 'labda', 'buzogany', 'szalag', 'kotel'];
 const APP_NAMES = { szabad: 'Szabad', karika: 'Karika', labda: 'Labda', buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél' };
@@ -50,18 +51,19 @@ function SeasonSheet({ supabase, competitor, year }) {
     let active = true;
     (async () => {
       try {
-        const [badgeData, statsData, stories] = await Promise.all([
+        const [badgeData, statsData, stories, evaluation] = await Promise.all([
           loadBadgeData(supabase, competitor.id),
           loadStatsData(supabase, competitor.id),
-          supabase.from('competitor_stories').select('kind, body, year, achieved').eq('competitor_id', competitor.id)
+          supabase.from('competitor_stories').select('kind, body, year, achieved').eq('competitor_id', competitor.id),
+          loadEvaluation(supabase, competitor.id, year).catch(() => null)
         ]);
-        if (active) setState({ badgeData, statsData, stories: stories.error ? [] : (stories.data || []) });
+        if (active) setState({ badgeData, statsData, stories: stories.error ? [] : (stories.data || []), evaluation });
       } catch (err) {
         if (active) setError(err.message);
       }
     })();
     return () => { active = false; };
-  }, [supabase, competitor.id]);
+  }, [supabase, competitor.id, year]);
 
   if (error) return <div className="text-sm text-red-600">Hiba: {error}</div>;
   if (!state) return <div className="flex items-center gap-2 text-sm text-gray-500"><Loader className="w-4 h-4 animate-spin" /> Összefoglaló készül…</div>;
@@ -115,19 +117,29 @@ function SeasonSheet({ supabase, competitor, year }) {
 
       {comps.length > 0 && (
         <Block title="Versenyeim">
-          <table className="w-full text-sm">
-            <tbody>
-              {comps.map((c, i) => (
-                <tr key={i} className="border-t" style={{ borderColor: '#F3F4F6' }}>
-                  <td className="py-1 pr-2 text-gray-500 whitespace-nowrap tabular-nums">{huDate(c.date)}</td>
-                  <td className="py-1">{c.name}</td>
-                  <td className="py-1 text-right whitespace-nowrap">
-                    {c.best ? <b>{c.best <= 3 ? ['', '🥇', '🥈', '🥉'][c.best] + ' ' : ''}{c.best}. hely</b> : <span className="text-gray-400">—</span>}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="space-y-1.5">
+            {comps.map((c, i) => (
+              <div key={i} className="border-t pt-1.5" style={{ borderColor: '#F3F4F6' }}>
+                <div className="flex gap-2 text-sm">
+                  <span className="text-gray-500 whitespace-nowrap tabular-nums">{huDate(c.date)}</span>
+                  <span className="font-medium flex-1">{c.name}</span>
+                </div>
+                {(c.items || []).length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5 mt-1 ml-0 sm:ml-24">
+                    {[...c.items].sort((a, b) => a.placement - b.placement).map((it, j) => (
+                      <span key={j} className="text-xs px-2 py-0.5 rounded-full border whitespace-nowrap"
+                            style={{ borderColor: it.placement <= 3 ? '#FCD34D' : '#E5E7EB', backgroundColor: it.placement <= 3 ? '#FFFBEB' : 'white' }}>
+                        {it.placement <= 3 ? ['', '🥇', '🥈', '🥉'][it.placement] + ' ' : ''}
+                        <b>{it.placement}. hely</b> · {it.label} · <span className="text-gray-500">{it.group === 'csapat' ? 'csapat' : 'egyéni'}</span>
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-xs text-gray-400 mt-0.5 sm:ml-24">nincs rögzített helyezés</div>
+                )}
+              </div>
+            ))}
+          </div>
         </Block>
       )}
 
@@ -208,6 +220,12 @@ function SeasonSheet({ supabase, competitor, year }) {
         </Block>
       )}
 
+      {state.evaluation && (
+        <Block title="Edzői értékelés">
+          <div className="text-sm whitespace-pre-wrap rounded-lg p-3" style={{ backgroundColor: '#EEF2FF', color: '#1E1B4B' }}>{state.evaluation.body}</div>
+        </Block>
+      )}
+
       <div className="mt-8 pt-2 border-t text-[10px] text-gray-400 flex justify-between" style={{ borderColor: '#F3F4F6' }}>
         <span>Csepeli RG Klub · Pontregiszter</span>
         <span>Készült: {new Date().toLocaleDateString('hu-HU')}</span>
@@ -216,10 +234,11 @@ function SeasonSheet({ supabase, competitor, year }) {
   );
 }
 
-export function SeasonSummaryButton({ supabase, competitor }) {
+export function SeasonSummaryButton({ supabase, competitor, defaultYear }) {
   const currentYear = new Date().getFullYear();
   const [open, setOpen] = useState(false);
-  const [year, setYear] = useState(currentYear);
+  const [year, setYear] = useState(defaultYear || currentYear);
+  useEffect(() => { if (defaultYear) setYear(defaultYear); }, [defaultYear]);
   if (!competitor?.id) return null;
 
   return (

@@ -16,6 +16,7 @@ import { Loader, AlertCircle, X, Search } from 'lucide-react';
 import { safeQuery } from './competitor-dashboard';
 import { CompetitorProgressChart } from './progress-chart';
 import { useAvatarUrl, uploadAvatar, AvatarImage, AVATAR_RULES_TEXT } from './avatar';
+import { loadBadgeData } from './badges';
 
 const RG_AVATARS = [
   '🤸‍♀️', '🩰', '🎯', '🏆', '🏅', '🎖️', '🥇', '🥈', '🥉',
@@ -85,6 +86,21 @@ export default function CompetitorProfileView({ supabase, profile }) {
   const [photoBusy, setPhotoBusy] = useState(false);
   const [photoError, setPhotoError] = useState(null);
   const photo = useAvatarUrl(supabase, competitor, avatarVersion);
+
+  // v0.9.66: „verseny idén” / „érem idén” ugyanabból a forrásból, mint a kitűzők és
+  // az évösszefoglaló: lezárt versenyek (egyéni, összetett, csapat) + korábbi eredmények
+  useEffect(() => {
+    if (!competitor?.id) return undefined;
+    let active = true;
+    const y = String(new Date().getFullYear());
+    loadBadgeData(supabase, competitor.id).then(d => {
+      if (!active) return;
+      const comps = d.comps.filter(c => c.date && c.date.startsWith(y));
+      setCompetitionsThisYear(comps.length);
+      setMedalsThisYear(comps.reduce((s, c) => s + (c.medals || []).length, 0));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [supabase, competitor?.id]);
 
   useEffect(() => {
     let mounted = true;

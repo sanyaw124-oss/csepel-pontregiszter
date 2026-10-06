@@ -18,6 +18,7 @@ import {
 import { BadgesPanel } from './badges';
 import { CompetitorStatsPanel } from './stats';
 import { SeasonSummaryButton } from './seasonSummary';
+import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 
 const COLORS = {
@@ -364,6 +365,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
       </div>
 
       {/* ─── v0.9.64: KITŰZŐK + RÓLAM ─── */}
+      <EvaluationsView supabase={supabase} competitorId={competitor.id} title="Edzőm értékelése" />
       <BadgesPanel supabase={supabase} competitorId={competitor.id} title="Kitűzőim" />
       <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite />
       <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />

@@ -17,7 +17,7 @@ import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
 import { formatCompetitorName, HU_COLLATOR, huSortByNickname } from './names';
 import { usePridePhotoUrl } from './pridePhoto';
-import { ClubStatsWidget } from './clubStats';
+import { StatsView } from './statsView';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -773,6 +773,7 @@ const NAV_ITEMS = [
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
+  { id: 'stats', label: 'Statisztika', icon: BarChart3, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] }, // v0.9.67
   { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.SZULO] },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO] }
 ];
@@ -897,6 +898,7 @@ function AppShell() {
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
+        {activeView === 'stats' && <StatsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'coach-notes' && <CoachNotesView supabase={supabase} userRole={profile.role} profile={profile} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
@@ -914,7 +916,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.66 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.67 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1202,13 +1204,6 @@ function DashboardView({ setActiveView }) {
           <div className="mt-4">
             <ClubRankingsWidget />
           </div>
-
-          {/* v0.9.65: klubstatisztika — csak az edzői szerepköröknek */}
-          {['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(profile.role) && (
-            <div className="mt-4">
-              <ClubStatsWidget supabase={supabase} />
-            </div>
-          )}
       </>
 
       {/* Ideiglenes profilok - csak admin */}
