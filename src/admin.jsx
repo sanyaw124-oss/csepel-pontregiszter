@@ -2688,7 +2688,7 @@ const VERSENY_BESOROLAS_LIST = [
 
 export function CompetitorHistoricalResults({ supabase, competitorId, userRole, hideScores = false }) {
   const [items, setItems] = useState(null);
-  const [showAll, setShowAll] = useState(false); // v0.9.62
+  const [showList, setShowList] = useState(false); // v0.9.62: a rögzítettek kezelése lenyitva
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | item
 
@@ -2718,6 +2718,7 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
     try {
       await supabase.from('historical_results').delete().eq('id', item.id);
       await load();
+      notifyHistoricalChanged();
     } catch (err) {
       setError(err.message);
     }
@@ -2732,50 +2733,59 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
         competitorId={competitorId}
         item={editing === 'new' ? null : editing}
         existingItems={items || []}
-        onSaved={() => { setEditing(null); load(); }}
+        onSaved={() => { setEditing(null); load(); notifyHistoricalChanged(); }}
         onCancel={() => setEditing(null)}
       />
     );
   }
 
+  // v0.9.62 (Sándor): a korábbi eredmények a többi versennyel együtt, időrendben
+  // látszanak az eredmény-összesítőben — itt csak a rögzítés és a javítás marad
+  if (!canEdit) return null;
+
   return (
     <div className="rounded-lg p-3 border" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
-      <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+      <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <Clock className="w-4 h-4" style={{ color: '#7c3aed' }} />
-          <span className="font-semibold text-sm">Korábbi eredmények ({items?.length || 0})</span>
+          <span className="font-semibold text-sm">Korábbi eredmények rögzítése</span>
         </div>
-        {canEdit && (
-          <button
-            onClick={() => setEditing('new')}
-            className="text-xs px-3 py-1.5 rounded text-white font-medium"
-            style={{ backgroundColor: '#7c3aed' }}
-          >
-            <Plus className="w-3 h-3 inline mr-1" /> Új eredmény
-          </button>
-        )}
+        <button
+          onClick={() => setEditing('new')}
+          className="text-xs px-3 py-1.5 rounded text-white font-medium"
+          style={{ backgroundColor: '#7c3aed' }}
+        >
+          <Plus className="w-3 h-3 inline mr-1" /> Új eredmény
+        </button>
+      </div>
+      <div className="text-xs text-gray-500 mt-1">
+        A rögzített korábbi eredmények a fenti eredmény-összesítőben látszanak, a többi versennyel együtt.
       </div>
 
       {error && (
-        <div className="text-xs text-red-600 mb-2">{error}</div>
+        <div className="text-xs text-red-600 mt-2">{error}</div>
       )}
 
-      {items?.length === 0 && !error && (
-        <div className="text-xs text-gray-500 italic">Még nincs rögzített korábbi eredmény.</div>
+      {(items || []).length > 0 && (
+        <button onClick={() => setShowList(v => !v)}
+                className="w-full mt-2 px-3 py-1.5 rounded-md border text-xs font-semibold bg-white hover:bg-gray-50 shadow-sm"
+                style={{ color: '#7c3aed', borderColor: '#7c3aed' }}>
+          {showList ? '▲ Rögzítettek elrejtése' : `▼ Rögzítettek javítása / törlése (${items.length})`}
+        </button>
       )}
 
-      <div className="space-y-2">
-        {(items || []).slice(0, showAll ? undefined : SHOW_LATEST).map(item => (
-          <HistoricalResultCard hideScores={hideScores}
-            key={item.id}
-            item={item}
-            onEdit={canEdit ? () => setEditing(item) : null}
-            onDelete={canEdit ? () => handleDelete(item) : null}
-          />
-        ))}
-        <MoreToggle hidden={Math.max(0, (items || []).length - SHOW_LATEST)} open={showAll}
-                    color="#7c3aed" onToggle={() => setShowAll(v => !v)} />
-      </div>
+      {showList && (
+        <div className="space-y-2 mt-2">
+          {(items || []).map(item => (
+            <HistoricalResultCard hideScores={hideScores}
+              key={item.id}
+              item={item}
+              onEdit={() => setEditing(item)}
+              onDelete={() => handleDelete(item)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -3839,11 +3849,17 @@ const SHOW_LATEST = 3;
 function MoreToggle({ hidden, open, onToggle, color = '#1D4ED8' }) {
   if (hidden <= 0) return null;
   return (
-    <button onClick={onToggle} className="text-xs font-medium mt-1" style={{ color }}>
-      {open ? '▴ Kevesebb' : `▾ Korábbiak (${hidden})`}
+    <button onClick={onToggle}
+            className="w-full my-1 px-3 py-1.5 rounded-md border text-xs font-semibold bg-white hover:bg-gray-50 active:bg-gray-100 shadow-sm"
+            style={{ color, borderColor: color }}>
+      {open ? '▲ Korábbiak elrejtése' : `▼ Korábbi versenyek mutatása (${hidden})`}
     </button>
   );
 }
+
+// v0.9.62: a korábbi eredmény mentése / törlése után az összesítő újratölt
+export const HISTORICAL_CHANGED = 'pontregiszter:historical-changed';
+const notifyHistoricalChanged = () => window.dispatchEvent(new Event(HISTORICAL_CHANGED));
 
 // v0.9.58: az eredmény-összesítő három blokkja
 const RESULT_GROUPS = [
@@ -4086,6 +4102,13 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
       setLoading(false);
     }
   }, [supabase, competitorId, year]);
+
+  // v0.9.62: új / módosított / törölt korábbi eredmény → újratöltés
+  useEffect(() => {
+    const onChanged = () => load();
+    window.addEventListener(HISTORICAL_CHANGED, onChanged);
+    return () => window.removeEventListener(HISTORICAL_CHANGED, onChanged);
+  }, [load]);
 
   useEffect(() => { load(); }, [load]);
 
