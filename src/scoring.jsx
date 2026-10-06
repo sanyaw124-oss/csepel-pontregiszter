@@ -347,11 +347,11 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       // DB+DA: mindenkinél opcionális (csepelinél tipikusan használt)
       const scoreDb = validateScore(f.score_db, 'DB', null);
       const scoreDa = validateScore(f.score_da, 'DA', null);
-      let scoreD = validateScore(f.score_d, 'D', null);
-      // Ha DB+DA van megadva és D nincs → D = DB + DA
-      if (scoreD === null && (scoreDb !== null || scoreDa !== null)) {
-        scoreD = (scoreDb || 0) + (scoreDa || 0);
-      }
+      // v0.9.66 (Sándor): a D-t soha nem írjuk be — mindig DB + DA.
+      // Régi, csak D-vel rögzített sornál (nincs DB/DA) a meglévő D marad.
+      let scoreD = (scoreDb !== null || scoreDa !== null)
+        ? Math.round(((scoreDb || 0) + (scoreDa || 0)) * 1000) / 1000
+        : validateScore(f.score_d, 'D', null);
       const scoreA = validateScore(f.score_a, 'A', 10);
       const scoreE = validateScore(f.score_e, 'E', 10);
       const scoreP = validateScore(f.score_p, 'P', null);
@@ -845,10 +845,6 @@ function StartlistScoringView({
 // ═══════════════════════════════════════════════════════════════════
 
 function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, onDelete, onClose, saving, error, isTeam, position }) {
-  const [showDetail, setShowDetail] = useState(
-    () => (editForm.score_db !== '' && editForm.score_db !== null) || (editForm.score_da !== '' && editForm.score_da !== null)
-  );
-
   // Háttér görgetésének tiltása + Esc = bezárás
   useEffect(() => {
     const prev = document.body.style.overflow;
@@ -861,22 +857,19 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
     };
   }, [onClose]);
 
-  // Új versenyzőnél a részletező a saját értékei szerint nyílik
-  useEffect(() => {
-    setShowDetail((editForm.score_db !== '' && editForm.score_db !== null) || (editForm.score_da !== '' && editForm.score_da !== null));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry.id]);
-
   const set = (field) => (v) => setEditForm({ ...editForm, [field]: v });
   const isCsepeli = isCsepeliEntry(entry);
   const displayName = entry.competitors ? formatCompetitorName(entry.competitors) : entry.external_name;
   const displayClub = entry.competitors ? 'Csepeli RG Club' : entry.external_club;
 
-  const dbda = toNum(editForm.score_db) + toNum(editForm.score_da);
-  const anyPart = [editForm.score_db, editForm.score_da, editForm.score_d, editForm.score_a, editForm.score_e]
-    .some(v => v !== '' && v !== null && v !== undefined);
+  const filled = (v) => v !== '' && v !== null && v !== undefined;
+  const hasDbDa = filled(editForm.score_db) || filled(editForm.score_da);
+  // a D mindig számolt: DB + DA (régi, csak D-s sornál a meglévő D)
+  const legacyD = !hasDbDa && filled(editForm.score_d) ? toNum(editForm.score_d) : null;
+  const dShown = hasDbDa ? Math.round((toNum(editForm.score_db) + toNum(editForm.score_da)) * 1000) / 1000 : legacyD;
+  const anyPart = [editForm.score_db, editForm.score_da, editForm.score_a, editForm.score_e].some(filled) || legacyD !== null;
   const autoTotal = anyPart
-    ? calculateTotal(editForm.score_db, editForm.score_da, editForm.score_d, editForm.score_a, editForm.score_e, editForm.score_p)
+    ? calculateTotal(editForm.score_db, editForm.score_da, hasDbDa ? '' : editForm.score_d, editForm.score_a, editForm.score_e, editForm.score_p)
     : null;
   const manualTotal = editForm.score_total_manual !== '' && editForm.score_total_manual !== null;
   const shownTotal = manualTotal ? toNum(editForm.score_total_manual) : autoTotal;
@@ -931,29 +924,21 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
             </div>
           )}
 
-          {/* D · A · E · P egy sorban */}
-          <div className="grid grid-cols-4 gap-2">
-            <ScoreInput label="D" value={editForm.score_d} onChange={set('score_d')}
-              placeholder={dbda > 0 ? dbda.toFixed(2) : ''} />
+          {/* v0.9.66: DB + DA beírva, a D számolt (soha nem írjuk); alatta A · E · P */}
+          <div className="grid grid-cols-3 gap-2">
+            <ScoreInput label="DB" value={editForm.score_db} onChange={set('score_db')} />
+            <ScoreInput label="DA" value={editForm.score_da} onChange={set('score_da')} />
+            <div>
+              <label className="text-xs text-gray-600 block mb-0.5">D = DB + DA</label>
+              <div className="w-full rounded-lg border flex items-center justify-center text-base font-semibold tabular-nums"
+                   style={{ height: 42, backgroundColor: COLORS.gray100, borderColor: COLORS.gray200, color: dShown === null ? '#9CA3AF' : COLORS.primary }}
+                   title={legacyD !== null ? 'Korábban, DB/DA nélkül rögzített D' : 'Számolt érték'}>
+                {dShown === null ? '—' : formatNum(dShown)}
+              </div>
+            </div>
             <ScoreInput label="A" value={editForm.score_a} onChange={set('score_a')} />
             <ScoreInput label="E" value={editForm.score_e} onChange={set('score_e')} />
             <ScoreInput label="P (−)" value={editForm.score_p} onChange={set('score_p')} />
-          </div>
-
-          {/* DB + DA — lenyitható */}
-          <div>
-            <button type="button" onClick={() => setShowDetail(!showDetail)} className="text-xs font-medium" style={{ color: COLORS.blue }}>
-              {showDetail ? '▾' : '▸'} D részletezve (DB + DA)
-            </button>
-            {showDetail && (
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                <ScoreInput label="DB" value={editForm.score_db} onChange={set('score_db')} />
-                <ScoreInput label="DA" value={editForm.score_da} onChange={set('score_da')} />
-                <div className="col-span-2 text-xs text-gray-500 self-end pb-2">
-                  Ha a D üres: D = DB + DA
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Összpontszám: számolt, vagy kézzel felülírva */}
