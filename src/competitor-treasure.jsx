@@ -17,7 +17,6 @@ import {
 } from './admin';
 import { BadgesPanel } from './badges';
 import { CompetitorStatsPanel } from './stats';
-import { SeasonSummaryButton } from './seasonSummary';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 
@@ -369,7 +368,6 @@ export default function CompetitorTreasureView({ supabase, profile }) {
       <BadgesPanel supabase={supabase} competitorId={competitor.id} title="Kitűzőim" />
       <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite />
       <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
-      <SeasonSummaryButton supabase={supabase} competitor={competitor} />
 
       {/* ─── ÉVENKÉNTI ÖSSZESÍTŐ (admin.jsx komponensei) ─── */}
       <CompetitorYearlyStats

@@ -2401,7 +2401,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
           <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
         )}
         {competitor?.id && (
-          <SeasonSummaryButton supabase={supabase} competitor={competitor} />
+          <SeasonSummaryButton supabase={supabase} competitor={competitor} variant="parent" />
         )}
 
         {/* Csapat-eredmények */}

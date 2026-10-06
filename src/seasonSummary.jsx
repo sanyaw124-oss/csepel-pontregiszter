@@ -43,7 +43,8 @@ function Block({ title, children }) {
   );
 }
 
-function SeasonSheet({ supabase, competitor, year }) {
+function SeasonSheet({ supabase, competitor, year, variant }) {
+  const isParent = variant === 'parent';
   const [state, setState] = useState(null);
   const [error, setError] = useState(null);
 
@@ -94,9 +95,10 @@ function SeasonSheet({ supabase, competitor, year }) {
       <div className="flex items-center gap-4 pb-3 border-b-4" style={{ borderColor: '#BE123C' }}>
         <img src={CSEPEL_RG_LOGO} alt="" className="w-16 h-16 object-contain" />
         <div className="flex-1">
-          <div className="text-xs uppercase tracking-widest text-gray-500">Csepeli RG Klub · Évösszefoglaló</div>
+          <div className="text-xs uppercase tracking-widest text-gray-500">Csepeli RG Klub · {isParent ? 'Verseny összesítő' : 'Évösszefoglaló'}</div>
           <div className="text-2xl font-extrabold" style={{ color: '#831843' }}>{formatCompetitorName(competitor)}</div>
           <div className="text-sm text-gray-600">{competitor.kategoria || ''}{competitor.korosztaly ? ` · ${competitor.korosztaly}` : ''}</div>
+          {isParent && <div className="text-xs text-gray-500 mt-0.5">A(z) {year}. év eddig rögzített versenyei</div>}
         </div>
         <div className="text-5xl font-black" style={{ color: '#FBCFE8' }}>{year}</div>
       </div>
@@ -220,7 +222,7 @@ function SeasonSheet({ supabase, competitor, year }) {
         </Block>
       )}
 
-      {state.evaluation && (
+      {!isParent && state.evaluation && (
         <Block title="Edzői értékelés">
           <div className="text-sm whitespace-pre-wrap rounded-lg p-3" style={{ backgroundColor: '#EEF2FF', color: '#1E1B4B' }}>{state.evaluation.body}</div>
         </Block>
@@ -234,7 +236,9 @@ function SeasonSheet({ supabase, competitor, year }) {
   );
 }
 
-export function SeasonSummaryButton({ supabase, competitor, defaultYear }) {
+// variant: 'coach' (évösszefoglaló az edzői értékeléssel) | 'parent' (verseny összesítő, értékelés nélkül)
+export function SeasonSummaryButton({ supabase, competitor, defaultYear, variant = 'coach' }) {
+  const title = variant === 'parent' ? 'Verseny összesítő' : 'Évösszefoglaló';
   const currentYear = new Date().getFullYear();
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(defaultYear || currentYear);
@@ -244,15 +248,16 @@ export function SeasonSummaryButton({ supabase, competitor, defaultYear }) {
   return (
     <>
       <button onClick={() => setOpen(true)}
-              className="w-full rounded-lg border-2 border-dashed px-3 py-2.5 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-pink-50"
-              style={{ borderColor: '#F9A8D4', color: '#9D174D' }}>
-        <FileText className="w-4 h-4" /> Évösszefoglaló (nyomtatható / PDF)
+              className="w-full rounded-lg px-4 py-3 text-sm font-semibold text-white flex items-center justify-center gap-2 shadow-md hover:opacity-90 active:scale-[0.99]"
+              style={{ backgroundColor: '#BE185D' }}>
+        <FileText className="w-5 h-5" /> {title} — PDF készítése
       </button>
       {open && createPortal(
         <div className="season-print-root fixed inset-0 z-[100] overflow-y-auto" style={{ backgroundColor: '#F3F4F6' }}>
           <style>{PRINT_CSS}</style>
           <div className="season-no-print sticky top-0 bg-white border-b px-3 py-2 flex items-center gap-2 flex-wrap shadow-sm" style={{ borderColor: '#E5E7EB' }}>
-            <span className="font-semibold text-sm flex-1">Évösszefoglaló</span>
+            <span className="font-semibold text-sm flex-1">{title}</span>
+            <label className="text-sm font-medium" style={{ color: '#9D174D' }}>Válassz évszámot:</label>
             <select value={year} onChange={e => setYear(parseInt(e.target.value, 10))} className="text-sm px-2 py-1 border border-gray-300 rounded bg-white">
               {[0, 1, 2, 3, 4].map(d => currentYear - d).map(y => <option key={y} value={y}>{y}</option>)}
             </select>
@@ -262,7 +267,7 @@ export function SeasonSummaryButton({ supabase, competitor, defaultYear }) {
             <button onClick={() => setOpen(false)} className="p-1.5 rounded hover:bg-gray-100" title="Bezárás"><X className="w-5 h-5" /></button>
           </div>
           <div className="season-sheet bg-white max-w-3xl mx-auto my-4 p-6 shadow-lg rounded">
-            <SeasonSheet key={year} supabase={supabase} competitor={competitor} year={year} />
+            <SeasonSheet key={year} supabase={supabase} competitor={competitor} year={year} variant={variant} />
           </div>
         </div>,
         document.body
