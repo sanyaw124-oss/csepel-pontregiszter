@@ -214,6 +214,170 @@ export function SelfTrainingReport({ supabase, competitorId, title = 'Edzéseim 
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// EDZÉS-ÖSSZESÍTŐ (v0.9.62) — Sándor 2026.10.06: „éves, havi bontásban legyen:
+// összesen, választott év, és az év havonta”. A gyerek Edzések menüje és a
+// versenyző adatlapja (szülő, edző) is ezt használja.
+// ═══════════════════════════════════════════════════════════════════
+
+const HU_MONTHS = ['január', 'február', 'március', 'április', 'május', 'június',
+  'július', 'augusztus', 'szeptember', 'október', 'november', 'december'];
+const SUMMARY_COLS = [
+  { key: 'edzes_count', label: 'Edzés', color: '#1D4ED8' },
+  { key: 'egesznapos_count', label: 'Egész n.', color: '#15803D' },
+  { key: 'tabor_count', label: 'Tábor', color: '#B45309' },
+  { key: 'balett_count', label: 'Balett', color: '#BE185D' }
+];
+const sumMain = (r) => (r?.edzes_count || 0) + (r?.egesznapos_count || 0) + (r?.tabor_count || 0);
+
+function SummaryStatRow({ label, row }) {
+  return (
+    <div className="grid grid-cols-6 gap-1.5 items-center">
+      <div className="text-xs font-medium text-gray-700">{label}</div>
+      {SUMMARY_COLS.map(c => (
+        <div key={c.key} className="bg-white rounded border text-center py-1" style={{ borderColor: COLORS.gray200 }}>
+          <div className="text-base font-semibold leading-tight" style={{ color: c.color }}>{row[c.key] || 0}</div>
+          <div className="text-[10px] text-gray-500">{c.label}</div>
+        </div>
+      ))}
+      <div className="bg-gray-100 rounded text-center py-1">
+        <div className="text-base font-bold leading-tight text-gray-800">{sumMain(row)}</div>
+        <div className="text-[10px] text-gray-500">össz.</div>
+      </div>
+    </div>
+  );
+}
+
+export function TrainingSummary({ supabase, competitorId, title = 'Edzések', reloadKey = 0 }) {
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
+  const [yearly, setYearly] = useState(null);   // [{year, ...darabszámok}]
+  const [monthly, setMonthly] = useState([]);   // a választott év hónapjai
+  const [recent, setRecent] = useState([]);
+  const [showAllRecent, setShowAllRecent] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!competitorId) return;
+    let active = true;
+    (async () => {
+      try {
+        const { data: ys, error: yErr } = await supabase
+          .from('v_training_yearly_summary')
+          .select('year, edzes_count, egesznapos_count, tabor_count, balett_count')
+          .eq('competitor_id', competitorId);
+        if (yErr) throw yErr;
+        const { data: rs, error: rErr } = await supabase
+          .from('training_attendance')
+          .select('id, training_sessions!inner(id, date, session_type, notes)')
+          .eq('competitor_id', competitorId)
+          .order('training_sessions(date)', { ascending: false })
+          .limit(30);
+        if (rErr) throw rErr;
+        if (active) { setYearly(ys || []); setRecent(rs || []); }
+      } catch (err) {
+        if (active) { setError(err.message); setYearly([]); }
+      }
+    })();
+    return () => { active = false; };
+  }, [supabase, competitorId, reloadKey]);
+
+  useEffect(() => {
+    if (!competitorId) return;
+    let active = true;
+    supabase.from('v_training_monthly_summary')
+      .select('month, edzes_count, egesznapos_count, tabor_count, balett_count')
+      .eq('competitor_id', competitorId).eq('year', year)
+      .then(({ data }) => { if (active) setMonthly(data || []); });
+    return () => { active = false; };
+  }, [supabase, competitorId, year, reloadKey]);
+
+  if (yearly === null) return null;
+
+  const years = Array.from(new Set([currentYear, ...yearly.map(y => y.year)])).sort((a, b) => b - a);
+  const total = {};
+  SUMMARY_COLS.forEach(c => { total[c.key] = yearly.reduce((s, y) => s + (y[c.key] || 0), 0); });
+  const sel = yearly.find(y => y.year === year) || {};
+  const lastMonth = year === currentYear ? new Date().getMonth() + 1 : 12;
+  const months = Array.from({ length: lastMonth }, (_, i) => {
+    const m = monthly.find(x => x.month === i + 1) || {};
+    return { ...m, month: i + 1 };
+  }).reverse(); // a legfrissebb hónap felül
+  const recentShown = showAllRecent ? recent : recent.slice(0, 5);
+
+  return (
+    <div className="rounded-lg p-3 border space-y-3" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <span className="font-semibold text-sm flex items-center gap-2">
+          <BookOpen className="w-4 h-4" style={{ color: '#1D4ED8' }} /> {title}
+        </span>
+        <select value={year} onChange={e => setYear(parseInt(e.target.value, 10))}
+                className="text-xs px-2 py-1 border border-gray-300 rounded bg-white">
+          {years.map(y => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+      {error && <div className="text-xs text-red-600">Hiba a betöltéskor: {error}</div>}
+
+      <div className="space-y-1.5">
+        <SummaryStatRow label="Összesen" row={total} />
+        <SummaryStatRow label={`${year}`} row={sel} />
+      </div>
+
+      {/* Havi bontás a választott évre */}
+      <div>
+        <div className="text-xs font-medium text-gray-700 mb-1">{year} havonta</div>
+        <div className="bg-white rounded border overflow-hidden" style={{ borderColor: COLORS.gray200 }}>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="bg-gray-50 text-gray-600">
+                <th className="text-left font-medium px-2 py-1">Hónap</th>
+                {SUMMARY_COLS.map(c => <th key={c.key} className="font-medium px-1 py-1 text-center" style={{ color: c.color }}>{c.label}</th>)}
+                <th className="font-medium px-1 py-1 text-center">Össz.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {months.map(m => (
+                <tr key={m.month} className="border-t" style={{ borderColor: COLORS.gray100 }}>
+                  <td className="px-2 py-1 text-gray-700">{HU_MONTHS[m.month - 1]}</td>
+                  {SUMMARY_COLS.map(c => (
+                    <td key={c.key} className="px-1 py-1 text-center" style={{ color: m[c.key] ? c.color : '#D1D5DB' }}>{m[c.key] || 0}</td>
+                  ))}
+                  <td className="px-1 py-1 text-center font-semibold">{sumMain(m)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Utolsó alkalmak — 5 látszik, a többi gombra */}
+      {recent.length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-gray-700 mb-1">Utolsó alkalmak</div>
+          <div className="space-y-1">
+            {recentShown.map(r => {
+              const s = r.training_sessions;
+              const meta = getSessionTypeMeta(s.session_type);
+              return (
+                <div key={r.id} className="flex items-center gap-2 text-xs bg-white p-1.5 rounded border" style={{ borderColor: COLORS.gray200 }}>
+                  <span className="text-gray-500 font-mono min-w-[84px]">{s.date.replace(/-/g, '.')}.</span>
+                  <span className="px-1.5 py-0.5 rounded font-medium" style={{ backgroundColor: meta.bg, color: meta.color }}>{meta.label}</span>
+                  {s.notes && <span className="text-gray-500 italic flex-1 truncate">{s.notes}</span>}
+                </div>
+              );
+            })}
+          </div>
+          {recent.length > 5 && (
+            <button onClick={() => setShowAllRecent(v => !v)} className="mt-1 text-xs font-medium" style={{ color: '#1D4ED8' }}>
+              {showAllRecent ? 'Kevesebb' : `Mind (${recent.length}${recent.length === 30 ? '+' : ''})`}
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function MyTrainingsView({ supabase, profile }) {
   const [trainings, setTrainings] = useState([]);
   const [stats, setStats] = useState({ edzes: 0, egesznapos: 0, tabor: 0, balett: 0, total: 0 });
@@ -271,7 +435,7 @@ function MyTrainingsView({ supabase, profile }) {
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="flex items-center gap-3 mb-3">
           <BookOpen className="w-5 h-5 text-gray-700" />
-          <h1 className="text-lg font-semibold">Edzéseim ({year})</h1>
+          <h1 className="text-lg font-semibold">Edzéseim</h1>
         </div>
       </div>
 
@@ -281,59 +445,10 @@ function MyTrainingsView({ supabase, profile }) {
                             onChanged={() => setReloadKey(k => k + 1)} />
       )}
 
-      {/* Statisztika */}
-      <div className="grid grid-cols-4 gap-2">
-        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
-          <div className="text-2xl font-bold text-blue-700">{stats.edzes}</div>
-          <div className="text-xs text-gray-500">edzés</div>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
-          <div className="text-2xl font-bold text-green-700">{stats.egesznapos}</div>
-          <div className="text-xs text-gray-500">egész napos</div>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
-          <div className="text-2xl font-bold text-amber-700">{stats.tabor}</div>
-          <div className="text-xs text-gray-500">tábor</div>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-3 text-center">
-          <div className="text-2xl font-bold" style={{ color: '#BE185D' }}>{stats.balett}</div>
-          <div className="text-xs text-gray-500">balett</div>
-        </div>
-      </div>
-
-      {/* Lista */}
-      <div className="bg-white rounded-lg border border-gray-200">
-        <div className="p-3 border-b border-gray-200 text-sm font-medium text-gray-700">
-          Részvételeim ({stats.total})
-        </div>
-        {trainings.length === 0 ? (
-          <div className="p-6 text-center text-sm text-gray-500">Még nincs rögzített edzésed idén.</div>
-        ) : (
-          <div className="divide-y divide-gray-100">
-            {trainings.map(t => {
-              const session = t.training_sessions;
-              if (!session) return null;
-              const typeLabel = session.session_type === 'edzes' ? '💪 Edzés' :
-                                session.session_type === 'egesznapos' ? '☀️ Egész napos' :
-                                session.session_type === 'balett' ? '🩰 Balett' : '🏕️ Tábor';
-              return (
-                <div key={t.id} className="p-3 flex items-center justify-between text-sm">
-                  <div>
-                    <div className="font-medium">{typeLabel}</div>
-                    <div className="text-xs text-gray-500">
-                      {new Date(session.date).toLocaleDateString('hu-HU', { 
-                        weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' 
-                      })}
-                    </div>
-                  </div>
-                  <div className="text-green-600">✓</div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
+      {/* v0.9.62: edzés-összesítő — összesen, választott év, havi bontás, utolsó alkalmak */}
+      {myCompetitorId && (
+        <TrainingSummary supabase={supabase} competitorId={myCompetitorId} title="Edzéseim" reloadKey={reloadKey} />
+      )}
     </div>
   );
 }

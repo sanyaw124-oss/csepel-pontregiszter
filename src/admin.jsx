@@ -9,7 +9,7 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 // v0.9.37: Fejlődési grafikon importálása - eddig hiányzott, ezért nem jelent meg
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
-import { SelfTrainingReport } from './training';
+import { SelfTrainingReport, TrainingSummary } from './training';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -2491,6 +2491,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
 
 export function CompetitorTeamResults({ supabase, competitorId, hideScores = false }) {
   const [teams, setTeams] = useState(null);
+  const [showAll, setShowAll] = useState(false); // v0.9.62
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -2548,6 +2549,8 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
       
       {teams && teams.length > 0 && (
         <div className="space-y-2">
+          <MoreToggle hidden={Math.max(0, teams.filter(t => t.team).length - SHOW_LATEST)} open={showAll}
+                      color="#BE123C" onToggle={() => setShowAll(v => !v)} />
           {teams
             .filter(t => t.team) // a teljesen törölt csapatok kiszűrése
             .sort((a, b) => {
@@ -2556,6 +2559,7 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
               const bDate = b.team.competition?.start_date || '';
               return bDate.localeCompare(aDate);
             })
+            .slice(0, showAll ? undefined : SHOW_LATEST) // v0.9.62: a legutóbbiak
             .map(tm => {
               const team = tm.team;
               const comp = team.competition;
@@ -2645,141 +2649,10 @@ export function CompetitorTeamResults({ supabase, competitorId, hideScores = fal
 // Megjelenik a versenyző adatlapján: idei évi összesítő + utolsó alkalmak
 // ═══════════════════════════════════════════════════════════════════
 
+// v0.9.62: a közös edzés-összesítő (training.jsx TrainingSummary): összesen,
+// választott év, havi bontás, utolsó alkalmak
 function CompetitorTrainingHistory({ supabase, competitorId }) {
-  const [yearStats, setYearStats] = useState(null);
-  const [previousYearStats, setPreviousYearStats] = useState(null);
-  const [recent, setRecent] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  const currentYear = new Date().getFullYear();
-  const lastYear = currentYear - 1;
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        // Idei évi összesítő
-        const { data: yStats } = await supabase
-          .from('v_training_yearly_summary')
-          .select('edzes_count, egesznapos_count, tabor_count, total_count, balett_count')
-          .eq('competitor_id', competitorId)
-          .eq('year', currentYear)
-          .maybeSingle();
-
-        // Tavalyi évi összesítő
-        const { data: prevStats } = await supabase
-          .from('v_training_yearly_summary')
-          .select('edzes_count, egesznapos_count, tabor_count, total_count, balett_count')
-          .eq('competitor_id', competitorId)
-          .eq('year', lastYear)
-          .maybeSingle();
-
-        // Utolsó 10 alkalom (idei évben)
-        const { data: recentSess, error: rErr } = await supabase
-          .from('training_attendance')
-          .select('id, training_sessions!inner(id, date, session_type, notes)')
-          .eq('competitor_id', competitorId)
-          .gte('training_sessions.date', `${currentYear}-01-01`)
-          .order('training_sessions(date)', { ascending: false })
-          .limit(10);
-        if (rErr) throw rErr;
-
-        if (!active) return;
-        setYearStats(yStats || { edzes_count: 0, egesznapos_count: 0, tabor_count: 0, total_count: 0, balett_count: 0 });
-        setPreviousYearStats(prevStats);
-        setRecent(recentSess || []);
-      } catch (err) {
-        if (active) setError(err.message);
-      } finally {
-        if (active) setLoading(false);
-      }
-    })();
-    return () => { active = false; };
-  }, [supabase, competitorId, currentYear, lastYear]);
-
-  const getTypeLabel = (type) => {
-    if (type === 'edzes') return { label: 'Edzés', color: '#1D4ED8', bg: '#DBEAFE' };
-    if (type === 'egesznapos') return { label: 'Egésznapos', color: '#15803D', bg: '#D1FAE5' };
-    if (type === 'tabor') return { label: 'Tábor', color: '#B45309', bg: '#FEF3C7' };
-    if (type === 'balett') return { label: 'Balett', color: '#BE185D', bg: '#FCE7F3' };
-    return { label: type, color: COLORS.gray700, bg: '#F3F4F6' };
-  };
-
-  if (loading) return null;
-
-  return (
-    <div className="rounded-lg p-3 border" style={{ borderColor: COLORS.gray200, backgroundColor: '#fafafa' }}>
-      <div className="flex items-center gap-2 mb-2">
-        <BookOpen className="w-4 h-4" style={{ color: '#1D4ED8' }} />
-        <span className="font-semibold text-sm">Edzések ({currentYear})</span>
-      </div>
-
-      {error && (
-        <div className="text-xs text-red-600">Hiba a betöltéskor: {error}</div>
-      )}
-
-      {/* Idei évi 4 stat kártya (v0.9.54: + balett) */}
-      <div className="grid grid-cols-4 gap-2 mb-3">
-        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
-          <div className="text-xs text-gray-500 mb-0.5">Edzés</div>
-          <div className="text-lg font-semibold" style={{ color: '#1D4ED8' }}>{yearStats.edzes_count}</div>
-        </div>
-        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
-          <div className="text-xs text-gray-500 mb-0.5">Egésznapos</div>
-          <div className="text-lg font-semibold" style={{ color: '#15803D' }}>{yearStats.egesznapos_count}</div>
-        </div>
-        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
-          <div className="text-xs text-gray-500 mb-0.5">Tábor</div>
-          <div className="text-lg font-semibold" style={{ color: '#B45309' }}>{yearStats.tabor_count}</div>
-        </div>
-        <div className="bg-white rounded p-2 text-center border" style={{ borderColor: COLORS.gray200 }}>
-          <div className="text-xs text-gray-500 mb-0.5">Balett</div>
-          <div className="text-lg font-semibold" style={{ color: '#BE185D' }}>{yearStats.balett_count || 0}</div>
-        </div>
-      </div>
-
-      {/* Tavalyi év (ha van) */}
-      {previousYearStats && previousYearStats.total_count > 0 && (
-        <div className="text-xs text-gray-500 mb-3">
-          {lastYear}: {previousYearStats.edzes_count} edzés · {previousYearStats.egesznapos_count} egésznap · {previousYearStats.tabor_count} tábor{previousYearStats.balett_count ? ` · ${previousYearStats.balett_count} balett` : ''}
-        </div>
-      )}
-
-      {/* Utolsó alkalmak */}
-      {recent.length > 0 ? (
-        <div>
-          <div className="text-xs text-gray-500 mb-1">Utolsó alkalmak</div>
-          <div className="space-y-1">
-            {recent.map(r => {
-              const sess = r.training_sessions;
-              const meta = getTypeLabel(sess.session_type);
-              return (
-                <div key={r.id} className="flex items-center gap-2 text-xs bg-white p-1.5 rounded border" style={{ borderColor: COLORS.gray200 }}>
-                  <span className="text-gray-500 font-mono min-w-[88px]">{sess.date}</span>
-                  <span 
-                    className="px-1.5 py-0.5 rounded font-medium"
-                    style={{ backgroundColor: meta.bg, color: meta.color }}
-                  >
-                    {meta.label}
-                  </span>
-                  {sess.notes && (
-                    <span className="text-gray-500 italic flex-1 truncate">{sess.notes}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      ) : (
-        <div className="text-xs text-gray-500 italic">
-          {currentYear}-ben még nincs rögzített edzés.
-        </div>
-      )}
-    </div>
-  );
+  return <TrainingSummary supabase={supabase} competitorId={competitorId} />;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -2815,6 +2688,7 @@ const VERSENY_BESOROLAS_LIST = [
 
 export function CompetitorHistoricalResults({ supabase, competitorId, userRole, hideScores = false }) {
   const [items, setItems] = useState(null);
+  const [showAll, setShowAll] = useState(false); // v0.9.62
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | item
 
@@ -2891,7 +2765,7 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
       )}
 
       <div className="space-y-2">
-        {(items || []).map(item => (
+        {(items || []).slice(0, showAll ? undefined : SHOW_LATEST).map(item => (
           <HistoricalResultCard hideScores={hideScores}
             key={item.id}
             item={item}
@@ -2899,6 +2773,8 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
             onDelete={canEdit ? () => handleDelete(item) : null}
           />
         ))}
+        <MoreToggle hidden={Math.max(0, (items || []).length - SHOW_LATEST)} open={showAll}
+                    color="#7c3aed" onToggle={() => setShowAll(v => !v)} />
       </div>
     </div>
   );
@@ -3958,6 +3834,17 @@ function ClubPrideForm({ supabase, item, allCompetitors, currentMaxOrder, onSave
 // 3 forrásból gyűjti: results + competition_teams + historical_results
 // ═══════════════════════════════════════════════════════════════════
 
+// v0.9.62: hosszú listáknál csak a legutóbbi néhány látszik, a többi gombra
+const SHOW_LATEST = 3;
+function MoreToggle({ hidden, open, onToggle, color = '#1D4ED8' }) {
+  if (hidden <= 0) return null;
+  return (
+    <button onClick={onToggle} className="text-xs font-medium mt-1" style={{ color }}>
+      {open ? '▴ Kevesebb' : `▾ Korábbiak (${hidden})`}
+    </button>
+  );
+}
+
 // v0.9.58: az eredmény-összesítő három blokkja
 const RESULT_GROUPS = [
   { key: 'egyeni', title: '🤸 Egyéni eredmények', color: '#1D4ED8' },
@@ -3966,6 +3853,7 @@ const RESULT_GROUPS = [
 ];
 
 export function CompetitorYearlyStats({ supabase, competitorId, competitorName, defaultYear = 'all', hideScores = false }) {
+  const [openGroups, setOpenGroups] = useState({}); // v0.9.62: blokkonként lenyitva-e
   const [year, setYear] = useState(defaultYear); // 'all' | year (int)
   const [availableYears, setAvailableYears] = useState([]);
   const [stats, setStats] = useState(null);
@@ -4287,13 +4175,19 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
                   .filter(c => c.items.length > 0)
                   .sort((x, y) => (x.date || '').localeCompare(y.date || ''));
                 if (comps.length === 0) return null;
+                // v0.9.62: csak a legutóbbi néhány látszik (időrendben), a korábbiak gombra
+                const open = !!openGroups[g.key];
+                const hiddenCount = Math.max(0, comps.length - SHOW_LATEST);
+                const shown = open ? comps : comps.slice(-SHOW_LATEST);
                 return (
                   <div key={g.key}>
                     <div className="text-xs font-semibold mb-1" style={{ color: g.color }}>
                       {g.title} ({comps.length})
                     </div>
+                    <MoreToggle hidden={hiddenCount} open={open} color={g.color}
+                                onToggle={() => setOpenGroups(s => ({ ...s, [g.key]: !s[g.key] }))} />
                     <div className="space-y-1.5">
-                      {comps.map((c, idx) => (
+                      {shown.map((c, idx) => (
                         <div
                           key={idx}
                           className="bg-white rounded p-2 border-l-4 text-xs"
