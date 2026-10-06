@@ -120,7 +120,7 @@ export function ClubStatsWidget({ supabase }) {
     if (TRAINING_TYPES.includes(s.session_type)) c.all += 1;
     if (MONTHLY_TYPES.includes(s.session_type)) c.monthly += 1;
   });
-  const attendance = huSortByNickname(data.comps)
+  const attendance = [...data.comps].sort(huSortByNickname)
     .map(c => ({ c, n: counts[c.id]?.all || 0, m: counts[c.id]?.monthly || 0 }))
     .sort((a, b) => b.n - a.n);
   const maxN = Math.max(1, ...attendance.map(a => a.n));
