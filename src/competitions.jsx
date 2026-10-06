@@ -9,11 +9,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Calendar, MapPin, Plus, ArrowLeft, Save, Loader, AlertCircle,
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award,
-  ChevronUp, ChevronDown, UserX, UserCheck
+  ChevronUp, ChevronDown, UserX, UserCheck, Lock, Unlock
 } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
 import { fillAutoPlacements, clearAutoPlacements } from './placements';
 import { ScoringView } from './scoring';
+import { ApparatusMark } from './apparatusIcons';
 import { CompetitionTeamsView } from './teams';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -110,6 +111,60 @@ function importanceBadge(importance) {
       {config.label}
     </span>
   );
+}
+
+// v0.9.63: a kategória szerei ikonként (csapatgyakorlat, pl. „5 labda”: szöveg)
+function ApparatusList({ apparatuses, empty = '—' }) {
+  const list = apparatuses || [];
+  if (list.length === 0) return <span className="italic">{empty}</span>;
+  return (
+    <span className="inline-flex items-center gap-1 flex-wrap align-middle">
+      {list.map((a, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && !APPARATUS_LABELS[a] && <span>,</span>}
+          <ApparatusMark value={a} size={16} />
+        </React.Fragment>
+      ))}
+    </span>
+  );
+}
+
+// v0.9.63: a TELJES verseny lezárása / újranyitása (minden kategória, minden sor):
+// lezáráskor a pontok véglegesek és ahol nincs kézi helyezés, oda a számolt
+// kerül (placements.js); újranyitáskor csak a számolt helyezések törlődnek.
+async function setCompetitionFinalized(supabase, competitionId, finalize) {
+  const { data: days, error: dErr } = await supabase
+    .from('competition_days').select('id').eq('competition_id', competitionId);
+  if (dErr) throw dErr;
+  const dayIds = (days || []).map(d => d.id);
+  let catIds = [];
+  if (dayIds.length > 0) {
+    const { data: cats, error: cErr } = await supabase
+      .from('competition_categories').select('id').in('competition_day_id', dayIds);
+    if (cErr) throw cErr;
+    catIds = (cats || []).map(c => c.id);
+  }
+  if (catIds.length > 0) {
+    const { data: ents, error: eErr } = await supabase
+      .from('startlist_entries').select('id').in('competition_category_id', catIds);
+    if (eErr) throw eErr;
+    const entIds = (ents || []).map(e => e.id);
+    let stamp = { is_provisional: true, finalized_by: null, finalized_at: null };
+    if (finalize) {
+      const { data: u } = await supabase.auth.getUser();
+      stamp = { is_provisional: false, finalized_by: u?.user?.id || null, finalized_at: new Date().toISOString() };
+    }
+    for (let i = 0; i < entIds.length; i += 150) {
+      const { error } = await supabase.from('results').update(stamp).in('startlist_entry_id', entIds.slice(i, i + 150));
+      if (error) throw error;
+    }
+    const { error: aaErr } = await supabase.from('all_around_results').update(stamp).in('competition_category_id', catIds);
+    if (aaErr) throw aaErr;
+    if (finalize) await fillAutoPlacements(supabase, catIds);
+    else await clearAutoPlacements(supabase, catIds);
+  }
+  const { error } = await supabase.from('competitions').update({ is_finalized: finalize }).eq('id', competitionId);
+  if (error) throw error;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -529,6 +584,20 @@ function CompetitionEditor({ supabase, competition, canManage, userRole, onClose
                 }}
               />
             )}
+            {/* v0.9.63: lezárt versenynél az adatlap alatt a csepeli eredmények */}
+            {tab === 'basics' && current?.is_finalized && (
+              <div className="mt-5 pt-4 border-t" style={{ borderColor: COLORS.gray200 }}>
+                <div className="font-semibold text-sm mb-3 flex items-center gap-2" style={{ color: COLORS.red }}>
+                  <Award className="w-4 h-4" /> Csepeli eredmények
+                </div>
+                <CsepeliResultsTab
+                  supabase={supabase}
+                  userRole={userRole}
+                  competition={current}
+                  onCompetitionChange={(updated) => setCurrent(updated)}
+                />
+              </div>
+            )}
             {tab === 'days' && current && (
               <DaysTab
                 supabase={supabase}
@@ -583,6 +652,28 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
   const [newVenue, setNewVenue] = useState({ name: '', city: '', country: 'Magyarország' });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const isFinalized = !!competition?.is_finalized;
+
+  // v0.9.63: teljes verseny lezárása / újranyitása (megerősítéssel)
+  const toggleFinalized = async () => {
+    const finalize = !isFinalized;
+    const msg = finalize
+      ? 'Lezárod a versenyt? Minden pont végleges lesz, és ahol nincs kézi helyezés, oda a pontból számolt kerül. (Újranyitható.)'
+      : 'Újranyitod a versenyt? A pontok ismét ideiglenesek és szerkeszthetők lesznek; a kézzel beírt helyezések megmaradnak.';
+    if (!window.confirm(msg)) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await setCompetitionFinalized(supabase, competition.id, finalize);
+      setForm(f => ({ ...f, is_finalized: finalize }));
+      if (onSaved) onSaved({ ...competition, is_finalized: finalize });
+    } catch (err) {
+      setError((finalize ? 'Lezárás' : 'Újranyitás') + ' sikertelen: ' + err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   
   useEffect(() => {
     supabase
@@ -645,7 +736,7 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
         start_date: form.start_date,
         end_date: endDate,
         importance: form.importance,
-        is_finalized: form.is_finalized
+        is_finalized: isFinalized // v0.9.63: az állapotot csak a lezárás / újranyitás gomb váltja
       };
       
       let result;
@@ -683,6 +774,46 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
       setSaving(false);
     }
   };
+
+  // v0.9.63 (Sándor): lezárt verseny = adatlap, mentés nélkül; újranyitás után
+  // ugyanaz a szerkeszthető nézet, mint élő versenynél
+  if (!isNew && isFinalized) {
+    const v = competition.venue;
+    const venueText = v ? `${v.name}${v.city ? ` (${v.city}${v.country && v.country !== 'Magyarország' ? `, ${v.country}` : ''})` : ''}` : '—';
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border-2 px-3 py-2.5 flex items-center gap-2 flex-wrap"
+             style={{ borderColor: '#15803D', backgroundColor: '#F0FDF4' }}>
+          <Lock className="w-4 h-4 flex-shrink-0" style={{ color: '#15803D' }} />
+          <div className="flex-1 min-w-[180px]">
+            <div className="text-sm font-semibold" style={{ color: '#15803D' }}>Lezárt verseny</div>
+            <div className="text-xs text-gray-600">Az eredmények véglegesek. Módosításhoz előbb nyisd újra a versenyt.</div>
+          </div>
+          {canManage && (
+            <button onClick={toggleFinalized} disabled={saving}
+                    className="px-3 py-2 rounded-lg border text-sm font-medium bg-white hover:bg-gray-50 flex items-center gap-1.5 disabled:opacity-50"
+                    style={{ borderColor: COLORS.gray300 || '#D1D5DB', color: COLORS.gray700 }}>
+              {saving ? <Loader className="w-4 h-4 animate-spin" /> : <Unlock className="w-4 h-4" />} Verseny újranyitása
+            </button>
+          )}
+        </div>
+        <div className="rounded-lg border divide-y text-sm" style={{ borderColor: COLORS.gray200 }}>
+          {[
+            ['Verseny neve', competition.name],
+            ['Dátum', formatDateRange(competition.start_date, competition.end_date)],
+            ['Komolyság', importanceBadge(competition.importance)],
+            ['Helyszín', venueText]
+          ].map(([k, val]) => (
+            <div key={k} className="flex gap-3 px-3 py-2">
+              <div className="w-28 flex-shrink-0 text-gray-500">{k}</div>
+              <div className="flex-1 min-w-0 font-medium" style={{ color: COLORS.blueDark }}>{val}</div>
+            </div>
+          ))}
+        </div>
+        <ErrorBox>{error}</ErrorBox>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -782,17 +913,14 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
         )}
       </Field>
       
-      {!isNew && canManage && (
-        <Field label="Lezárt verseny">
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={form.is_finalized}
-              onChange={(e) => setForm({...form, is_finalized: e.target.checked})}
-              style={{ accentColor: COLORS.blue }}
-            />
-            <span>{form.is_finalized ? 'Lezárt (eredmények véglegesek)' : 'Élő/szerkeszthető'}</span>
-          </label>
+      {/* v0.9.63: az állapot csak kijelzés — váltani a lenti gombbal lehet */}
+      {!isNew && (
+        <Field label="Állapot">
+          <div className="inline-flex items-center gap-2 text-sm px-3 py-1.5 rounded-full font-medium"
+               style={{ backgroundColor: '#DBEAFE', color: '#1D4ED8' }}>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: '#1D4ED8' }} />
+            Élő verseny — pontozható, szerkeszthető
+          </div>
         </Field>
       )}
       
@@ -813,32 +941,12 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
               </SecondaryButton>
               
               <button
-                onClick={async () => {
-                  const newState = !form.is_finalized;
-                  if (newState && !window.confirm('Biztos lezárod a versenyt? Az eredmények véglegesek lesznek. (Visszavonható.)')) return;
-                  if (!newState && !window.confirm('Biztos visszanyitod a versenyt? Az eredmények ismét szerkeszthetők lesznek.')) return;
-                  setForm({...form, is_finalized: newState});
-                  // Azonnal mentjük is
-                  setSaving(true);
-                  try {
-                    const { error } = await supabase
-                      .from('competitions')
-                      .update({ is_finalized: newState })
-                      .eq('id', competition.id);
-                    if (error) throw error;
-                    if (onSaved) onSaved({...competition, is_finalized: newState});
-                  } catch (err) {
-                    setError('Mentés sikertelen: ' + err.message);
-                    setForm({...form, is_finalized: !newState});
-                  } finally {
-                    setSaving(false);
-                  }
-                }}
+                onClick={toggleFinalized}
                 disabled={saving}
                 className="px-4 py-2 rounded-lg font-medium text-white text-sm flex items-center gap-1.5 disabled:opacity-50"
-                style={{ backgroundColor: form.is_finalized ? COLORS.gray700 : '#15803D' }}
+                style={{ backgroundColor: '#15803D' }}
               >
-                {form.is_finalized ? <><Edit2 className="w-4 h-4" /> Verseny újranyitása</> : <><Check className="w-4 h-4" /> Verseny lezárása</>}
+                <Lock className="w-4 h-4" /> Verseny lezárása
               </button>
             </>
           )}
@@ -1071,7 +1179,7 @@ function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpen
         <div className="text-xs text-gray-500 mt-0.5">
           Szerek: {(category.apparatuses || []).length === 0 
             ? <span className="italic">— nincs megadva —</span>
-            : (category.apparatuses || []).map(a => APPARATUS_LABELS[a] || a).join(', ')}
+            : <ApparatusList apparatuses={category.apparatuses} />}
         </div>
       </div>
       
@@ -1639,7 +1747,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
           <div className="text-xs text-gray-500 flex flex-wrap gap-x-3">
             <span>{isTeam ? 'Csapat' : 'Egyéni'}</span>
             {category.time_range && <span>{category.time_range}</span>}
-            <span>Szerek: {(category.apparatuses || []).map(a => APPARATUS_LABELS[a] || a).join(', ') || '—'}</span>
+            <span className="inline-flex items-center gap-1">Szerek: <ApparatusList apparatuses={category.apparatuses} /></span>
           </div>
         </div>
         {entries && entries.length > 0 && (
@@ -1723,9 +1831,7 @@ function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onR
     : entry.external_name;
   
   const club = isCsepeli ? 'Csepeli RG Club' : (entry.external_club || '');
-  const apparatus = entry.apparatus 
-    ? entry.apparatus.split('+').map(a => APPARATUS_LABELS[a.trim()] || a.trim()).join(' + ')
-    : <span className="italic text-gray-500">Választott</span>;
+  const apparatus = <ApparatusMark value={entry.apparatus} size={20} fallback={<span className="italic text-gray-500">Választott</span>} />; // v0.9.63
   
   return (
     <div 
@@ -3917,8 +4023,8 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                     {/* Szerek táblázat */}
                     <div className="space-y-2">
                       {sortedEntries.map(entry => {
-                        const apparatusLabel = entry.apparatus 
-                          ? (APPARATUS_LABELS[entry.apparatus] || entry.apparatus) 
+                        const apparatusLabel = entry.apparatus
+                          ? <span className="inline-flex items-center gap-1"><ApparatusMark value={entry.apparatus} size={18} /> {APPARATUS_LABELS[entry.apparatus] || entry.apparatus}</span>
                           : 'Választott';
                         const vals = editValues[entry.id] || {};
                         const onChange = (field, value) => setEditValues(prev => ({

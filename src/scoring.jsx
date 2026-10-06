@@ -17,6 +17,7 @@ import {
   Trophy, Star, Edit2, X, Check, RefreshCw, Award
 } from 'lucide-react';
 import { formatCompetitorName } from './names';
+import { ApparatusMark } from './apparatusIcons';
 import { fillAutoPlacements, clearAutoPlacements, manualPlacementOf } from './placements';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -144,6 +145,28 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   // v0.9.37: szülő pontozhat AKTÍV versenyen is (verseny közben segítségként).
   // Verseny lezárása után már csak edző írhat. Sándor 2026.05.17 #6.
   const canInputProvisional = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo', 'szulo'].includes(userRole);
+
+  // v0.9.63 (Sándor): amíg a pontozás nyitva van, a telefon/tablet kijelzője ne
+  // sötétedjen el (Screen Wake Lock). Háttérbe kerüléskor a böngésző elengedi —
+  // visszatéréskor újra kérjük. Ahol nem támogatott, csendben nem csinál semmit.
+  useEffect(() => {
+    if (!('wakeLock' in navigator)) return undefined;
+    let lock = null;
+    let active = true;
+    const request = async () => {
+      try {
+        if (active && document.visibilityState === 'visible') lock = await navigator.wakeLock.request('screen');
+      } catch (_) { /* pl. energiatakarékos mód — nem hiba */ }
+    };
+    const onVisible = () => { if (document.visibilityState === 'visible') request(); };
+    request();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      active = false;
+      document.removeEventListener('visibilitychange', onVisible);
+      if (lock) lock.release().catch(() => {});
+    };
+  }, []);
 
   // ─── Adatok betöltése ─────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -691,7 +714,7 @@ function StartlistScoringView({
             ? formatCompetitorName(entry.competitors)
             : entry.external_name;
           const displayClub = entry.competitors ? 'Csepeli RG Club' : entry.external_club;
-          const apparatusLabel = entry.apparatus ? formatApparatus(entry.apparatus) : 'Választott';
+          const apparatusMark = <ApparatusMark value={entry.apparatus} size={16} fallback={<span className="italic">Választott</span>} />;
           const rank = calculatedRankings[entry.id];
           const hasScore = r && r.score_total !== null && r.score_total !== undefined;
 
@@ -717,31 +740,34 @@ function StartlistScoringView({
                 ...(dns ? { backgroundColor: COLORS.gray100, opacity: 0.7 } : {})
               }}
             >
-              {/* Helyezés-jelvény (amíg nincs helyezés: a rajtszám) */}
-              {rank ? (
-                <div className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold" style={rankStyle(rank)}>
-                  {rank}.
-                </div>
-              ) : (
-                <div className="w-9 h-9 flex-shrink-0 flex items-center justify-center text-sm text-gray-400">
-                  {entry.start_order}.
-                </div>
-              )}
+              {/* v0.9.63: a rajtszám mindig a helyén marad — a startlista sorrendje nem változik */}
+              <div className="w-8 flex-shrink-0 text-center text-sm font-medium text-gray-500 tabular-nums">
+                {entry.start_order}.
+              </div>
 
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium flex items-center gap-1 min-w-0">
                   {isCsepeli && <Star className="w-3 h-3 flex-shrink-0" style={{ color: COLORS.red, fill: COLORS.red }} />}
                   <span className={`truncate ${dns ? 'line-through' : ''}`} style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
                 </div>
-                <div className="text-xs text-gray-600 truncate">
-                  {displayClub} · {apparatusLabel}
-                  {entry.performance_number ? ` · ${entry.performance_number}. bem.` : ''}
+                <div className="text-xs text-gray-600 flex items-center gap-1 min-w-0">
+                  <span className="truncate">{displayClub}</span>
+                  <span className="flex-shrink-0">·</span>
+                  {apparatusMark}
+                  {entry.performance_number ? <span className="flex-shrink-0">· {entry.performance_number}. bem.</span> : null}
                 </div>
                 {details.length > 0 && (
                   <div className="text-xs text-gray-500 truncate">{details.join(' · ')}</div>
                 )}
               </div>
 
+              {/* v0.9.63: a helyezés a pontszám ELŐTT */}
+              {rank && !dns && (
+                <div className="w-9 h-9 flex-shrink-0 rounded-full flex items-center justify-center text-sm font-bold" style={rankStyle(rank)}
+                     title="Helyezés">
+                  {rank}.
+                </div>
+              )}
               <div className="text-right flex-shrink-0">
                 {dns ? (
                   <div className="text-xs font-medium text-gray-600">Nem indult</div>
@@ -838,7 +864,8 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
               <span className="truncate" style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
             </div>
             <div className="text-xs text-gray-600 truncate">
-              {displayClub}{entry.apparatus ? ` · ${formatApparatus(entry.apparatus)}` : ''}
+              {displayClub}
+              {entry.apparatus ? <> · <ApparatusMark value={entry.apparatus} size={16} /> {formatApparatus(entry.apparatus)}</> : ''}
               {entry.performance_number ? ` · ${entry.performance_number}. bem.` : ''}
             </div>
           </div>
@@ -1018,9 +1045,7 @@ function RankingsView({ entries, results, calculatedRankings, userRole }) {
           const displayClub = entry.competitors 
             ? 'Csepeli RG Club'
             : entry.external_club;
-          const apparatusLabel = entry.apparatus 
-            ? formatApparatus(entry.apparatus) 
-            : '—';
+          const apparatusLabel = <ApparatusMark value={entry.apparatus} size={16} fallback="—" />;
 
           return (
             <div 
@@ -1041,7 +1066,7 @@ function RankingsView({ entries, results, calculatedRankings, userRole }) {
                     <span className="text-xs font-normal text-gray-500">· {entry.performance_number}. bem.</span>
                   )}
                 </div>
-                <div className="text-xs text-gray-500">{displayClub} · {apparatusLabel}</div>
+                <div className="text-xs text-gray-500 flex items-center gap-1">{displayClub} · {apparatusLabel}</div>
                 <div className="text-xs text-gray-600 mt-1 flex flex-wrap gap-2">
                   {r.score_d !== null && r.score_d !== undefined && <span>D: {formatNum(r.score_d)}</span>}
                   {r.score_a !== null && r.score_a !== undefined && <span>A: {formatNum(r.score_a)}</span>}
