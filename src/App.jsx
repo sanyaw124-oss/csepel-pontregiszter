@@ -17,6 +17,7 @@ import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
 import { formatCompetitorName, HU_COLLATOR, huSortByNickname } from './names';
 import { usePridePhotoUrl } from './pridePhoto';
+import { ClubStatsWidget } from './clubStats';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -913,7 +914,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.64 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.65 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1201,6 +1202,13 @@ function DashboardView({ setActiveView }) {
           <div className="mt-4">
             <ClubRankingsWidget />
           </div>
+
+          {/* v0.9.65: klubstatisztika — csak az edzői szerepköröknek */}
+          {['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(profile.role) && (
+            <div className="mt-4">
+              <ClubStatsWidget supabase={supabase} />
+            </div>
+          )}
       </>
 
       {/* Ideiglenes profilok - csak admin */}
