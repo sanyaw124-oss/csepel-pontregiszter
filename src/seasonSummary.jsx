@@ -243,6 +243,15 @@ export function SeasonSummaryButton({ supabase, competitor, defaultYear, variant
   const [open, setOpen] = useState(false);
   const [year, setYear] = useState(defaultYear || currentYear);
   useEffect(() => { if (defaultYear) setYear(defaultYear); }, [defaultYear]);
+
+  // v0.9.68 (Sándor): a mentett PDF neve = a versenyző neve + a választott év
+  // (a böngésző a lap címéből adja a fájlnevet); bezáráskor visszaáll
+  useEffect(() => {
+    if (!open || !competitor?.full_name) return undefined;
+    const prev = document.title;
+    document.title = `${competitor.full_name} ${year}`;
+    return () => { document.title = prev; };
+  }, [open, year, competitor?.full_name]);
   if (!competitor?.id) return null;
 
   return (
