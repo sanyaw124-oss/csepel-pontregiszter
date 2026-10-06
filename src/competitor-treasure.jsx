@@ -15,6 +15,8 @@ import {
   CompetitorTeamResults,
   CompetitorHistoricalResults
 } from './admin';
+import { BadgesPanel } from './badges';
+import { StoriesPanel } from './stories';
 
 const COLORS = {
   purpleDeep: '#831843',
@@ -358,6 +360,10 @@ export default function CompetitorTreasureView({ supabase, profile }) {
           </div>
         )}
       </div>
+
+      {/* ─── v0.9.64: KITŰZŐK + RÓLAM ─── */}
+      <BadgesPanel supabase={supabase} competitorId={competitor.id} title="Kitűzőim" />
+      <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite />
 
       {/* ─── ÉVENKÉNTI ÖSSZESÍTŐ (admin.jsx komponensei) ─── */}
       <CompetitorYearlyStats

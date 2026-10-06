@@ -10,6 +10,8 @@ import { formatCompetitorName, formatCompetitorShortName, huSortByNickname } fro
 // sem a szülő, sem az edző oldalán amikor megnyitotta a gyerek profilját.
 import { CompetitorProgressChart } from './progress-chart';
 import { SelfTrainingReport, TrainingSummary } from './training';
+import { BadgesPanel } from './badges';
+import { StoriesPanel } from './stories';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -912,6 +914,14 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         {/* Edzések - csak meglévő versenyzőnél */}
         {!isNew && competitor?.id && (
           <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* v0.9.64: kitűzők + kedvencek és célok */}
+        {!isNew && competitor?.id && (
+          <BadgesPanel supabase={supabase} competitorId={competitor.id} />
+        )}
+        {!isNew && competitor?.id && (
+          <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite title="Kedvencei és céljai" />
         )}
 
         <ErrorBox>{error}</ErrorBox>
@@ -2157,6 +2167,9 @@ function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, 
       {/* Csapat-eredmények */}
       <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} hideScores={hideScores} />
 
+      {/* v0.9.64: kedvencek és célok — a klubtársak is látják */}
+      <StoriesPanel supabase={supabase} competitorId={competitor.id} title="Kedvencei és céljai" />
+
       {/* Korábbi eredmények - publikus nézet
           v0.9.46: szülőnél csak saját gyereknél lehet "+ Új eredmény"-t hozzáadni */}
       <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={effectiveUserRole} hideScores={hideScores} />
@@ -2392,6 +2405,14 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* Edzések */}
         {competitor?.id && (
           <CompetitorTrainingHistory key={trainingVersion} supabase={supabase} competitorId={competitor.id} />
+        )}
+
+        {/* v0.9.64: kitűzők + kedvencek és célok (a szülő is beírhatja a gyerek helyett) */}
+        {competitor?.id && (
+          <BadgesPanel supabase={supabase} competitorId={competitor.id} reloadKey={trainingVersion} />
+        )}
+        {competitor?.id && (
+          <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite title="Kedvencei és céljai" />
         )}
 
         {/* Edzői privát megjegyzések - szülő csak olvashat */}
