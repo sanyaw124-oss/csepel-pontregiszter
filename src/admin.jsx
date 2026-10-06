@@ -12,6 +12,7 @@ import { CompetitorProgressChart } from './progress-chart';
 import { SelfTrainingReport, TrainingSummary } from './training';
 import { BadgesPanel } from './badges';
 import { CompetitorStatsPanel } from './stats';
+import { SeasonSummaryButton } from './seasonSummary';
 import { StoriesPanel } from './stories';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
@@ -900,6 +901,9 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         {/* v0.9.65: statisztika (fejlődés, D/A/E, csúcsok, edzés + eredmény) */}
         {!isNew && competitor?.id && (
           <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
+        )}
+        {!isNew && competitor?.id && (
+          <SeasonSummaryButton supabase={supabase} competitor={competitor} />
         )}
 
         {/* Csapat-eredmények - csak meglévő versenyzőnél */}
@@ -2394,6 +2398,9 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* v0.9.65: statisztika */}
         {competitor?.id && (
           <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
+        )}
+        {competitor?.id && (
+          <SeasonSummaryButton supabase={supabase} competitor={competitor} />
         )}
 
         {/* Csapat-eredmények */}

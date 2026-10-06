@@ -60,8 +60,9 @@ export async function loadBadgeData(supabase, competitorId) {
   const comps = new Map();         // versenyenként a legjobb helyezés (dobogóhoz)
   const notePlacement = (key, name, date, placement) => {
     if (!date) return;
-    const c = comps.get(key) || { name, date, best: null };
+    const c = comps.get(key) || { name, date, best: null, medals: [] };
     const p = parseInt(placement, 10);
+    if (p >= 1 && p <= 3) c.medals.push(p);
     if (p > 0 && (c.best === null || p < c.best)) c.best = p;
     comps.set(key, c);
   };

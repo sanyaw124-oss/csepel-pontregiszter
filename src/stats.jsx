@@ -28,7 +28,7 @@ const f3 = (v) => (v === null || v === undefined ? '—' : v.toFixed(3));
 const f2 = (v) => (v === null || v === undefined ? '—' : v.toFixed(2));
 const huDate = (d) => (d ? d.replace(/-/g, '.') + '.' : '');
 
-async function loadStatsData(supabase, competitorId) {
+export async function loadStatsData(supabase, competitorId) {
   const [res, hist, att] = await Promise.all([
     supabase.from('results')
       .select(`apparatus, score_total, score_d, score_a, score_e, score_p,
