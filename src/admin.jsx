@@ -2836,6 +2836,12 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
 }
 
 // Egy korábbi eredmény kártyája (megjelenítéshez)
+function HistoricalTeamMembersLine({ item }) {
+  const list = Array.isArray(item.team_members) ? item.team_members : [];
+  if (list.length === 0) return null;
+  return <div className="text-xs text-gray-600 mt-1">👥 Csapattagok: {list.map(m => m.name).join(', ')}</div>;
+}
+
 function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
   const typeLabel = COMPETITION_TYPE_LIST.find(t => t.value === item.competition_type)?.label || item.competition_type;
   const besorolas = VERSENY_BESOROLAS_LIST.find(v => v.value === item.importance)?.label;
@@ -2870,6 +2876,7 @@ function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
             {item.korosztaly && <span>· {item.korosztaly}</span>}
             {item.team_name && <span>· {item.team_name}</span>}
           </div>
+          <HistoricalTeamMembersLine item={item} />
         </div>
         <div className="flex gap-1">
           {onEdit && (
@@ -2957,7 +2964,90 @@ function HistoricalResultCard({ item, onEdit, onDelete, hideScores = false }) {
 }
 
 // Szerkesztő űrlap (új vagy meglévő rekord)
+// v0.9.69: korábbi CSAPAT-eredmény csapattagokkal. A tagok: {competitor_id|null, name}.
+// A tag lehet inaktív versenyző is, vagy profil nélküli név (vendég, régi csapattárs).
+const normCompName = (s) => (s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/\b(19|20)\d\d\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim();
+function smallEditDistance(a, b) {
+  if (Math.abs(a.length - b.length) > 3) return 99;
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  }
+  return d[a.length][b.length];
+}
+const similarCompName = (a, b) => {
+  const x = normCompName(a), y = normCompName(b);
+  if (!x || !y) return false;
+  return x === y || x.includes(y) || y.includes(x) || smallEditDistance(x, y) <= 3;
+};
+const hasTeamResult = (type, results) => type !== 'egyeni'
+  || !!(results?.csapat && (results.csapat.placement || results.csapat.score || results.csapat.perf1 || results.csapat.perf2));
+
+function TeamMembersPicker({ members, onChange, allCompetitors, selfId }) {
+  const [pick, setPick] = useState('');
+  const [guest, setGuest] = useState('');
+  const chosen = new Set(members.map(m => m.competitor_id).filter(Boolean));
+  const options = allCompetitors.filter(c => !chosen.has(c.id));
+  const add = (id) => {
+    const c = allCompetitors.find(x => x.id === id);
+    if (c) onChange([...members, { competitor_id: c.id, name: formatCompetitorName(c) }]);
+    setPick('');
+  };
+  const addGuest = () => {
+    const n = guest.trim();
+    if (!n) return;
+    onChange([...members, { competitor_id: null, name: n }]);
+    setGuest('');
+  };
+  return (
+    <div className="rounded p-2 border-2 space-y-2" style={{ borderColor: '#93C5FD', backgroundColor: '#EFF6FF' }}>
+      <div className="text-xs font-semibold" style={{ color: '#1E40AF' }}>Csapattagok * <span className="font-normal text-gray-600">(kötelező — a bejegyzés náluk is megjelenik)</span></div>
+      <div className="flex flex-wrap gap-1.5">
+        {members.map((m, i) => (
+          <span key={`${m.competitor_id || 'g'}_${i}`} className="text-xs px-2 py-1 rounded-full bg-white border flex items-center gap-1" style={{ borderColor: '#BFDBFE' }}>
+            {m.name}{!m.competitor_id && <span className="text-gray-400"> (profil nélkül)</span>}
+            {m.competitor_id !== selfId && (
+              <button type="button" onClick={() => onChange(members.filter((_, j) => j !== i))} className="ml-0.5 text-gray-400 hover:text-red-600" title="Eltávolítás">×</button>
+            )}
+          </span>
+        ))}
+      </div>
+      <div className="flex gap-1.5 flex-wrap">
+        <select value={pick} onChange={e => add(e.target.value)} className="flex-1 min-w-[180px] text-sm px-2 py-1.5 border border-gray-300 rounded bg-white">
+          <option value="">+ Csapattárs a klubból…</option>
+          {options.map(c => (
+            <option key={c.id} value={c.id}>{formatCompetitorName(c)}{c.is_active === false ? ' (inaktív)' : ''}</option>
+          ))}
+        </select>
+        <input value={guest} onChange={e => setGuest(e.target.value)} placeholder="vagy név profil nélkül"
+               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addGuest(); } }}
+               className="flex-1 min-w-[150px] text-sm px-2 py-1.5 border border-gray-300 rounded" />
+        <button type="button" onClick={addGuest} className="text-xs px-2 py-1.5 rounded border border-gray-300 bg-white hover:bg-gray-50">Hozzáad</button>
+      </div>
+    </div>
+  );
+}
+
 function HistoricalResultForm({ supabase, competitorId, item, existingItems, onSaved, onCancel }) {
+  // v0.9.69: csapattagok
+  const [allCompetitors, setAllCompetitors] = useState([]);
+  const [members, setMembers] = useState(Array.isArray(item?.team_members) ? item.team_members : []);
+  const [dupMatches, setDupMatches] = useState(null); // ismétlés gyanú: a meglévő csapat-bejegyzések
+  const [allowNew, setAllowNew] = useState(false);
+  useEffect(() => {
+    supabase.from('competitors').select('id, full_name, nickname, is_active')
+      .eq('is_club_member', true)
+      .then(({ data }) => {
+        const list = [...(data || [])].sort((a, b) => (a.is_active === false) - (b.is_active === false) || huSortByNickname(a, b));
+        setAllCompetitors(list);
+        const self = list.find(c => c.id === competitorId);
+        if (self) setMembers(prev => prev.some(m => m.competitor_id === competitorId)
+          ? prev : [{ competitor_id: self.id, name: formatCompetitorName(self) }, ...prev]);
+      });
+  }, [supabase, competitorId]);
+
   const [form, setForm] = useState({
     year: item?.year ?? new Date().getFullYear() - 1,
     // v0.9.57: pontos dátum (a fejlődési grafikonhoz); az év ebből számolódik
@@ -3082,6 +3172,28 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
         }
       });
 
+      // v0.9.69: csapateredménynél kötelezőek a csapattagok (a versenyzőn kívül legalább egy)
+      const isTeam = hasTeamResult(type, cleanResults);
+      if (isTeam && members.filter(m => m.competitor_id !== competitorId).length === 0) {
+        throw new Error('Csapateredménynél add meg a csapattagokat is (legalább egy csapattársat)!');
+      }
+
+      // v0.9.69: ismétlés-figyelés — ugyanarra a napra már rögzített, hasonló nevű csapateredmény
+      if (isTeam && !item?.team_group_id && !allowNew && form.competition_date) {
+        const { data: same } = await supabase.from('historical_results')
+          .select('id, competitor_id, competition_name, competition_date, team_name, team_members, team_group_id, results')
+          .eq('competition_date', form.competition_date)
+          .neq('competitor_id', competitorId);
+        const seen = new Set();
+        const matches = (same || []).filter(r => r.results?.csapat && similarCompName(r.competition_name, form.competition_name))
+          .filter(r => { const k = r.team_group_id || r.id; if (seen.has(k)) return false; seen.add(k); return true; });
+        if (matches.length > 0) {
+          setDupMatches(matches);
+          setSaving(false);
+          return;
+        }
+      }
+
       const userResp = await supabase.auth.getUser();
       const userId = userResp.data?.user?.id;
 
@@ -3097,15 +3209,26 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
         team_name: form.team_name || null,
         notes: form.notes || null,
         results: cleanResults,
+        team_members: isTeam ? members : [],
         modified_by: userId,
         modified_at: new Date().toISOString()
       };
+      if (!isTeam) payload.team_group_id = null;
 
+      let savedId = item?.id;
       if (item) {
-        await supabase.from('historical_results').update(payload).eq('id', item.id);
+        const { error: upErr } = await supabase.from('historical_results').update(payload).eq('id', item.id);
+        if (upErr) throw upErr;
       } else {
         payload.created_by = userId;
-        await supabase.from('historical_results').insert(payload);
+        const { data: ins, error: insErr } = await supabase.from('historical_results').insert(payload).select('id').single();
+        if (insErr) throw insErr;
+        savedId = ins.id;
+      }
+      // v0.9.69: a csapatrész a tagoknál is (saját soruk, közös csoport)
+      if (isTeam || item?.team_group_id) {
+        const { error: rpcErr } = await supabase.rpc('sync_historical_team', { p_source: savedId });
+        if (rpcErr) throw new Error('A csapattagokhoz rögzítés nem sikerült: ' + rpcErr.message);
       }
       
       onSaved();
@@ -3314,6 +3437,45 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
             </div>
           )}
         </div>
+
+        {/* v0.9.69: csapattagok — csapateredménynél kötelező */}
+        {hasTeamResult(form.competition_type, form.results) && (
+          <TeamMembersPicker members={members} onChange={setMembers} allCompetitors={allCompetitors} selfId={competitorId} />
+        )}
+
+        {dupMatches && (
+          <div className="rounded p-2 border-2 space-y-2" style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB' }}>
+            <div className="text-sm font-semibold" style={{ color: '#92400E' }}>Ez a csapateredmény már rögzítve lehet:</div>
+            {dupMatches.map(mt => (
+              <div key={mt.id} className="bg-white rounded border p-2 text-xs space-y-1" style={{ borderColor: '#FDE68A' }}>
+                <div className="font-semibold">{mt.competition_date} · {mt.competition_name}{mt.team_name ? ` · ${mt.team_name}` : ''}</div>
+                <div className="text-gray-600">
+                  Helyezés: {mt.results?.csapat?.placement || '—'} · Tagok: {(mt.team_members || []).map(m => m.name).join(', ') || 'nincs megadva'}
+                </div>
+                <button type="button" disabled={saving}
+                        onClick={async () => {
+                          setSaving(true); setError(null);
+                          try {
+                            const self = allCompetitors.find(c => c.id === competitorId);
+                            const { error: jErr } = await supabase.rpc('join_historical_team', {
+                              p_match: mt.id, p_competitor: competitorId,
+                              p_name: self ? formatCompetitorName(self) : '', p_own: item?.id || null
+                            });
+                            if (jErr) throw jErr;
+                            onSaved();
+                          } catch (err) { setError(err.message); setSaving(false); }
+                        }}
+                        className="px-3 py-1 rounded text-white font-medium" style={{ backgroundColor: '#15803D' }}>
+                  Ez az — a versenyzőt hozzáadom ehhez a csapathoz
+                </button>
+              </div>
+            ))}
+            <button type="button" onClick={() => { setAllowNew(true); setDupMatches(null); }}
+                    className="text-xs px-3 py-1 rounded border border-gray-300 bg-white hover:bg-gray-50">
+              Nem, ez egy másik csapat — újként rögzítem (utána nyomd meg a Mentést)
+            </button>
+          </div>
+        )}
 
         <Field label="Megjegyzés (opcionális)">
           <Input
