@@ -1502,7 +1502,7 @@ function NextCompetitionHero() {
   else if (diffDays > 0) dayLabel = `📅 ${diffDays} NAP MÚLVA`;
 
   const importanceLabels = {
-    'fig': 'FIG nemzetközi', 'nemzetkozi': 'Nemzetközi verseny', 'mrgsz_mb': 'Magyar Bajnokság',
+    'fig': 'FIG nemzetközi', 'nemzetkozi': 'Nemzetközi verseny', 'mrgsz_mb': 'Magyar Bajnokság', 'mrgsz_kupa': 'Magyar Kupa',
     'mrgsz_regional': 'Regionális verseny', 'mrgsz_reg': 'Regionális verseny', 'diakolimpia': 'Diákolimpia',
     'club': 'Klubverseny', 'klub': 'Klubverseny', 'egyeb': 'Egyéb verseny'
   };
@@ -2023,6 +2023,7 @@ function ClubRankingsWidget() {
     { key: 'fig', label: 'FIG nemzetközi' },
     { key: 'nemzetkozi', label: 'Nemzetközi' }, // v0.9.56
     { key: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
+    { key: 'mrgsz_kupa', label: 'MRGSZ Magyar Kupa' }, // v0.9.70
     { key: 'mrgsz_regional', label: 'MRGSZ Regionális' },
     { key: 'diakolimpia', label: 'Diákolimpia' },
     { key: 'club', label: 'Klubverseny / Kisverseny' }
@@ -2324,6 +2325,7 @@ function ClubRankingsWidget() {
     if (key === 'fig') return 'FIG';
     if (key === 'nemzetkozi') return 'Nemz.';
     if (key === 'mrgsz_mb') return 'MB';
+    if (key === 'mrgsz_kupa') return 'MK';
     if (key === 'mrgsz_regional') return 'Reg.';
     if (key === 'diakolimpia') return 'Diák';
     if (key === 'club') return 'Klub';

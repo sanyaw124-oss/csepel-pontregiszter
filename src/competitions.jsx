@@ -40,6 +40,7 @@ const COLORS = {
     fig: { bg: '#fef3c7', text: '#92400e', label: 'FIG nemzetközi' },
     nemzetkozi: { bg: '#ffedd5', text: '#9a3412', label: 'Nemzetközi' }, // v0.9.56
     mrgsz_mb: { bg: '#dbeafe', text: '#1e40af', label: 'MRGSZ Magyar Bajnokság' },
+    mrgsz_kupa: { bg: '#e0f2fe', text: '#075985', label: 'MRGSZ Magyar Kupa' }, // v0.9.70
     mrgsz_reg: { bg: '#e0e7ff', text: '#3730a3', label: 'MRGSZ Regionális' },
     diakolimpia: { bg: '#fce7f3', text: '#9d174d', label: 'Diákolimpia' },
     klub: { bg: '#d1fae5', text: '#065f46', label: 'Klubverseny' },
@@ -55,6 +56,7 @@ const IMPORTANCE_OPTIONS = [
   { value: 'fig', label: 'FIG nemzetközi' },
   { value: 'nemzetkozi', label: 'Nemzetközi verseny' }, // v0.9.56
   { value: 'mrgsz_mb', label: 'MRGSZ Magyar Bajnokság' },
+  { value: 'mrgsz_kupa', label: 'MRGSZ Magyar Kupa' }, // v0.9.70
   { value: 'mrgsz_reg', label: 'MRGSZ Regionális verseny' },
   { value: 'diakolimpia', label: 'Diákolimpia' },
   { value: 'klub', label: 'Klubverseny / Kisverseny' },
