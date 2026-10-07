@@ -2806,6 +2806,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
       
       data.days.forEach((day, dayIdx) => {
         (day.categories || []).forEach((cat, catIdx) => {
+          // v0.9.70: csapatkategóriában a sor neve CSAPATNÉV — nem keresünk hozzá versenyzőt
+          if ((cat.type || 'egyeni') === 'csapat') return;
           (cat.startlist || []).forEach((s, entryIdx) => {
             const club = (s.club || '').toLowerCase().trim();
             const isCsepeli = club.includes('csepel') || club === 'csepeli rg club' || club === 'csepel sc';
@@ -3092,7 +3094,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                 start_order: s.order,
                 competitor_id: null,
                 external_name: s.name,
-                external_club: 'Csepeli RG Club (ismeretlen)',
+                external_club: isTeamCategory ? (s.club || 'Csepeli RG Club') : 'Csepeli RG Club (ismeretlen)', // v0.9.70
                 apparatus: s.apparatus || null,
                 performance_number: s.performance || null
               });
