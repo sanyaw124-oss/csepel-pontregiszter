@@ -916,7 +916,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.70 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.71 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -993,12 +993,19 @@ function DashboardView({ setActiveView }) {
         
         if (!mounted) return;
         
-        const parentsResult = await safeQuery(() => supabase
-          .from('profiles')
-          .select('id', { count: 'exact', head: true })
-          .in('role', ['szulo', 'szulo_admin'])
-          .then(({ count, error }) => ({ count: count ?? 0, error }))
+        // v0.9.71: a szülő fiókok SZÁMA mindenkinek (a versenyző / szülő a profilokat
+        // nem olvashatja, ezért eddig 0-t látott) — count_parent_accounts() csak egy számot ad
+        let parentsResult = await safeQuery(() => supabase.rpc('count_parent_accounts')
+          .then(({ data, error }) => ({ count: data ?? 0, error }))
         );
+        if (parentsResult.error) {
+          parentsResult = await safeQuery(() => supabase
+            .from('profiles')
+            .select('id', { count: 'exact', head: true })
+            .in('role', ['szulo', 'szulo_admin'])
+            .then(({ count, error }) => ({ count: count ?? 0, error }))
+          );
+        }
         
         if (!mounted) return;
         
