@@ -12,6 +12,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Search, User, Users } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
 import { CompetitorStatsPanel } from './stats';
+import { CompetitorProgressChart } from './progress-chart';
 import { BadgesPanel } from './badges';
 import { EvaluationEditor } from './evaluation';
 import { SeasonSummaryButton } from './seasonSummary';
@@ -95,6 +96,8 @@ export function StatsView({ supabase, userRole }) {
                                   onSaved={() => setEvalVersion(v => v + 1)} />
               )}
               <SeasonSummaryButton key={`${selected.id}_${evalVersion}`} supabase={supabase} competitor={selected} defaultYear={year} />
+              {/* v0.9.73: fejlődési grafikon az edzőnek itt is */}
+              <CompetitorProgressChart key={`g_${selected.id}`} supabase={supabase} competitorId={selected.id} />
               <CompetitorStatsPanel key={`s_${selected.id}`} supabase={supabase} competitorId={selected.id} />
               <BadgesPanel key={`b_${selected.id}`} supabase={supabase} competitorId={selected.id} />
             </div>

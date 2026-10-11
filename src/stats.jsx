@@ -13,7 +13,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Loader, BarChart3 } from 'lucide-react';
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
+  ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
 import { ApparatusIcon } from './apparatusIcons';
 
@@ -255,18 +255,19 @@ export function CompetitorStatsPanel({ supabase, competitorId }) {
       )}
 
       <Section title={`Edzés és eredmény — ${year} havonta`}
-               hint="Oszlop: edzések száma (edzés, egész napos, tábor). Vonal: az abban a hónapban versenyen elért pontok átlaga.">
+               hint="Kék vonal: edzések száma havonta (edzés, egész napos, tábor; bal tengely). Piros vonal: az abban a hónapban versenyen elért pontok átlaga (jobb tengely).">
         {hasChartData ? (
           <div style={{ width: '100%', height: 220 }}>
             <ResponsiveContainer>
               <ComposedChart data={chart} margin={{ top: 5, right: 5, left: -18, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F3F4F6" />
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis yAxisId="l" allowDecimals={false} tick={{ fontSize: 10 }} />
+                {/* v0.9.73: az edzés is vonal; a tengely legalább 22-ig megy (aki minden nap jár, havi 22 edzés) */}
+                <YAxis yAxisId="l" allowDecimals={false} tick={{ fontSize: 10 }} domain={[0, (max) => Math.max(22, Math.ceil(max))]} />
                 <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10 }} domain={['auto', 'auto']} />
                 <Tooltip formatter={(v, n) => (n === 'Átlagpont' ? Number(v).toFixed(3) : v)} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar yAxisId="l" dataKey="edzes" name="Edzés" fill="#93C5FD" radius={[3, 3, 0, 0]} />
+                <Line yAxisId="l" dataKey="edzes" name="Edzés" stroke="#1D4ED8" strokeWidth={2} dot={{ r: 3 }} />
                 <Line yAxisId="r" dataKey="pont" name="Átlagpont" stroke="#BE123C" strokeWidth={2} connectNulls dot={{ r: 3 }} />
               </ComposedChart>
             </ResponsiveContainer>
