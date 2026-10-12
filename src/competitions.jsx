@@ -11,7 +11,7 @@ import {
   ChevronRight, Search, Trophy, Users as UsersIcon, Edit2, X, Upload, FileText, Check, UserPlus, Award,
   ChevronUp, ChevronDown, UserX, UserCheck, Lock, Unlock
 } from 'lucide-react';
-import { formatCompetitorName, huSortByNickname } from './names';
+import { formatCompetitorName, huSortByNickname, formatStartTime } from './names';
 import { fillAutoPlacements, clearAutoPlacements } from './placements';
 import { ScoringView } from './scoring';
 import { ApparatusMark } from './apparatusIcons';
@@ -1633,7 +1633,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club, 
-          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly, did_not_start,
+          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly, did_not_start, start_time,
           competitor:competitors(id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -1698,11 +1698,14 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
     if (!other) return;
     try {
       const tmp = 100000 + Math.floor(Math.random() * 100000);
+      // v0.9.74: az időpont a HELYHEZ tartozik — cserénél a sorszámmal együtt cserél
       const steps = [
-        [entry.id, tmp], [other.id, entry.start_order], [entry.id, other.start_order]
+        [entry.id, { start_order: tmp }],
+        [other.id, { start_order: entry.start_order, start_time: entry.start_time ?? null }],
+        [entry.id, { start_order: other.start_order, start_time: other.start_time ?? null }]
       ];
-      for (const [id, order] of steps) {
-        const { error: uErr } = await supabase.from('startlist_entries').update({ start_order: order }).eq('id', id);
+      for (const [id, patch] of steps) {
+        const { error: uErr } = await supabase.from('startlist_entries').update(patch).eq('id', id);
         if (uErr) throw uErr;
       }
       load();
@@ -1873,8 +1876,10 @@ function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onR
           </button>
         </div>
       )}
-      <div className="w-8 text-right text-sm font-semibold flex-shrink-0" style={{ color: COLORS.gray700 }}>
-        {entry.start_order}.
+      <div className="w-12 text-right flex-shrink-0">
+        <div className="text-sm font-semibold" style={{ color: COLORS.gray700 }}>{entry.start_order}.</div>
+        {/* v0.9.74: a sor időpontja a startlistáról */}
+        {entry.start_time && <div className="text-[11px] text-gray-500 tabular-nums">{formatStartTime(entry.start_time)}</div>}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
@@ -3042,7 +3047,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                   external_name: null,
                   external_club: null,
                   apparatus: s.apparatus || null,
-                  performance_number: s.performance || null
+                  performance_number: s.performance || null,
+                  start_time: s.time ? String(s.time).trim() : null
                 });
                 continue;
               }
@@ -3084,7 +3090,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                     external_name: null,
                     external_club: null,
                     apparatus: s.apparatus || null,
-                    performance_number: s.performance || null
+                    performance_number: s.performance || null,
+                  start_time: s.time ? String(s.time).trim() : null
                   });
                   continue;
                 }
@@ -3098,7 +3105,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                 external_name: s.name,
                 external_club: isTeamCategory ? (s.club || 'Csepeli RG Club') : 'Csepeli RG Club (ismeretlen)', // v0.9.70
                 apparatus: s.apparatus || null,
-                performance_number: s.performance || null
+                performance_number: s.performance || null,
+                  start_time: s.time ? String(s.time).trim() : null
               });
               continue;
             }
@@ -3110,7 +3118,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
               external_name: s.name,
               external_club: s.club || null,
               apparatus: s.apparatus || null,
-              performance_number: s.performance || null
+              performance_number: s.performance || null,
+                  start_time: s.time ? String(s.time).trim() : null
             });
           }
           

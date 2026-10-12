@@ -27,6 +27,9 @@ export function formatCompetitorShortName(c) {
 // Magyar abc-rendezés: becenév szerint, ha van; különben a teljes név szerint
 export const HU_COLLATOR = new Intl.Collator('hu', { sensitivity: 'base', numeric: true });
 
+// v0.9.74: a startlista-sor időpontja ("9:00:00" → "9:00", "10:42:30" marad)
+export const formatStartTime = (t) => (t ? String(t).trim().replace(/^(\d{1,2}:\d{2}):00$/, '$1') : '');
+
 export const huSortByNickname = (a, b) => {
   const aKey = (a?.nickname || a?.full_name || '').trim();
   const bKey = (b?.nickname || b?.full_name || '').trim();

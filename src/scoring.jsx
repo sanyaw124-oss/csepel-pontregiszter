@@ -16,7 +16,7 @@ import {
   ArrowLeft, Save, Loader, AlertCircle, CheckCircle2, Lock, Unlock,
   Trophy, Star, Edit2, X, Check, RefreshCw, Award
 } from 'lucide-react';
-import { formatCompetitorName } from './names';
+import { formatCompetitorName, formatStartTime } from './names';
 import { ApparatusMark } from './apparatusIcons';
 import { fillAutoPlacements, clearAutoPlacements, manualPlacementOf } from './placements';
 
@@ -193,7 +193,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club,
-          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year, did_not_start,
+          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year, did_not_start, start_time,
           competitors:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -774,8 +774,9 @@ function StartlistScoringView({
               }}
             >
               {/* v0.9.63: a rajtszám mindig a helyén marad — a startlista sorrendje nem változik */}
-              <div className="w-8 flex-shrink-0 text-center text-sm font-medium text-gray-500 tabular-nums">
-                {entry.start_order}.
+              <div className="w-11 flex-shrink-0 text-center tabular-nums">
+                <div className="text-sm font-medium text-gray-500">{entry.start_order}.</div>
+                {entry.start_time && <div className="text-[10px] text-gray-400">{formatStartTime(entry.start_time)}</div>}
               </div>
 
               <div className="flex-1 min-w-0">
@@ -884,7 +885,7 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
         {/* Fejléc */}
         <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <div className="text-xs text-gray-500">{entry.start_order}. rajtszám · {position}</div>
+            <div className="text-xs text-gray-500">{entry.start_order}. rajtszám{entry.start_time ? ` · ${formatStartTime(entry.start_time)}` : ''} · {position}</div>
             <div className="font-semibold flex items-center gap-1 min-w-0">
               {isCsepeli && <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: COLORS.red, fill: COLORS.red }} />}
               <span className="truncate" style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>
