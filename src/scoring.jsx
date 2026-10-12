@@ -774,9 +774,9 @@ function StartlistScoringView({
               }}
             >
               {/* v0.9.63: a rajtszám mindig a helyén marad — a startlista sorrendje nem változik */}
-              <div className="w-11 flex-shrink-0 text-center tabular-nums">
+              <div className="w-14 flex-shrink-0 text-center tabular-nums">
                 <div className="text-sm font-medium text-gray-500">{entry.start_order}.</div>
-                {entry.start_time && <div className="text-[10px] text-gray-400">{formatStartTime(entry.start_time)}</div>}
+                {entry.start_time && <div className="text-xs font-semibold" style={{ color: COLORS.blue }}>{formatStartTime(entry.start_time)}</div>}
               </div>
 
               <div className="flex-1 min-w-0">
@@ -885,7 +885,7 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
         {/* Fejléc */}
         <div className="px-4 pt-3 pb-2 border-b border-gray-100 flex items-start gap-2">
           <div className="flex-1 min-w-0">
-            <div className="text-xs text-gray-500">{entry.start_order}. rajtszám{entry.start_time ? ` · ${formatStartTime(entry.start_time)}` : ''} · {position}</div>
+            <div className="text-xs text-gray-500">{entry.start_order}. rajtszám{entry.start_time ? <> · <span className="font-semibold text-sm" style={{ color: COLORS.blue }}>{formatStartTime(entry.start_time)}</span></> : ''} · {position}</div>
             <div className="font-semibold flex items-center gap-1 min-w-0">
               {isCsepeli && <Star className="w-3.5 h-3.5 flex-shrink-0" style={{ color: COLORS.red, fill: COLORS.red }} />}
               <span className="truncate" style={isCsepeli ? { color: COLORS.red } : {}}>{displayName}</span>

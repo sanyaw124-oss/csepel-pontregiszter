@@ -1876,10 +1876,10 @@ function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onR
           </button>
         </div>
       )}
-      <div className="w-12 text-right flex-shrink-0">
+      <div className="w-14 text-right flex-shrink-0">
         <div className="text-sm font-semibold" style={{ color: COLORS.gray700 }}>{entry.start_order}.</div>
         {/* v0.9.74: a sor időpontja a startlistáról */}
-        {entry.start_time && <div className="text-[11px] text-gray-500 tabular-nums">{formatStartTime(entry.start_time)}</div>}
+        {entry.start_time && <div className="text-xs font-semibold tabular-nums" style={{ color: COLORS.blue }}>{formatStartTime(entry.start_time)}</div>}
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1">
