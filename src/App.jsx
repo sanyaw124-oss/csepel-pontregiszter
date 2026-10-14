@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { 
-  Users, Calendar, Settings, LogOut, User, Building2,
+  Users, Calendar, Settings, LogOut, User, Building2, FileText,
   Check, AlertCircle, Eye, EyeOff,
   Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight, MessageCircle, Lock,
   BarChart3, Loader, Wifi, WifiOff, RefreshCw
@@ -19,6 +19,7 @@ import { formatCompetitorName, HU_COLLATOR, huSortByNickname } from './names';
 import { usePridePhotoUrl } from './pridePhoto';
 import { StatsView } from './statsView';
 import { ClubView } from './club';
+import { DocumentsView } from './documents';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -775,6 +776,7 @@ const NAV_ITEMS = [
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
   { id: 'club', label: 'Egyesület', icon: Building2, roles: 'all' }, // v0.9.78
+  { id: 'documents', label: 'Dokumentumok', icon: FileText, roles: 'all' }, // v0.9.79
   { id: 'stats', label: 'Statisztika', icon: BarChart3, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] }, // v0.9.67
   { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.SZULO] },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO] }
@@ -902,6 +904,7 @@ function AppShell() {
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'stats' && <StatsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'club' && <ClubView supabase={supabase} userRole={profile.role} />}
+        {activeView === 'documents' && <DocumentsView supabase={supabase} profile={profile} />}
         {activeView === 'coach-notes' && <CoachNotesView supabase={supabase} userRole={profile.role} profile={profile} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
@@ -919,7 +922,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.78 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.79 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>

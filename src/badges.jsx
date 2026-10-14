@@ -40,11 +40,11 @@ export async function loadBadgeData(supabase, competitorId) {
         startlist_entry:startlist_entries!inner(competitor_id, did_not_start,
           competition_category:competition_categories!inner(type,
             competition_day:competition_days!inner(
-              competition:competitions!inner(id, name, start_date, is_finalized))))`)
+              competition:competitions!inner(id, name, start_date, is_finalized, importance))))`)
       .eq('startlist_entry.competitor_id', competitorId),
     supabase.from('all_around_results')
       .select(`placement, competition_category:competition_categories!inner(
-          competition_day:competition_days!inner(competition:competitions!inner(id, name, start_date, is_finalized)))`)
+          competition_day:competition_days!inner(competition:competitions!inner(id, name, start_date, is_finalized, importance)))`)
       .eq('competitor_id', competitorId),
     supabase.from('competition_team_members').select('team_id').eq('competitor_id', competitorId),
     supabase.from('historical_results').select('*').eq('competitor_id', competitorId)
@@ -59,9 +59,10 @@ export async function loadBadgeData(supabase, competitorId) {
   const perf = [];                 // egyéni szer-pontok (csúcshoz)
   const comps = new Map();         // versenyenként a legjobb helyezés (dobogóhoz)
   // items: a versenyen elért helyezések (egyéni szer / összetett / csapat), a PDF-hez
-  const notePlacement = (key, name, date, placement, label = null, group = 'egyeni') => {
+  // v0.9.79: importance (versenybesorolás) a Dokumentumok szűrőjéhez
+  const notePlacement = (key, name, date, placement, label = null, group = 'egyeni', importance = null) => {
     if (!date) return;
-    const c = comps.get(key) || { name, date, best: null, medals: [], items: [] };
+    const c = comps.get(key) || { key, name, date, best: null, medals: [], items: [], importance };
     const p = parseInt(placement, 10);
     if (label && p > 0) c.items.push({ label, placement: p, group });
     if (p >= 1 && p <= 3) c.medals.push(p);
@@ -76,22 +77,22 @@ export async function loadBadgeData(supabase, competitorId) {
     const key = 'live_' + comp.id;
     notePlacement(key, comp.name, comp.start_date, r.placement,
       se.competition_category.type === 'csapat' ? 'Csapat' : (APP_NAMES[r.apparatus] || r.apparatus || 'Szer'),
-      se.competition_category.type === 'csapat' ? 'csapat' : 'egyeni');
+      se.competition_category.type === 'csapat' ? 'csapat' : 'egyeni', comp.importance);
     if (se.competition_category.type !== 'csapat' && APP_KEYS.includes(r.apparatus) && num(r.score_total) !== null) {
       perf.push({ date: comp.start_date, apparatus: r.apparatus, score: num(r.score_total), comp: comp.name });
     }
   });
   (aa.data || []).forEach(a => {
     const comp = a.competition_category?.competition_day?.competition;
-    if (comp && comp.is_finalized) notePlacement('live_' + comp.id, comp.name, comp.start_date, a.placement, 'Összetett', 'egyeni');
+    if (comp && comp.is_finalized) notePlacement('live_' + comp.id, comp.name, comp.start_date, a.placement, 'Összetett', 'egyeni', comp.importance);
   });
   const teamIds = (members.data || []).map(m => m.team_id).filter(Boolean);
   if (teamIds.length > 0) {
     const { data: teams, error } = await supabase.from('competition_teams')
-      .select('name, placement, competition:competition_id(id, name, start_date, is_finalized)').in('id', teamIds);
+      .select('name, placement, competition:competition_id(id, name, start_date, is_finalized, importance)').in('id', teamIds);
     if (error) throw error;
     (teams || []).forEach(t => {
-      if (t.competition?.is_finalized) notePlacement('live_' + t.competition.id, t.competition.name, t.competition.start_date, t.placement, `Csapat${t.name ? ` (${t.name})` : ''}`, 'csapat');
+      if (t.competition?.is_finalized) notePlacement('live_' + t.competition.id, t.competition.name, t.competition.start_date, t.placement, `Csapat${t.name ? ` (${t.name})` : ''}`, 'csapat', t.competition.importance);
     });
   }
   (hist.data || []).forEach(h => {
@@ -101,7 +102,7 @@ export async function loadBadgeData(supabase, competitorId) {
       if (!(parseInt(r[k]?.placement, 10) > 0)) return; // v0.9.77: helyezés nélkül nem számít
       notePlacement('hist_' + h.id, h.competition_name, date, r[k]?.placement,
         APP_NAMES[k] || (k === 'osszetett' ? 'Összetett' : (k === 'csapat' ? `Csapat${h.team_name ? ` (${h.team_name})` : ''}` : k)),
-        k === 'csapat' ? 'csapat' : 'egyeni');
+        k === 'csapat' ? 'csapat' : 'egyeni', h.importance);
       if (APP_KEYS.includes(k) && num(r[k]?.score) !== null) {
         perf.push({ date, apparatus: k, score: num(r[k].score), comp: h.competition_name });
       }
