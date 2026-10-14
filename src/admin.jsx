@@ -1444,7 +1444,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
 function CredentialsPopup({ creds, onClose }) {
   const [copied, setCopied] = useState(false);
   
-  const copyText = `Csepel RG Klub Pontregiszter — Belépési adatok\n\nNév: ${creds.name}\nEmail: ${creds.email}\nJelszó: ${creds.password}\n\nLink: https://csepel-pontregiszter.vercel.app\n\nKérjük első belépéskor változtasd meg a jelszót!`;
+  const copyText = `Csepel RG Klub Pontregiszter — Belépési adatok\n\nNév: ${creds.name}\nEmail: ${creds.email}\nJelszó: ${creds.password}\n\nLink: https://csepel-pontregiszter.vercel.app\n\nA jelszót őrizd meg biztonságos helyen. Ha elfelejted, az edző tud újat adni.`; // v0.9.76: a jelszót a felhasználó maga nem tudja megváltoztatni
 
   const copy = () => {
     navigator.clipboard.writeText(copyText);
