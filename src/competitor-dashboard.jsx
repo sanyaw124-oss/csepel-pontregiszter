@@ -245,7 +245,7 @@ function MySelfBlock({ supabase, profile }) {
       <div className="text-center mb-4">
         <div className="flex justify-center mb-2">
           <div className="rounded-full p-1" style={{ background: 'linear-gradient(135deg, #F472B6, #A78BFA)' }}>
-            <div className="rounded-full bg-white p-0.5">
+            <div className="rounded-full bg-white flex items-center justify-center overflow-hidden" style={{ width: 124, height: 124 }}>
               <AvatarImage url={photo.url} emoji={competitor.avatar_emoji || '🎀'} size={120} />
             </div>
           </div>
