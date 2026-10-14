@@ -241,10 +241,28 @@ function MySelfBlock({ supabase, profile }) {
     <div className="rounded-3xl p-4 mb-6 mx-auto w-full" style={{
       background: 'linear-gradient(135deg, #FCE4EC 0%, #EDE9FE 100%)'
     }}>
-      {/* Üdvözlés napszak szerint */}
+      {/* v0.9.77: fejléc egyben — nagy kép középen, alatta köszöntés, név, adatok, napi idézet */}
       <div className="text-center mb-4">
+        <div className="flex justify-center mb-2">
+          <div className="rounded-full p-1" style={{ background: 'linear-gradient(135deg, #F472B6, #A78BFA)' }}>
+            <div className="rounded-full bg-white p-0.5">
+              <AvatarImage url={photo.url} emoji={competitor.avatar_emoji || '🎀'} size={120} />
+            </div>
+          </div>
+        </div>
         <div className="text-2xl font-bold" style={{ color: '#BE185D' }}>
           {greeting.text} <span className="text-xl">{greeting.emoji}</span>
+        </div>
+        <div className="text-base font-bold mt-1" style={{ color: '#5B21B6' }}>
+          {competitor.nickname ? `"${competitor.nickname}" ` : ''}{competitor.full_name}
+        </div>
+        <div className="text-xs" style={{ color: '#5B21B6' }}>
+          {competitor.kategoria} · {competitor.korosztaly || 'Versenyző'}
+          {competitor.birth_year ? ` · ${new Date().getFullYear() - competitor.birth_year} éves` : ''}
+          {' · '}Csepel RG Klub ★ csapat tagja
+        </div>
+        <div className="text-sm italic mt-2" style={{ color: '#831843' }}>
+          💭 "{getTodaysQuote()}"
         </div>
       </div>
 
@@ -350,25 +368,6 @@ function MySelfBlock({ supabase, profile }) {
         </div>
       )}
 
-      {/* Magamról kártya */}
-      <div className="rounded-2xl p-4 text-center" style={{
-        background: 'linear-gradient(135deg, #DDD6FE 0%, #C7D2FE 100%)'
-      }}>
-        <div className="mb-1 flex justify-center">
-          <AvatarImage url={photo.url} emoji={competitor.avatar_emoji || '🎀'} size={56} />
-        </div>
-        <div className="text-sm font-bold" style={{ color: '#5B21B6' }}>
-          {competitor.nickname ? `"${competitor.nickname}" ` : ''}{competitor.full_name}
-        </div>
-        <div className="text-xs" style={{ color: '#5B21B6' }}>
-          {competitor.kategoria} · {competitor.korosztaly || 'Versenyző'}
-          {competitor.birth_year ? ` · ${new Date().getFullYear() - competitor.birth_year} éves` : ''}
-        </div>
-        <div className="text-xs text-gray-600 mt-1">Csepel RG Klub ★ csapat tagja</div>
-        <div className="text-xs italic mt-2" style={{ color: '#831843' }}>
-          💭 "{getTodaysQuote()}"
-        </div>
-      </div>
     </div>
   );
 }
