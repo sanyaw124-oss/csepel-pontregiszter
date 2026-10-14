@@ -487,6 +487,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         birth_date: form.birth_date,
         birth_year: birthYear,
         competing_since: form.competing_since || null,
+        license_number: (form.license_number || '').trim().toUpperCase() || null, // v0.9.75
         kategoria: form.kategoria,
         korosztaly: form.korosztaly,
         email: (form.email || '').trim() || null,
@@ -675,6 +676,16 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
             onChange={(e) => setForm({...form, birth_date: e.target.value})}
             max={new Date().toISOString().split('T')[0]}
             min="2000-01-01"
+          />
+        </Field>
+
+        {/* v0.9.75: MRGSZ versenyengedély száma (az éves listáról) */}
+        <Field label="MRGSZ versenyengedély száma">
+          <Input
+            type="text"
+            value={form.license_number || ''}
+            onChange={(e) => setForm({...form, license_number: e.target.value})}
+            placeholder="pl. MRGSZ019788A26"
           />
         </Field>
 
