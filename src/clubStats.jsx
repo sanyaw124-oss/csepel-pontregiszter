@@ -228,6 +228,8 @@ export function ClubStatsWidget({ supabase }) {
         medalRows.length === 0 ? (
           <div className="text-xs text-gray-500 italic">{year}-ben még nincs érem lezárt versenyről.</div>
         ) : (
+          <>
+          <div className="text-xs text-gray-500 mb-2">Csak egyéni érmek (szer + összetett) a választott évben — a csapatérem itt nem számít, hogy egy csapat dobogója ne számítson annyiszor, ahány tagja van.</div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-gray-500">
@@ -250,6 +252,7 @@ export function ClubStatsWidget({ supabase }) {
               ))}
             </tbody>
           </table>
+          </>
         )
       )}
 

@@ -22,6 +22,7 @@
 import { useEffect, useState } from 'react';
 import { Loader, AlertCircle } from 'lucide-react';
 import { useAvatarUrl, AvatarImage } from './avatar';
+import { loadBadgeData } from './badges';
 
 // HELPER
 function getGreeting(name) {
@@ -140,20 +141,25 @@ function MySelfBlock({ supabase, profile }) {
           }
         }
 
-        if (mounted && allResults.length > 0) {
-          const arany = allResults.filter(r => r.placement === 1).length;
-          const ezust = allResults.filter(r => r.placement === 2).length;
-          const bronz = allResults.filter(r => r.placement === 3).length;
-          setStats({ arany, ezust, bronz, osszes: allResults.length });
-
-          const topResult = allResults.find(r => r.placement <= 3);
-          if (topResult) {
-            setRecentResult({
-              placement: topResult.placement,
-              competitionName: topResult.entry?.competition_categories?.competition_days?.competitions?.name || 'verseny',
-            });
+        // v0.9.77: az éremfal ugyanazzal az egységes számolással, mint a Kincsesláda:
+        // minden 1–3. hely (egyéni szer, összetett, csapat), lezárt versenyek + korábbi eredmények
+        const badgeData = await loadBadgeData(supabase, competitorId).catch(() => null);
+        if (badgeData && mounted) {
+          let arany = 0, ezust = 0, bronz = 0;
+          badgeData.comps.forEach(c => (c.items || []).forEach(it => {
+            if (it.placement === 1) arany++; else if (it.placement === 2) ezust++; else if (it.placement === 3) bronz++;
+          }));
+          setStats({ arany, ezust, bronz, osszes: arany + ezust + bronz });
+          const latest = [...badgeData.comps]
+            .filter(c => (c.items || []).some(it => it.placement <= 3))
+            .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+          if (latest) {
+            const best = Math.min(...latest.items.map(it => it.placement));
+            setRecentResult({ placement: best, competitionName: latest.name || 'verseny' });
           }
+        }
 
+        if (mounted && allResults.length > 0) {
           if (allResults.length >= 2) {
             const [a, b] = allResults;
             if (a.score_total && b.score_total) {
@@ -278,6 +284,7 @@ function MySelfBlock({ supabase, profile }) {
       {stats && stats.osszes > 0 && (
         <div className="rounded-2xl p-4 mb-3 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
           <div className="text-center font-bold mb-3" style={{ color: '#BE185D' }}>🏅 Saját éremfalad</div>
+          <div className="text-[11px] text-gray-500 text-center -mt-2 mb-2">minden év · egyéni szer, összetett és csapat 1–3. helyei</div>
           <div className="flex justify-around text-center">
             <div>
               <div className="text-4xl">🥇</div>
