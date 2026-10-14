@@ -4106,7 +4106,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         .select(`
           placement, apparatus, score_total,
           startlist_entry:startlist_entries!inner(
-            competitor_id,
+            competitor_id, did_not_start,
             competition_category:competition_categories!inner(
               type,
               competition_day:competition_days!inner(
@@ -4180,6 +4180,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
       (resultsData || []).forEach(r => {
         const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
         if (!comp || !comp.is_finalized) return; // CSAK lezárt versenyek
+        if (r.startlist_entry?.did_not_start) return; // v0.9.77: a „nem indult” nem számít versenynek
         const year = parseInt(comp.start_date?.slice(0, 4), 10);
         const key = `live_${comp.id}`;
         if (!compMap.has(key)) {
@@ -4402,6 +4403,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
               <div className="text-xs text-gray-500">Bronz</div>
             </div>
           </div>
+          <div className="text-[11px] text-gray-500 mb-3 -mt-1">Érem = minden 1–3. hely (egyéni szer, összetett, csapat); lezárt versenyekből és a korábbi eredményekből.</div>
 
           {/* v0.9.58: három külön blokk — Egyéni / EKCS / Klub-csapat; mindegyikben
               versenyenként csoportosítva, időrendben (legrégebbi elöl) */}

@@ -76,8 +76,8 @@ export default function CompetitorProfileView({ supabase, profile }) {
   const [showFriendPicker, setShowFriendPicker] = useState(false);
   const [friendSearch, setFriendSearch] = useState('');
   const [trainingDates, setTrainingDates] = useState([]);
-  const [competitionsThisYear, setCompetitionsThisYear] = useState(0);
-  const [medalsThisYear, setMedalsThisYear] = useState(0);
+  const [competitionsThisYear, setCompetitionsThisYear] = useState(null);
+  const [medalsThisYear, setMedalsThisYear] = useState(null);
   const [loading, setLoading] = useState(true);
   // v0.9.50: profilkép
   const [avatarVersion, setAvatarVersion] = useState(0);
@@ -135,11 +135,8 @@ export default function CompetitorProfileView({ supabase, profile }) {
         const yearEnd = `${currentYear}-12-31`;
 
         // ═══════ PÁRHUZAMOS LEKÉRDEZÉSEK ═══════
-        const [
-          friendRes, allRes, trainingRes,
-          indivCompsRes, indivMedalsRes, aaMedalsRes,
-          teamMembersRes
-        ] = await Promise.all([
+        // v0.9.77: a „verseny idén / érem idén” számot a loadBadgeData adja (lent, külön)
+        const [friendRes, allRes, trainingRes] = await Promise.all([
           // a) Legjobb barátnő
           compRes.data.best_friend_competitor_id
             ? safeQuery(() =>
@@ -163,59 +160,6 @@ export default function CompetitorProfileView({ supabase, profile }) {
               .eq('competitor_id', competitorId)
               .gte('training_sessions.date', yearStart)
               .lte('training_sessions.date', yearEnd)
-          ),
-
-          // d) Versenyek idén (egyéni startlista entries-en keresztül)
-          safeQuery(() =>
-            supabase.from('startlist_entries')
-              .select(`
-                competition_category:competition_categories!inner(
-                  competition_day:competition_days!inner(
-                    competition:competitions!inner(id, start_date)
-                  )
-                )
-              `)
-              .eq('competitor_id', competitorId)
-          ),
-
-          // e) Egyéni érmek idén (results)
-          safeQuery(() =>
-            supabase.from('results')
-              .select(`
-                placement,
-                startlist_entry:startlist_entries!inner(
-                  competitor_id,
-                  competition_category:competition_categories!inner(
-                    competition_day:competition_days!inner(
-                      competition:competitions!inner(id, start_date)
-                    )
-                  )
-                )
-              `)
-              .eq('startlist_entry.competitor_id', competitorId)
-              .in('placement', [1, 2, 3])
-          ),
-
-          // f) Összetett érmek idén (all_around_results)
-          safeQuery(() =>
-            supabase.from('all_around_results')
-              .select(`
-                placement,
-                competition_category:competition_categories!inner(
-                  competition_day:competition_days!inner(
-                    competition:competitions!inner(id, start_date)
-                  )
-                )
-              `)
-              .eq('competitor_id', competitorId)
-              .in('placement', [1, 2, 3])
-          ),
-
-          // g) Csapat-tagság (team_id-k) — utána fogjuk a competition_teams-et lekérni
-          safeQuery(() =>
-            supabase.from('competition_team_members')
-              .select('team_id')
-              .eq('competitor_id', competitorId)
           )
         ]);
 
@@ -241,64 +185,6 @@ export default function CompetitorProfileView({ supabase, profile }) {
             .filter(Boolean);
           setTrainingDates(dates);
         }
-
-        // Versenyek idén (egyedi)
-        let competitionsCount = 0;
-        if (indivCompsRes?.data) {
-          const uniqueIds = new Set();
-          indivCompsRes.data.forEach(e => {
-            const c = e.competition_category?.competition_day?.competition;
-            if (c && c.start_date >= yearStart && c.start_date <= yearEnd) {
-              uniqueIds.add(c.id);
-            }
-          });
-          competitionsCount = uniqueIds.size;
-        }
-        setCompetitionsThisYear(competitionsCount);
-
-        // Érmek idén (egyéni + összetett)
-        let medalsCount = 0;
-        if (indivMedalsRes?.data) {
-          indivMedalsRes.data.forEach(r => {
-            const c = r.startlist_entry?.competition_category?.competition_day?.competition;
-            if (c && c.start_date >= yearStart && c.start_date <= yearEnd) {
-              medalsCount++;
-            }
-          });
-        }
-        if (aaMedalsRes?.data) {
-          aaMedalsRes.data.forEach(r => {
-            const c = r.competition_category?.competition_day?.competition;
-            if (c && c.start_date >= yearStart && c.start_date <= yearEnd) {
-              medalsCount++;
-            }
-          });
-        }
-
-        // Csapat-érmek idén (2. lépés: lekérdezzük a competition_teams-et)
-        if (teamMembersRes?.data && teamMembersRes.data.length > 0) {
-          const teamIds = teamMembersRes.data.map(m => m.team_id).filter(Boolean);
-          if (teamIds.length > 0) {
-            const teamsRes = await safeQuery(() =>
-              supabase.from('competition_teams')
-                .select(`
-                  placement, competition_id,
-                  competition:competition_id (start_date)
-                `)
-                .in('id', teamIds)
-                .in('placement', [1, 2, 3])
-            );
-            if (teamsRes?.data) {
-              teamsRes.data.forEach(t => {
-                const sd = t.competition?.start_date;
-                if (sd && sd >= yearStart && sd <= yearEnd) {
-                  medalsCount++;
-                }
-              });
-            }
-          }
-        }
-        setMedalsThisYear(medalsCount);
 
       } catch (err) {
         console.error('CompetitorProfile load:', err);
@@ -608,17 +494,18 @@ export default function CompetitorProfileView({ supabase, profile }) {
           background: 'linear-gradient(135deg, #DBEAFE, #BFDBFE)'
         }}>
           <div className="text-3xl mb-1">🏆</div>
-          <div className="text-3xl font-bold leading-none" style={{ color: '#1E40AF' }}>{competitionsThisYear}</div>
+          <div className="text-3xl font-bold leading-none" style={{ color: '#1E40AF' }}>{competitionsThisYear ?? '…'}</div>
           <div className="text-xs mt-1" style={{ color: '#1E40AF' }}>verseny idén</div>
         </div>
         <div className="rounded-2xl p-4 text-center" style={{
           background: 'linear-gradient(135deg, #FEF3C7, #FDE68A)'
         }}>
           <div className="text-3xl mb-1">🏅</div>
-          <div className="text-3xl font-bold leading-none" style={{ color: COLORS.amberDark }}>{medalsThisYear}</div>
+          <div className="text-3xl font-bold leading-none" style={{ color: COLORS.amberDark }}>{medalsThisYear ?? '…'}</div>
           <div className="text-xs mt-1" style={{ color: COLORS.amberDark }}>érem idén</div>
         </div>
       </div>
+      <div className="text-[11px] text-gray-500 text-center -mt-2">Érem = minden 1–3. hely (egyéni szer, összetett, csapat); lezárt versenyekből és a korábbi eredményekből.</div>
 
       {/* 6. EDZÉSEIM IDÉN + CSILLAGOK */}
       <div className="rounded-2xl p-5 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>

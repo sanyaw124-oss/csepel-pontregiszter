@@ -98,6 +98,7 @@ export async function loadBadgeData(supabase, competitorId) {
     const date = h.competition_date || (h.year ? `${h.year}-01-01` : null);
     const r = h.results || {};
     Object.keys(r).forEach(k => {
+      if (!(parseInt(r[k]?.placement, 10) > 0)) return; // v0.9.77: helyezés nélkül nem számít
       notePlacement('hist_' + h.id, h.competition_name, date, r[k]?.placement,
         APP_NAMES[k] || (k === 'osszetett' ? 'Összetett' : (k === 'csapat' ? `Csapat${h.team_name ? ` (${h.team_name})` : ''}` : k)),
         k === 'csapat' ? 'csapat' : 'egyeni');

@@ -15,7 +15,7 @@ import {
   CompetitorTeamResults,
   CompetitorHistoricalResults
 } from './admin';
-import { BadgesPanel } from './badges';
+import { BadgesPanel, loadBadgeData } from './badges';
 import { CompetitorStatsPanel } from './stats';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
@@ -58,182 +58,17 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
 
-        // ═══════ PÁRHUZAMOS ÉREM-LEKÉRDEZÉSEK ═══════
-        const [indivRes, aaRes, histRes, teamMembersRes] = await Promise.all([
-          // a) Egyéni érmek (results)
-          safeQuery(() =>
-            supabase.from('results')
-              .select(`
-                placement, apparatus,
-                startlist_entry:startlist_entries!inner(
-                  competitor_id,
-                  competition_category:competition_categories!inner(
-                    competition_day:competition_days!inner(
-                      competition:competitions!inner(id, name, start_date)
-                    )
-                  )
-                )
-              `)
-              .eq('startlist_entry.competitor_id', competitorId)
-              .in('placement', [1, 2, 3])
-          ),
-
-          // b) Összetett érmek
-          safeQuery(() =>
-            supabase.from('all_around_results')
-              .select(`
-                placement,
-                competition_category:competition_categories!inner(
-                  competition_day:competition_days!inner(
-                    competition:competitions!inner(id, name, start_date)
-                  )
-                )
-              `)
-              .eq('competitor_id', competitorId)
-              .in('placement', [1, 2, 3])
-          ),
-
-          // c) Historical eredmények (VALÓS struktúra: year, results JSONB)
-          safeQuery(() =>
-            supabase.from('historical_results')
-              .select('id, year, competition_name, team_name, results')
-              .eq('competitor_id', competitorId)
-          ),
-
-          // d) Csapat-tagság (a 2. lépésben competition_teams-ből vesszük a placement-et)
-          safeQuery(() =>
-            supabase.from('competition_team_members')
-              .select('team_id')
-              .eq('competitor_id', competitorId)
-          )
-        ]);
-
-        // Csapat-érmek 2. lépés
-        let teamResData = [];
-        if (teamMembersRes?.data && teamMembersRes.data.length > 0) {
-          const teamIds = teamMembersRes.data.map(m => m.team_id).filter(Boolean);
-          if (teamIds.length > 0) {
-            const teamsRes = await safeQuery(() =>
-              supabase.from('competition_teams')
-                .select(`
-                  id, name, placement,
-                  competition:competition_id (id, name, start_date)
-                `)
-                .in('id', teamIds)
-                .in('placement', [1, 2, 3])
-            );
-            if (teamsRes?.data) teamResData = teamsRes.data;
-          }
-        }
-
-        // ═══════ ÉRMEK ÖSSZEGZÉSE ═══════
+        // v0.9.77: az érmeket ugyanaz az egységes számolás adja, mint a Profil és az
+        // Eredmény-összesítő: minden 1–3. hely (egyéni szer, összetett, csapat), csak
+        // lezárt versenyekből + a korábbi eredményekből
+        const badgeData = await loadBadgeData(supabase, competitorId);
         let gold = 0, silver = 0, bronze = 0;
         const allMedals = [];
-
-        // Egyéni érmek
-        if (indivRes?.data) {
-          indivRes.data.forEach(r => {
-            if (r.placement === 1) gold++;
-            else if (r.placement === 2) silver++;
-            else if (r.placement === 3) bronze++;
-            const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
-            if (comp) {
-              allMedals.push({
-                placement: r.placement,
-                apparatus: r.apparatus || 'Egyéni',
-                name: comp.name,
-                date: comp.start_date,
-                source: 'individual'
-              });
-            }
-          });
-        }
-
-        // Összetett érmek
-        if (aaRes?.data) {
-          aaRes.data.forEach(r => {
-            if (r.placement === 1) gold++;
-            else if (r.placement === 2) silver++;
-            else if (r.placement === 3) bronze++;
-            const comp = r.competition_category?.competition_day?.competition;
-            if (comp) {
-              allMedals.push({
-                placement: r.placement,
-                apparatus: 'Összetett',
-                name: comp.name,
-                date: comp.start_date,
-                source: 'all_around'
-              });
-            }
-          });
-        }
-
-        // Csapat-érmek
-        teamResData.forEach(t => {
-          if (t.placement === 1) gold++;
-          else if (t.placement === 2) silver++;
-          else if (t.placement === 3) bronze++;
-          allMedals.push({
-            placement: t.placement,
-            apparatus: `Csapat (${t.name || 'csapat'})`,
-            name: t.competition?.name || 'Verseny',
-            date: t.competition?.start_date,
-            source: 'team'
-          });
-        });
-
-        // Historical érmek (JSONB)
-        if (histRes?.data) {
-          histRes.data.forEach(h => {
-            const results = h.results || {};
-            const date = h.year ? `${h.year}-12-31` : null; // év végét vesszük dátumnak
-
-            // Egyéni szerek
-            ['karika', 'labda', 'buzogany', 'szalag', 'kotel', 'szabad'].forEach(a => {
-              if (results[a]?.placement && results[a].placement >= 1 && results[a].placement <= 3) {
-                const p = results[a].placement;
-                if (p === 1) gold++; else if (p === 2) silver++; else if (p === 3) bronze++;
-                const labels = { 
-                  szabad: 'Szabad', karika: 'Karika', labda: 'Labda',
-                  buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél'
-                };
-                allMedals.push({
-                  placement: p,
-                  apparatus: labels[a],
-                  name: h.competition_name,
-                  date,
-                  source: 'historical'
-                });
-              }
-            });
-
-            // Összetett
-            if (results.osszetett?.placement && results.osszetett.placement >= 1 && results.osszetett.placement <= 3) {
-              const p = results.osszetett.placement;
-              if (p === 1) gold++; else if (p === 2) silver++; else if (p === 3) bronze++;
-              allMedals.push({
-                placement: p,
-                apparatus: 'Összetett',
-                name: h.competition_name,
-                date,
-                source: 'historical'
-              });
-            }
-
-            // Csapat (historical)
-            if (results.csapat?.placement && results.csapat.placement >= 1 && results.csapat.placement <= 3) {
-              const p = results.csapat.placement;
-              if (p === 1) gold++; else if (p === 2) silver++; else if (p === 3) bronze++;
-              allMedals.push({
-                placement: p,
-                apparatus: `Csapat (${h.team_name || 'csapat'})`,
-                name: h.competition_name,
-                date,
-                source: 'historical'
-              });
-            }
-          });
-        }
+        badgeData.comps.forEach(c => (c.items || []).forEach(it => {
+          if (it.placement < 1 || it.placement > 3) return;
+          if (it.placement === 1) gold++; else if (it.placement === 2) silver++; else bronze++;
+          allMedals.push({ placement: it.placement, apparatus: it.label, name: c.name, date: c.date });
+        }));
 
         // Legfrissebb érem
         allMedals.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
@@ -344,6 +179,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
             <div className="text-xs mt-1 text-gray-600">bronz</div>
           </div>
         </div>
+        <div className="text-[11px] text-gray-500 text-center mt-3">Érem = minden 1–3. hely (egyéni szer, összetett, csapat); minden év, lezárt versenyekből és a korábbi eredményekből.</div>
 
         {totalMedals === 0 && (
           <div className="text-center text-xs text-gray-500 italic mt-4">
