@@ -10,7 +10,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Luggage, Check, Plus, X, MapPin, Clock, CalendarDays, AlertTriangle } from 'lucide-react';
+import { Luggage, Check, Plus, X, MapPin, Clock, CalendarDays, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 import { ApparatusIcon } from './apparatusIcons';
 
 const PINK = '#BE185D';
@@ -86,6 +86,7 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
   const [next, setNext] = useState(undefined);
   const [list, setList] = useState({ checked: [], extra: [] });   // extra = a gyerek saját tételei
   const [newItem, setNewItem] = useState('');
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -191,13 +192,22 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
           : 'Ellenőrizd, hogy mindened megvan-e a versenyre! Ha valami hiányzik, szerezd be időben!'}</span>
       </div>
 
-      <div className="mt-4 flex items-center justify-between">
-        <div className="font-semibold flex items-center gap-2" style={{ color: PINK }}><Luggage className="w-5 h-5" /> Pakolólista</div>
-        <div className="text-sm font-semibold" style={{ color: all ? '#047857' : '#6B7280' }}>{all ? '✓ Minden bepakolva!' : `${done} / ${items.length}`}</div>
-      </div>
-      <div className="h-2 rounded-full bg-gray-100 mt-1 overflow-hidden">
+      {/* v1.1.0 (Sándor): a lista alapból csukva, egy jól látható gombbal nyílik */}
+      <button onClick={() => setOpen(o => !o)}
+              className="mt-4 w-full flex items-center justify-between gap-2 flex-wrap px-3 py-3 rounded-xl border-2 font-semibold transition hover:shadow-sm"
+              style={{ borderColor: PINK, backgroundColor: open ? '#FDF2F8' : 'white', color: PINK }}>
+        <span className="flex items-center gap-2 text-xl font-bold"><Luggage className="w-7 h-7" /> Pakolólista</span>
+        <span className="flex items-center gap-2">
+          <span className="text-lg font-bold" style={{ color: all ? '#047857' : '#111827' }}>{all ? '✓ Minden bepakolva!' : `${done} / ${items.length} bepakolva`}</span>
+          <span className="flex items-center gap-1 text-sm px-3 py-1.5 rounded-lg text-white" style={{ backgroundColor: PINK }}>
+            {open ? <>Becsuk <ChevronUp className="w-4 h-4" /></> : <>Megnyit <ChevronDown className="w-4 h-4" /></>}
+          </span>
+        </span>
+      </button>
+      <div className="h-3 rounded-full bg-gray-200 mt-2 overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(done / items.length * 100)}%`, backgroundColor: all ? '#10B981' : PINK }} />
       </div>
+      {open && <>
       {sections.map(sec => (
         <div key={sec.title} className="mt-3">
           <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
@@ -238,6 +248,7 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
         </button>
       </div>
       <div className="text-xs text-gray-500 mt-2">{forParent ? 'A gyermekeddel közös lista — amit ő kipipál, itt is látszik. A saját tételek a többi versenyre is megmaradnak.' : 'A szüleiddel közös lista — amit ők kipipálnak, nálad is látszik. A saját tételeid a többi versenyre is megmaradnak.'}</div>
+      </>}
       {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
     </div>
   );
