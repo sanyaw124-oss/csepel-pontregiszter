@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { 
-  Users, Calendar, Settings, LogOut, User, Building2, FileText,
+  Users, Calendar, CalendarDays, Settings, LogOut, User, Building2, FileText,
   Check, AlertCircle, Eye, EyeOff,
   Shield, Crown, Award, BookOpen, Heart, Star, Trophy, ArrowLeft, ChevronRight, MessageCircle, Lock,
   BarChart3, Loader, Wifi, WifiOff, RefreshCw
@@ -14,6 +14,7 @@ import { EventsView, UpcomingEventsWidget } from './events';
 import { CoachNotesView } from './coach-notes';
 import { CoachPostsView } from './coachPosts';
 import { PageInfo } from './pageInfo';
+import { CalendarView, UpcomingCompetitionsWidget } from './calendar';
 import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
@@ -775,6 +776,7 @@ const NAV_ITEMS = [
   { id: 'treasure', label: 'Kincsesládám', icon: Trophy, roles: [ROLES.VERSENYZO] },
   { id: 'competitors', label: 'Versenyzők', icon: Users, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO, ROLES.SZULO] },
   { id: 'competitions', label: 'Versenyek', icon: Calendar, roles: 'all' },
+  { id: 'calendar', label: 'Versenynaptár', icon: CalendarDays, roles: 'all' }, // v0.9.81
   { id: 'training', label: 'Edzések', icon: BookOpen, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.VERSENYZO] },
   { id: 'events', label: 'Üzenőfal', icon: MessageCircle, roles: 'all' },
   { id: 'club', label: 'Egyesület', icon: Building2, roles: 'all' }, // v0.9.78
@@ -904,6 +906,7 @@ function AppShell() {
         )}
 
         {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
+        {activeView === 'calendar' && <CalendarView supabase={supabase} onOpenCompetitions={() => setActiveView('competitions')} />}
         {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
@@ -928,7 +931,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.80 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.81 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1149,6 +1152,8 @@ function DashboardView({ setActiveView }) {
 
       {/* HERO + Születésnap + Események - MINDENKINEK */}
       <NextCompetitionHero />
+      {/* v0.9.81: a következő 30 nap versenyei → Versenynaptár */}
+      <UpcomingCompetitionsWidget supabase={supabase} onOpen={() => setActiveView('calendar')} />
       <BirthdayWidget supabase={supabase} />
       <div className="mb-4">
         <UpcomingEventsWidget 

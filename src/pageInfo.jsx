@@ -47,6 +47,10 @@ function infoFor(view, role) {
         ? ['A versenyek listája és naptára. Új verseny felvétele, kategóriák, startlista (importálás JSON-ból), csapatok.',
            'Verseny közben pontozás, a végén helyezések és lezárás. Lezárt verseny újranyitható.']
         : ['A versenyek listája, a startlisták időpontokkal és a lezárt versenyek eredményei.'];
+    case 'calendar':
+      return ['A versenyek havi naptárban, a hónap listájával. Egy versenyre kattintva: időpont, helyszín, érkezés.',
+              ...(editor ? ['Új versenyt a Versenyek fülön veszel fel — magától megjelenik itt is.'] : []),
+              'Az Áttekintésen a következő 30 nap versenyei látszanak.'];
     case 'training':
       return staff
         ? ['„Klub összesítő”: ki hány edzésen volt havi vagy éves bontásban.', '„Edzés rögzítése”: a napi jelenlét felvétele (edzés, egész napos, tábor, balett).']
