@@ -111,6 +111,64 @@ export function useAvatarUrl(supabase, competitor, version = 0) {
   return state;
 }
 
+// v0.9.80: egy egész lista képei egyszerre (Sándor 2026.10.15: a Versenyzők
+// listában a kép jelenjen meg az avatar helyett). Két kérés összesen: az
+// elrejtések + egy csomag aláírt link. Visszaad: { [competitorId]: url }.
+export function useAvatarUrls(supabase, competitors) {
+  const [urls, setUrls] = useState({});
+  const key = (competitors || []).filter(c => c.avatar_path).map(c => `${c.id}:${c.avatar_path}`).join('|');
+  useEffect(() => {
+    let active = true;
+    const withPhoto = (competitors || []).filter(c => c.avatar_path);
+    if (!supabase || withPhoto.length === 0) { setUrls({}); return undefined; }
+    (async () => {
+      try {
+        const { data: rej } = await supabase.from('avatar_rejections')
+          .select('competitor_id, avatar_path').in('competitor_id', withPhoto.map(c => c.id));
+        const hidden = new Set((rej || []).map(r => `${r.competitor_id}:${r.avatar_path}`));
+        const shown = withPhoto.filter(c => !hidden.has(`${c.id}:${c.avatar_path}`));
+        if (shown.length === 0) { if (active) setUrls({}); return; }
+        const { data } = await supabase.storage.from(AVATAR_BUCKET)
+          .createSignedUrls(shown.map(c => c.avatar_path), SIGNED_URL_SECONDS);
+        const byPath = {};
+        (data || []).forEach(d => { if (d.signedUrl) byPath[d.path] = d.signedUrl; });
+        const out = {};
+        shown.forEach(c => { if (byPath[c.avatar_path]) out[c.id] = byPath[c.avatar_path]; });
+        if (active) setUrls(out);
+      } catch (err) {
+        console.error('useAvatarUrls:', err);
+        if (active) setUrls({});
+      }
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supabase, key]);
+  return urls;
+}
+
+// Kis kerek profilkép listákhoz (név mellé); kép nélkül az avatar-emoji
+export function MiniAvatar({ url, emoji, size = 32 }) {
+  if (!url) {
+    return emoji ? (
+      <span style={{ display: 'inline-flex', width: size, height: size, alignItems: 'center', justifyContent: 'center',
+                     flexShrink: 0, fontSize: Math.round(size * 0.65), lineHeight: 1 }}>{emoji}</span>
+    ) : null;
+  }
+  return (
+    <span
+      role="img"
+      aria-label="Profilkép"
+      onContextMenu={e => e.preventDefault()}
+      onDragStart={e => e.preventDefault()}
+      style={{
+        display: 'inline-block', width: size, height: size, borderRadius: '50%', flexShrink: 0,
+        backgroundImage: `url("${url}")`, backgroundSize: 'cover', backgroundPosition: 'center',
+        border: '2px solid #FBCFE8', userSelect: 'none', WebkitUserSelect: 'none', WebkitTouchCallout: 'none'
+      }}
+    />
+  );
+}
+
 // Megjelenítés: kép, ha van; különben az avatar-emoji. Letöltés-nehezítés:
 // háttérképként rajzolva (nincs "Kép mentése" menü), jobb klikk és húzás tiltva.
 export function AvatarImage({ url, emoji = '🎀', size = 96, className = '' }) {

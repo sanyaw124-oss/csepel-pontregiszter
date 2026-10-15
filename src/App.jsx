@@ -12,6 +12,8 @@ import { CompetitionsView } from './competitions';
 import { TrainingView } from './training';
 import { EventsView, UpcomingEventsWidget } from './events';
 import { CoachNotesView } from './coach-notes';
+import { CoachPostsView } from './coachPosts';
+import { PageInfo } from './pageInfo';
 import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
@@ -778,7 +780,8 @@ const NAV_ITEMS = [
   { id: 'club', label: 'Egyesület', icon: Building2, roles: 'all' }, // v0.9.78
   { id: 'documents', label: 'Dokumentumok', icon: FileText, roles: 'all' }, // v0.9.79
   { id: 'stats', label: 'Statisztika', icon: BarChart3, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] }, // v0.9.67
-  { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO, ROLES.SZULO] },
+  { id: 'coach-posts', label: 'Edzői bejegyzések', icon: Lock, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO, ROLES.SEGEDEDZO] }, // v0.9.80
+  { id: 'coach-notes', label: 'Edzői napló', icon: Lock, roles: [ROLES.SZULO] },
   { id: 'admin', label: 'Adminisztráció', icon: Settings, roles: [ROLES.ADMIN, ROLES.SZULO_ADMIN, ROLES.VEZETOEDZO, ROLES.EDZO] }
 ];
 
@@ -879,6 +882,8 @@ function AppShell() {
       </nav>
 
       <main key={manualReloadKey} className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
+        {/* v0.9.80: „Mit tehetek itt?” — szerepkör szerinti rövid leírás */}
+        <PageInfo view={activeView} role={profile.role} />
         {/* Áttekintés: VERSENYZŐ → saját vidám, MÁS → klubos áttekintés */}
         {/* Áttekintés: MINDENKINEK ugyanaz (versenyzőnek is - személyes blokk felül) */}
         {activeView === 'dashboard' && (
@@ -906,6 +911,7 @@ function AppShell() {
         {activeView === 'club' && <ClubView supabase={supabase} userRole={profile.role} />}
         {activeView === 'documents' && <DocumentsView supabase={supabase} profile={profile} />}
         {activeView === 'coach-notes' && <CoachNotesView supabase={supabase} userRole={profile.role} profile={profile} />}
+        {activeView === 'coach-posts' && <CoachPostsView supabase={supabase} userRole={profile.role} profile={profile} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
       </main>
 
@@ -922,7 +928,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.79 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.80 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1155,7 +1161,7 @@ function DashboardView({ setActiveView }) {
       {/* v0.9.61: értesítés az új edzői napló bejegyzésekről (szülőnek) */}
       {isParentLike && myChildren && myChildren.length > 0 && (
         <CoachNotesNotice profileId={profile.id} kids={myChildren}
-                          onOpen={() => setActiveView('coach-notes')} />
+                          onOpen={() => setActiveView(profile.role === 'szulo' ? 'coach-notes' : 'coach-posts')} />
       )}
 
       {isParentLike && (

@@ -31,7 +31,7 @@ export const personTitle = (p, lang = 'hu') => {
   return (CLUB_TITLES.find(t => t.value === p.title) || {})[lang] || p.title;
 };
 
-const EDITORS = ['admin', 'szulo_admin'];
+const EDITORS = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo']; // v0.9.80: Sándor — mindenki, akinek admin joga van
 const BLUE = '#1e3a8a';
 const DEFAULT_NAME = 'Csepeli RG Club';
 

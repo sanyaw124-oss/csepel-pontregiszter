@@ -458,7 +458,7 @@ function MyTrainingsView({ supabase, profile }) {
 // v0.9.42: Klub összesítő visszahozva (eltűnt korábbi iterációban)
 // ═══════════════════════════════════════════════════════════════════
 function CoachTrainingView({ supabase, userRole, dataReloadKey }) {
-  const [tab, setTab] = useState('log'); // 'log' | 'summary'
+  const [tab, setTab] = useState('summary'); // 'log' | 'summary' — v0.9.80: a Klub összesítő az alap (Kata)
 
   return (
     <div className="space-y-3">
@@ -1072,7 +1072,7 @@ function ClubTrainingSummary({ supabase }) {
   const currentYear = currentDate.getFullYear();
   const currentMonth = currentDate.getMonth() + 1; // 1-12
 
-  const [viewMode, setViewMode] = useState('yearly'); // 'yearly' | 'monthly'
+  const [viewMode, setViewMode] = useState('monthly'); // 'yearly' | 'monthly' — v0.9.80: havi az alap
   const [year, setYear] = useState(currentYear);
   const [month, setMonth] = useState(currentMonth);
   const [competitors, setCompetitors] = useState([]);

@@ -16,7 +16,7 @@ import { SeasonSummaryButton } from './seasonSummary';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
-import { useAvatarUrl, AvatarImage, rejectAvatar, canModerate } from './avatar';
+import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
 
 // HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
@@ -158,8 +158,8 @@ export function AdminView({ supabase, userRole, dataReloadKey }) {
     { id: 'competitors', label: 'Versenyzők', icon: Users },
     { id: 'parents', label: 'Szülők', icon: Heart },
     { id: 'staff', label: 'Edzők', icon: Award },
-    { id: 'links', label: 'Kapcsolatok', icon: ChevronRight },
-    { id: 'pride', label: 'Klub büszkesége', icon: Star }
+    { id: 'links', label: 'Kapcsolatok', icon: ChevronRight }
+    // v0.9.80: a Klub büszkesége az „Edzői bejegyzések” menübe költözött
   ];
 
   return (
@@ -194,7 +194,6 @@ export function AdminView({ supabase, userRole, dataReloadKey }) {
           {tab === 'parents' && <AdminParents supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
           {tab === 'staff' && <AdminStaff supabase={supabase} userRole={userRole} dataReloadKey={dataReloadKey} />}
           {tab === 'links' && <AdminLinks supabase={supabase} dataReloadKey={dataReloadKey} />}
-          {tab === 'pride' && <AdminClubPride supabase={supabase} />}
         </div>
       </div>
     </div>
@@ -1968,6 +1967,8 @@ export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) 
     return () => { cancelled = true; };
   }, [supabase, dataReloadKey]);
 
+  const avatarUrls = useAvatarUrls(supabase, competitors); // v0.9.80: kép a név mellett
+
   // Ha valakit nézünk, mutassuk a publikus profilját
   if (viewing) {
     return (
@@ -2079,12 +2080,14 @@ export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) 
                   className="w-full text-left bg-white border rounded-lg p-3 shadow-sm hover:shadow-md hover:border-blue-300 transition"
                   style={{ borderColor: COLORS.gray200 }}
                 >
-                  <div className="font-semibold flex items-center gap-2" style={{ color: COLORS.blueDark }}>
-                    {c.avatar_emoji && <span>{c.avatar_emoji}</span>}
-                    {formatCompetitorName(c)}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {c.kategoria} · {c.korosztaly} · {age} éves
+                  <div className="flex items-center gap-3">
+                    <MiniAvatar url={avatarUrls[c.id]} emoji={c.avatar_emoji || '🎀'} size={40} />
+                    <div className="min-w-0">
+                      <div className="font-semibold" style={{ color: COLORS.blueDark }}>{formatCompetitorName(c)}</div>
+                      <div className="text-xs text-gray-500">
+                        {c.kategoria} · {c.korosztaly} · {age} éves
+                      </div>
+                    </div>
                   </div>
                 </button>
               );
@@ -2143,7 +2146,82 @@ function CompetitorPhoto({ supabase, competitor, userRole, size = 96 }) {
   );
 }
 
+// v0.9.80 (Sándor + Kata 2026.10.15): az edző a Versenyzők fülön a gyereket
+// megnyitva ugyanazt látja, mint a szülő (edzések, statisztika, értékelés…),
+// és innen szerkeszti az adatait / rejti a képét — nem kell az Adminisztráció.
+const STAFF_VIEW_ROLES = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'];
+const STAFF_EDIT_ROLES = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'];
+
+function StaffCompetitorProfile({ supabase, competitor: initial, userRole, onBack }) {
+  const [competitor, setCompetitor] = useState(initial);
+  const [editing, setEditing] = useState(false);
+  const [version, setVersion] = useState(0);
+  const canEdit = STAFF_EDIT_ROLES.includes(userRole);
+  const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
+
+  const reload = async () => {
+    const { data } = await supabase.from('competitors').select('*').eq('id', competitor.id).maybeSingle();
+    if (data) setCompetitor(data);
+    setVersion(v => v + 1);
+  };
+
+  if (editing) {
+    return (
+      <CompetitorForm supabase={supabase} competitor={competitor} userRole={userRole}
+                      onSaved={() => { setEditing(false); reload(); }} onCancel={() => setEditing(false)} />
+    );
+  }
+
+  return (
+    <div key={version}>
+      <div className="flex items-center gap-2 mb-4">
+        <button onClick={onBack} className="p-1 hover:bg-gray-100 rounded">
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h3 className="font-semibold" style={{ color: COLORS.blueDark }}>Vissza a versenyzőkhöz</h3>
+      </div>
+
+      <div className="bg-white rounded-lg border p-4 mb-3 text-center" style={{ borderColor: COLORS.gray200 }}>
+        <CompetitorPhoto supabase={supabase} competitor={competitor} userRole={userRole} size={104} />
+        <div className="text-lg font-bold" style={{ color: COLORS.blueDark }}>{formatCompetitorName(competitor)}</div>
+        <div className="text-sm text-gray-500">
+          {competitor.kategoria} · {competitor.korosztaly} · {age} éves
+          {competitor.license_number ? ` · ${competitor.license_number}` : ''}
+        </div>
+        {!competitor.is_active && <div className="text-xs text-gray-500 mt-1">Inaktív</div>}
+        {canEdit && (
+          <button onClick={() => setEditing(true)}
+                  className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm font-medium bg-white hover:bg-gray-50"
+                  style={{ borderColor: COLORS.blue, color: COLORS.blue }}>
+            <Edit2 className="w-4 h-4" /> Adatok szerkesztése
+          </button>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} defaultYear={String(new Date().getFullYear())} />
+        <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
+        <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
+        <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
+        <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+        <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
+        <EvaluationsView supabase={supabase} competitorId={competitor.id} />
+        <BadgesPanel supabase={supabase} competitorId={competitor.id} />
+        <StoriesPanel supabase={supabase} competitorId={competitor.id} title="Kedvencei és céljai" />
+        <CompetitorCoachNotes supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+      </div>
+    </div>
+  );
+}
+
 function PublicCompetitorProfile({ supabase, competitor, userRole, ownChildIds, onBack }) {
+  if (STAFF_VIEW_ROLES.includes(userRole)) {
+    return <StaffCompetitorProfile supabase={supabase} competitor={competitor} userRole={userRole} onBack={onBack} />;
+  }
+  return <MemberCompetitorProfile supabase={supabase} competitor={competitor} userRole={userRole} ownChildIds={ownChildIds} onBack={onBack} />;
+}
+
+function MemberCompetitorProfile({ supabase, competitor, userRole, ownChildIds, onBack }) {
   const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
   
   // v0.9.46: szülőnél a Korábbi eredmények "+ Új eredmény" gomb csak saját gyereken jelenjen meg.
@@ -3601,7 +3679,7 @@ function ApparatusResultRow({ label, placement, score, onPlacementChange, onScor
 // Bejegyzések szerkesztése + versenyző-kapcsolatok
 // ═══════════════════════════════════════════════════════════════════
 
-function AdminClubPride({ supabase }) {
+export function AdminClubPride({ supabase }) {
   const [items, setItems] = useState(null);
   const [allCompetitors, setAllCompetitors] = useState([]);
   const [editing, setEditing] = useState(null); // null | 'new' | item
