@@ -34,6 +34,62 @@ const mb = (b) => (b ? `${(b / 1024 / 1024).toFixed(1)} MB` : '');
 export const musicFileName = (fullName, appLabel, original) =>
   `${ascii(fullName)}_${ascii(appLabel)}.${extOf(original)}`;
 
+// Feltöltés (új vagy csere): a régi fájl törlődik. Hibánál magyar üzenettel dob.
+async function uploadMusic(supabase, competitorId, appKey, file, oldItem) {
+  if (!/^audio\//.test(file.type) && !/\.(mp3|m4a|aac|wav)$/i.test(file.name)) throw new Error('Hangfájlt válassz (MP3 ajánlott).');
+  if (file.size > MAX_BYTES) throw new Error('Legfeljebb 15 MB lehet. Az MP3 általában 2–4 MB.');
+  const path = `${competitorId}/${appKey}_${Date.now()}.${extOf(file.name)}`;
+  const type = file.type || (extOf(file.name) === 'mp3' ? 'audio/mpeg' : 'audio/mp4');
+  const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: type, upsert: false });
+  if (upErr) throw new Error('Feltöltés sikertelen: ' + upErr.message);
+  const row = { competitor_id: competitorId, apparatus: appKey, file_path: path, original_name: file.name,
+                size_bytes: file.size, uploaded_at: new Date().toISOString() };
+  const { error: dbErr } = await supabase.from('competitor_music').upsert(row, { onConflict: 'competitor_id,apparatus' });
+  if (dbErr) { await supabase.storage.from(BUCKET).remove([path]); throw new Error('Mentés sikertelen: ' + dbErr.message); }
+  if (oldItem?.file_path && oldItem.file_path !== path) await supabase.storage.from(BUCKET).remove([oldItem.file_path]);
+}
+
+// v0.9.83 (Sándor): csak a feltöltött zenék sora látszik; új zene = „Zene feltöltése”
+// ablak: szer kiválasztása → fájl → feltöltés
+function UploadForm({ supabase, competitorId, byApp, onDone, onCancel }) {
+  const [app, setApp] = useState('');
+  const [file, setFile] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const go = async () => {
+    if (!app || !file) return;
+    if (byApp[app] && !window.confirm('Ehhez a szerhez már van zene. Lecseréled az újra? (A régi törlődik.)')) return;
+    setBusy(true); setError(null);
+    try { await uploadMusic(supabase, competitorId, app, file, byApp[app]); onDone(); }
+    catch (err) { setError(err.message); setBusy(false); }
+  };
+  return (
+    <div className="rounded-lg border-2 p-3 my-2 space-y-2" style={{ borderColor: '#FBCFE8', backgroundColor: '#FFF7FB' }}>
+      <div className="text-sm font-semibold" style={{ color: '#BE185D' }}>1. Melyik gyakorlat?</div>
+      <div className="flex flex-wrap gap-2">
+        {APPARATUS.map(a => (
+          <button key={a.key} onClick={() => setApp(a.key)}
+                  className="px-3 py-2 rounded-lg border-2 text-sm font-semibold flex items-center gap-2 bg-white"
+                  style={{ borderColor: app === a.key ? '#BE185D' : '#E5E7EB', backgroundColor: app === a.key ? '#FDF2F8' : 'white' }}>
+            <ApparatusIcon kind={a.key} size={22} /> {a.label}{byApp[a.key] && <span className="text-[10px] font-normal text-gray-500">(van)</span>}
+          </button>
+        ))}
+      </div>
+      <div className="text-sm font-semibold" style={{ color: '#BE185D' }}>2. A zene</div>
+      <input type="file" accept={ACCEPT} onChange={e => setFile(e.target.files?.[0] || null)} className="text-sm" />
+      {file && <div className="text-xs text-gray-600">{file.name} · {mb(file.size)}</div>}
+      {error && <div className="text-xs text-red-600">{error}</div>}
+      <div className="flex gap-2">
+        <button onClick={go} disabled={!app || !file || busy}
+                className="px-4 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-40" style={{ backgroundColor: '#BE185D' }}>
+          {busy ? <Loader className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Feltöltés
+        </button>
+        <button onClick={onCancel} className="px-4 py-2 rounded-lg border border-gray-300 bg-white text-sm font-medium">Mégse</button>
+      </div>
+    </div>
+  );
+}
+
 function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -43,22 +99,9 @@ function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload
   const upload = async (file) => {
     if (!file) return;
     setError(null);
-    if (!/^audio\//.test(file.type) && !/\.(mp3|m4a|aac|wav)$/i.test(file.name)) { setError('Hangfájlt válassz (MP3 ajánlott).'); return; }
-    if (file.size > MAX_BYTES) { setError('Legfeljebb 15 MB lehet. Az MP3 általában 2–4 MB.'); return; }
     setBusy(true);
-    try {
-      const path = `${competitorId}/${app.key}_${Date.now()}.${extOf(file.name)}`;
-      const type = file.type || (extOf(file.name) === 'mp3' ? 'audio/mpeg' : 'audio/mp4');
-      const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, file, { contentType: type, upsert: false });
-      if (upErr) throw upErr;
-      const row = { competitor_id: competitorId, apparatus: app.key, file_path: path, original_name: file.name,
-                    size_bytes: file.size, uploaded_at: new Date().toISOString() };
-      const { error: dbErr } = await supabase.from('competitor_music').upsert(row, { onConflict: 'competitor_id,apparatus' });
-      if (dbErr) { await supabase.storage.from(BUCKET).remove([path]); throw dbErr; }
-      if (item?.file_path && item.file_path !== path) await supabase.storage.from(BUCKET).remove([item.file_path]);
-      setPlayUrl(null);
-      onChanged();
-    } catch (err) { setError('Feltöltés sikertelen: ' + err.message); }
+    try { await uploadMusic(supabase, competitorId, app.key, file, item); setPlayUrl(null); onChanged(); }
+    catch (err) { setError(err.message); }
     setBusy(false);
   };
   const remove = async () => {
@@ -125,6 +168,7 @@ function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload
 export function MusicPanel({ supabase, competitorId, competitorName, userRole }) {
   const canUpload = UPLOADERS.includes(userRole);
   const [items, setItems] = useState(null);
+  const [adding, setAdding] = useState(false);
   const load = useCallback(async () => {
     const { data, error } = await supabase.from('competitor_music').select('*').eq('competitor_id', competitorId);
     setItems(error ? [] : (data || []));
@@ -132,14 +176,24 @@ export function MusicPanel({ supabase, competitorId, competitorName, userRole })
   useEffect(() => { load(); }, [load]);
   if (items === null) return null;
   const byApp = Object.fromEntries(items.map(i => [i.apparatus, i]));
-  const shown = canUpload ? APPARATUS : APPARATUS.filter(a => byApp[a.key]);
+  const shown = APPARATUS.filter(a => byApp[a.key]);
   if (!canUpload && shown.length === 0) return null;
   return (
     <div className="bg-white rounded-xl border p-4" style={{ borderColor: '#E5E7EB' }}>
-      <div className="font-semibold flex items-center gap-2 mb-1" style={{ color: BLUE }}><Music className="w-5 h-5" /> Gyakorlatzenék</div>
+      <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+        <div className="font-semibold flex items-center gap-2" style={{ color: BLUE }}><Music className="w-5 h-5" /> Gyakorlatzenék</div>
+        {canUpload && !adding && (
+          <button onClick={() => setAdding(true)} className="px-3 py-1.5 rounded-lg text-white text-xs font-semibold flex items-center gap-1 shadow-sm" style={{ backgroundColor: '#BE185D' }}>
+            <Upload className="w-3.5 h-3.5" /> Zene feltöltése
+          </button>
+        )}
+      </div>
       <div className="text-xs text-gray-500 mb-1">
         {canUpload ? 'Szerenként egy zene; az új feltöltés lecseréli a régit. MP3 ajánlott, legfeljebb 15 MB.' : 'Gyakorláshoz töltsd le a telefonodra — a Belehallgatás csak gyors ellenőrzésre való.'}
       </div>
+      {adding && <UploadForm supabase={supabase} competitorId={competitorId} byApp={byApp}
+                             onDone={() => { setAdding(false); load(); }} onCancel={() => setAdding(false)} />}
+      {shown.length === 0 && !adding && <div className="text-sm text-gray-400 italic py-1">Még nincs feltöltött zene.</div>}
       {shown.map(app => (
         <MusicRow key={app.key} supabase={supabase} item={byApp[app.key]} app={app} competitorId={competitorId}
                   competitorName={competitorName} canUpload={canUpload} onChanged={load} />
