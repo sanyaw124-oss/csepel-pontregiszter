@@ -3,7 +3,7 @@
 //   - az edző gyerekenként, szerenként EGY zenét tölt fel; az új a régit
 //     lecseréli (a régi fájl törlődik); csapatgyakorlathoz nincs zene
 //   - a gyerek, a szülője és az edzők látják a feltöltés dátumával,
-//     belehallgathatnak és letölthetik (fájlnév: név_gyakorlat_dátum)
+//     belehallgathatnak és letölthetik (fájlnév: név_gyakorlat)
 //   - a fájl úgy marad, ahogy feltöltötték (MP3 ajánlott, max 15 MB)
 //   - forgalomkímélés (ingyenes csomag, havi 5 GB letöltés): a lejátszó csak
 //     a „Belehallgatás” gombra tölt; a gyakorláshoz a Letöltés ajánlott
@@ -26,13 +26,13 @@ const ACCEPT = '.mp3,.m4a,.aac,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/aac,a
 
 const ascii = (s) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Za-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 const huDate = (iso) => (iso ? new Date(iso).toLocaleDateString('hu-HU', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\s/g, '') : '');
-const isoDay = (iso) => (iso || '').slice(0, 10);
 const extOf = (name) => { const m = /\.([a-z0-9]{2,4})$/i.exec(name || ''); return m ? m[1].toLowerCase() : 'mp3'; };
 const mb = (b) => (b ? `${(b / 1024 / 1024).toFixed(1)} MB` : '');
 
-// A letöltött fájl neve: név_gyakorlat_dátum (pl. Volgyesi_Noemi_Karika_2026-10-15.mp3)
-export const musicFileName = (fullName, appLabel, uploadedAt, original) =>
-  `${ascii(fullName)}_${ascii(appLabel)}_${isoDay(uploadedAt)}.${extOf(original)}`;
+// A letöltött fájl neve: név_gyakorlat (pl. Volgyesi_Noemi_Karika.mp3) — a feltöltés
+// dátuma a listában látszik, a fájlnévbe nem kell (Sándor 2026.10.15)
+export const musicFileName = (fullName, appLabel, original) =>
+  `${ascii(fullName)}_${ascii(appLabel)}.${extOf(original)}`;
 
 function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload, onChanged }) {
   const [busy, setBusy] = useState(false);
@@ -74,7 +74,7 @@ function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload
     if (err) setError(err.message); else setPlayUrl(data.signedUrl);
   };
   const download = async () => {
-    const name = musicFileName(competitorName, app.label, item.uploaded_at, item.original_name);
+    const name = musicFileName(competitorName, app.label, item.original_name);
     const { data, error: err } = await supabase.storage.from(BUCKET).createSignedUrl(item.file_path, 600, { download: name });
     if (err) { setError(err.message); return; }
     const a = document.createElement('a');
