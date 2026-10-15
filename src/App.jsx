@@ -15,6 +15,7 @@ import { CoachNotesView } from './coach-notes';
 import { CoachPostsView } from './coachPosts';
 import { PageInfo } from './pageInfo';
 import { CalendarView, UpcomingCompetitionsWidget } from './calendar';
+import { GreetDialog } from './friends';
 import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
 import CompetitorTreasureView from './competitor-treasure';
@@ -931,7 +932,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v0.9.81 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v0.9.82 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1320,6 +1321,18 @@ function DashboardView({ setActiveView }) {
 function BirthdayWidget({ supabase }) {
   const [birthdays, setBirthdays] = useState(null);
   const [loading, setLoading] = useState(true);
+  // v0.9.82: a gyerek köszöntheti a szülinapost (a napján és utána 7 napig)
+  const { profile } = useAuthContext();
+  const myId = profile?.role === 'versenyzo' ? profile?.competitor_id : null;
+  const [greeted, setGreeted] = useState(new Set());
+  const [greetTarget, setGreetTarget] = useState(null);
+  const [greetVersion, setGreetVersion] = useState(0);
+  useEffect(() => {
+    if (!myId) return;
+    supabase.from('birthday_greetings').select('to_competitor')
+      .eq('from_competitor', myId).gte('created_at', new Date(Date.now() - 30 * 86400000).toISOString())
+      .then(({ data }) => setGreeted(new Set((data || []).map(g => g.to_competitor))));
+  }, [supabase, myId, greetVersion]);
 
   useEffect(() => {
     let active = true;
@@ -1475,12 +1488,22 @@ function BirthdayWidget({ supabase }) {
                     — {diffLabel(b)}
                   </span>
                   <span className="text-xs opacity-50 ml-auto">{b.dateStr}</span>
+                  {myId && b.id !== myId && b.diff <= 0 && b.diff >= -7 && (
+                    greeted.has(b.id) ? (
+                      <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>✓ Köszöntötted</span>
+                    ) : (
+                      <button onClick={() => setGreetTarget(b)}
+                              className="text-xs font-semibold px-3 py-1.5 rounded-lg text-white shadow-sm hover:opacity-90"
+                              style={{ backgroundColor: '#BE185D' }}>🎁 Köszöntöm</button>
+                    )
+                  )}
                 </div>
               );
             })}
           </div>
         </div>
       </div>
+      {greetTarget && <GreetDialog supabase={supabase} target={greetTarget} onClose={() => setGreetTarget(null)} onSent={() => setGreetVersion(v => v + 1)} />}
     </div>
   );
 }

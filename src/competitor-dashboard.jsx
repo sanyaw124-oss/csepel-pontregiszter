@@ -23,6 +23,7 @@ import { useEffect, useState } from 'react';
 import { Loader, AlertCircle } from 'lucide-react';
 import { useAvatarUrl, AvatarImage } from './avatar';
 import { loadBadgeData } from './badges';
+import { GreetingsPanel } from './friends';
 
 // HELPER
 function getGreeting(name) {
@@ -334,6 +335,11 @@ function MySelfBlock({ supabase, profile }) {
             )}
           </div>
         </div>
+      )}
+
+      {/* v0.9.82: a csapattársak szülinapi köszöntései (az elmúlt 30 nap) */}
+      {competitor?.id && (
+        <div className="mb-3"><GreetingsPanel supabase={supabase} competitorId={competitor.id} recentOnly title="🎉 A csapattársaid köszöntöttek!" /></div>
       )}
 
       {/* Edzéseim csillagok + streak */}

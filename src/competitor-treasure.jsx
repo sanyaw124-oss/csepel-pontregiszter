@@ -19,6 +19,7 @@ import { BadgesPanel, loadBadgeData } from './badges';
 import { CompetitorStatsPanel } from './stats';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
+import { FriendsPanel, GreetingsPanel } from './friends';
 
 const COLORS = {
   purpleDeep: '#831843',
@@ -203,6 +204,11 @@ export default function CompetitorTreasureView({ supabase, profile }) {
       <EvaluationsView supabase={supabase} competitorId={competitor.id} title="Edzőm értékelése" />
       <BadgesPanel supabase={supabase} competitorId={competitor.id} title="Kitűzőim" />
       <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite />
+      {/* v0.9.82: legjobb barátnők (csak ti ketten + a szülők látjátok) és a kapott köszöntések */}
+      <div className="my-3 space-y-3">
+        <FriendsPanel supabase={supabase} competitorId={competitor.id} canWrite />
+        <GreetingsPanel supabase={supabase} competitorId={competitor.id} />
+      </div>
       <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
 
       {/* ─── ÉVENKÉNTI ÖSSZESÍTŐ (admin.jsx komponensei) ─── */}

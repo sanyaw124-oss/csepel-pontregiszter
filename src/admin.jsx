@@ -15,6 +15,7 @@ import { CompetitorStatsPanel } from './stats';
 import { SeasonSummaryButton } from './seasonSummary';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
+import { FriendsPanel, GreetingsPanel } from './friends';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -2527,6 +2528,9 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {competitor?.id && (
           <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite title="Kedvencei és céljai" />
         )}
+        {/* v0.9.82: barátnők + köszöntések — a szülő látja, jelölni a gyerek tud */}
+        {competitor?.id && <FriendsPanel supabase={supabase} competitorId={competitor.id} />}
+        {competitor?.id && <GreetingsPanel supabase={supabase} competitorId={competitor.id} />}
 
         {/* Edzői privát megjegyzések - szülő csak olvashat */}
         {competitor?.id && (

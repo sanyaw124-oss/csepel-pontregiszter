@@ -23,7 +23,8 @@ function infoFor(view, role) {
   switch (view) {
     case 'dashboard':
       return kid
-        ? ['A napi köszöntés, a profilképed és a napi idézet.', 'Az érmeid, az edzéseid és a legutóbbi eredményed.', 'A klub hírei és a közelgő versenyek.']
+        ? ['A napi köszöntés, a profilképed és a napi idézet.', 'Az érmeid, az edzéseid és a legutóbbi eredményed.', 'A klub hírei és a közelgő versenyek.',
+           'Ha egy csapattársadnak szülinapja van, a „Köszöntöm” gombbal matricát és jókívánságot küldhetsz neki (a napján és utána 7 napig).']
         : ['A klub hírei, a közelgő versenyek és események, a szülinaposok.',
            ...(parent || role === 'szulo_admin' ? ['A gyermeked legfrissebb adatai és az új edzői bejegyzések jelzése.'] : []),
            ...(staff ? ['Klubszintű összesítők, a klub legjobbjai.'] : [])];
@@ -34,7 +35,8 @@ function infoFor(view, role) {
            'Edzést rögzíthetsz neki (ma és az elmúlt 7 nap), korábbi eredményt vihetsz fel, és szerkesztheted a személyes adatait.',
            'A „Verseny összesítő” gombbal egy évről PDF-et készíthetsz.'];
     case 'treasure':
-      return ['Az éremfalad, a kitűzőid, a kedvenceid és céljaid.', 'Az edződ értékelése és a statisztikád.'];
+      return ['Az éremfalad, a kitűzőid, a kedvenceid és céljaid.', 'Az edződ értékelése és a statisztikád.',
+              'Legfeljebb 3 legjobb barátnőt jelölhetsz — csak ti ketten és a szüleitek látjátok.', 'A kapott szülinapi köszöntéseid.'];
     case 'competitors':
       return staff
         ? ['A klub összes aktív versenyzője, profilképpel. Keresés és kategóriaszűrő.',
