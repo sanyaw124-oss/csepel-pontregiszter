@@ -18,6 +18,10 @@ const IMP = {
   klub: { bg: '#d1fae5', text: '#065f46', label: 'Klubverseny' },
   egyeb: { bg: '#f3f4f6', text: '#374151', label: 'Egyéb' }
 };
+// v0.9.81 (Sándor): a naptárban erőteljes, telt bejegyzés
+const SOLID = { fig: '#B45309', nemzetkozi: '#C2410C', mrgsz_mb: '#1D4ED8', mrgsz_kupa: '#0369A1', mrgsz_reg: '#4338CA',
+                diakolimpia: '#BE185D', klub: '#047857', egyeb: '#4B5563' };
+const solid = (v) => SOLID[{ mrgsz_regional: 'mrgsz_reg', club: 'klub' }[v] || v] || SOLID.egyeb;
 const imp = (v) => IMP[{ mrgsz_regional: 'mrgsz_reg', club: 'klub' }[v] || v] || IMP.egyeb;
 const MONTHS = ['január', 'február', 'március', 'április', 'május', 'június', 'július', 'augusztus', 'szeptember', 'október', 'november', 'december'];
 const DAYS = ['H', 'K', 'Sze', 'Cs', 'P', 'Szo', 'V'];
@@ -31,7 +35,7 @@ const venueText = (c) => [c.venue?.name, c.venue?.city].filter(Boolean).join(', 
 
 function ImpChip({ value }) {
   const i = imp(value);
-  return <span className="text-[11px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap" style={{ backgroundColor: i.bg, color: i.text }}>{i.label}</span>;
+  return <span className="text-[11px] px-2 py-0.5 rounded font-semibold whitespace-nowrap text-white" style={{ backgroundColor: solid(value) }}>{i.label}</span>;
 }
 
 function CompetitionDetail({ comp, onClose, onOpenCompetitions }) {
@@ -103,14 +107,14 @@ export function CalendarView({ supabase, onOpenCompetitions }) {
       <h2 className="text-2xl font-bold flex items-center gap-2" style={{ color: BLUE }}><CalendarDays className="w-6 h-6" /> Versenynaptár</h2>
       <div className="bg-white rounded-xl border p-3 sm:p-4" style={{ borderColor: '#E5E7EB' }}>
         <div className="flex items-center justify-between mb-3">
-          <button onClick={() => shift(-1)} className="p-2 rounded hover:bg-gray-100" aria-label="Előző hónap"><ChevronLeft className="w-5 h-5" /></button>
+          <button onClick={() => shift(-1)} className="px-3 py-2 rounded-lg text-white font-medium flex items-center gap-1 shadow-sm hover:opacity-90" style={{ backgroundColor: BLUE }} aria-label="Előző hónap"><ChevronLeft className="w-5 h-5" /><span className="hidden sm:inline text-sm">Előző</span></button>
           <div className="text-center">
             <div className="text-lg font-bold" style={{ color: BLUE }}>{ym.y}. {MONTHS[ym.m]}</div>
             {(ym.y !== now.getFullYear() || ym.m !== now.getMonth()) && (
-              <button onClick={() => setYm({ y: now.getFullYear(), m: now.getMonth() })} className="text-xs underline text-gray-500">vissza a mai hónapra</button>
+              <button onClick={() => setYm({ y: now.getFullYear(), m: now.getMonth() })} className="mt-1 text-xs px-2 py-1 rounded border font-medium bg-white hover:bg-blue-50" style={{ borderColor: BLUE, color: BLUE }}>Vissza a mai hónapra</button>
             )}
           </div>
-          <button onClick={() => shift(1)} className="p-2 rounded hover:bg-gray-100" aria-label="Következő hónap"><ChevronRight className="w-5 h-5" /></button>
+          <button onClick={() => shift(1)} className="px-3 py-2 rounded-lg text-white font-medium flex items-center gap-1 shadow-sm hover:opacity-90" style={{ backgroundColor: BLUE }} aria-label="Következő hónap"><span className="hidden sm:inline text-sm">Következő</span><ChevronRight className="w-5 h-5" /></button>
         </div>
         <div className="grid grid-cols-7 gap-1 text-center text-xs font-semibold text-gray-500 mb-1">
           {DAYS.map(d => <div key={d}>{d}</div>)}
@@ -122,13 +126,13 @@ export function CalendarView({ supabase, onOpenCompetitions }) {
             const isToday = day === today;
             return (
               <div key={day} className="min-h-[64px] sm:min-h-[84px] rounded border p-1 text-left"
-                   style={{ borderColor: isToday ? BLUE : '#F3F4F6', backgroundColor: list.length ? '#FAFAFF' : 'white' }}>
+                   style={{ borderColor: isToday ? BLUE : '#E5E7EB', borderWidth: isToday ? 2 : 1, backgroundColor: list.length ? '#EFF6FF' : 'white' }}>
                 <div className="text-[11px] font-semibold" style={{ color: isToday ? BLUE : '#6B7280' }}>{parseInt(day.slice(8), 10)}</div>
                 <div className="space-y-0.5">
                   {list.map(c => (
                     <button key={c.id} onClick={() => setSelected(c)} title={c.name}
-                            className="block w-full text-left text-[10px] sm:text-[11px] leading-tight px-1 py-0.5 rounded truncate"
-                            style={{ backgroundColor: imp(c.importance).bg, color: imp(c.importance).text }}>
+                            className="block w-full text-left text-[10px] sm:text-xs font-semibold leading-tight px-1.5 py-1 rounded truncate shadow-sm hover:brightness-110"
+                            style={{ backgroundColor: solid(c.importance), color: 'white' }}>
                       {c.name}
                     </button>
                   ))}
@@ -183,7 +187,7 @@ export function UpcomingCompetitionsWidget({ supabase, onOpen }) {
     <div className="bg-white rounded-xl border p-4 mb-4 shadow-sm" style={{ borderColor: '#E5E7EB' }}>
       <button onClick={onOpen} className="w-full flex items-center justify-between gap-2 mb-2 text-left">
         <div className="font-semibold flex items-center gap-2" style={{ color: BLUE }}><CalendarDays className="w-5 h-5" /> Versenynaptár · következő 30 nap</div>
-        <span className="text-xs font-medium flex items-center" style={{ color: '#1D4ED8' }}>Teljes naptár <ChevronRight className="w-4 h-4" /></span>
+        <span className="text-xs font-semibold flex items-center px-2.5 py-1.5 rounded-lg text-white shadow-sm" style={{ backgroundColor: BLUE }}>Teljes naptár <ChevronRight className="w-4 h-4" /></span>
       </button>
       {comps.length === 0 ? (
         <div className="text-sm text-gray-400 italic">A következő 30 napban nincs verseny.</div>
