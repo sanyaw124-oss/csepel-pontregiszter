@@ -3,15 +3,18 @@
 // versenye (ahol a startlistán szerepel, egyéniben vagy csapatban):
 // visszaszámláló, gyülekező, helyszín, rajtidők, és pipálható pakolólista
 // (alap tételek + a versenyen használt szerek + saját tételek).
-// A listát a gyerek és a szülője közösen pipálja (packing_lists tábla).
+// A listát a gyerek és a szülője közösen pipálja (packing_lists tábla); a saját
+// tételek a gyerekhez mentődnek (competitor_packing_items), minden versenyre.
+// A gyereknél csak a verseny előtti 5 napban jelenik meg (Sándor).
 // Adatbázis: docs/sql/2026-10-15_v1.1.0_pakolo-lista.sql
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { Luggage, Check, Plus, X, MapPin, Clock, CalendarDays } from 'lucide-react';
+import { Luggage, Check, Plus, X, MapPin, Clock, CalendarDays, AlertTriangle } from 'lucide-react';
 import { ApparatusIcon } from './apparatusIcons';
 
 const PINK = '#BE185D';
+const KID_DAYS_BEFORE = 5;   // a gyereknél ennyi nappal a verseny előtt jelenik meg
 const BASE_ITEMS = [
   { key: 'dressz', label: 'Versenydressz' },
   { key: 'melegito', label: 'Klubmelegítő' },
@@ -71,7 +74,7 @@ async function loadNextCompetition(supabase, competitorId) {
 
 export function PackingCard({ supabase, competitorId, forParent = false }) {
   const [next, setNext] = useState(undefined);
-  const [list, setList] = useState({ checked: [], extra: [] });
+  const [list, setList] = useState({ checked: [], extra: [] });   // extra = a gyerek saját tételei
   const [newItem, setNewItem] = useState('');
   const [error, setError] = useState(null);
 
@@ -86,22 +89,34 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
   const compId = next?.competition?.id;
   useEffect(() => {
     if (!compId) return;
-    supabase.from('packing_lists').select('checked, extra').eq('competitor_id', competitorId).eq('competition_id', compId).maybeSingle()
-      .then(({ data }) => setList({ checked: data?.checked || [], extra: data?.extra || [] }));
+    Promise.all([
+      supabase.from('packing_lists').select('checked').eq('competitor_id', competitorId).eq('competition_id', compId).maybeSingle(),
+      supabase.from('competitor_packing_items').select('items').eq('competitor_id', competitorId).maybeSingle()
+    ]).then(([l, own]) => setList({ checked: l.data?.checked || [], extra: own.data?.items || [] }));
   }, [supabase, competitorId, compId]);
 
   const save = useCallback(async (nextList) => {
     setList(nextList);
     setError(null);
     const { error: err } = await supabase.from('packing_lists').upsert({
-      competitor_id: competitorId, competition_id: compId, checked: nextList.checked, extra: nextList.extra,
-      updated_at: new Date().toISOString()
+      competitor_id: competitorId, competition_id: compId, checked: nextList.checked, updated_at: new Date().toISOString()
     }, { onConflict: 'competitor_id,competition_id' });
     if (err) setError('Mentés nem sikerült: ' + err.message);
   }, [supabase, competitorId, compId]);
+  // A saját tételek a gyerekhez mentődnek — minden versenyre megjelennek
+  const saveOwn = useCallback(async (items, checked) => {
+    setList({ checked, extra: items });
+    setError(null);
+    const { error: err } = await supabase.from('competitor_packing_items').upsert({
+      competitor_id: competitorId, items, updated_at: new Date().toISOString()
+    }, { onConflict: 'competitor_id' });
+    if (err) setError('Mentés nem sikerült: ' + err.message);
+  }, [supabase, competitorId]);
 
   if (!next) return null;
   const c = next.competition;
+  const d = daysUntil(c.start_date);
+  if (!forParent && d > KID_DAYS_BEFORE) return null;
   const items = [
     ...BASE_ITEMS,
     ...next.apps.map(k => ({ key: `app_${k}`, label: APP_ITEMS[k], app: k })),
@@ -112,13 +127,17 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
   const toggle = (key) => save({ ...list, checked: list.checked.includes(key) ? list.checked.filter(k => k !== key) : [...list.checked, key] });
   const addItem = () => {
     const label = newItem.trim().slice(0, 60);
-    if (!label || list.extra.includes(label) || list.extra.length >= 15) return;
+    if (!label || list.extra.includes(label) || list.extra.length >= 20) return;
     setNewItem('');
-    save({ ...list, extra: [...list.extra, label] });
+    saveOwn([...list.extra, label], list.checked);
   };
-  const removeItem = (label) => save({ checked: list.checked.filter(k => k !== `x_${label}`), extra: list.extra.filter(x => x !== label) });
+  const removeItem = async (label) => {
+    if (!window.confirm(`Törlöd a saját listádról: „${label}”? (Minden versenynél eltűnik.)`)) return;
+    const checked = list.checked.filter(k => k !== `x_${label}`);
+    await saveOwn(list.extra.filter(x => x !== label), checked);
+    if (checked.length !== list.checked.length) save({ checked, extra: list.extra.filter(x => x !== label) });
+  };
 
-  const d = daysUntil(c.start_date);
   const countdown = d > 1 ? `még ${d} nap` : d === 1 ? 'HOLNAP!' : d === 0 ? 'MA!' : 'most zajlik';
   const venue = [c.venue?.name, c.venue?.city].filter(Boolean).join(', ');
 
@@ -154,6 +173,14 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
         </div>
       )}
 
+      <div className="mt-4 rounded-xl border-2 px-3 py-2.5 flex items-start gap-2 text-sm font-semibold"
+           style={{ borderColor: '#F59E0B', backgroundColor: '#FFFBEB', color: '#92400E' }}>
+        <AlertTriangle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+        <span>{forParent
+          ? 'Ellenőrizzétek, hogy minden megvan-e a versenyre! Ha valami hiányzik, szerezzétek be időben!'
+          : 'Ellenőrizd, hogy mindened megvan-e a versenyre! Ha valami hiányzik, szerezd be időben!'}</span>
+      </div>
+
       <div className="mt-4 flex items-center justify-between">
         <div className="font-semibold flex items-center gap-2" style={{ color: PINK }}><Luggage className="w-5 h-5" /> Pakolólista</div>
         <div className="text-sm font-semibold" style={{ color: all ? '#047857' : '#6B7280' }}>{all ? '✓ Minden bepakolva!' : `${done} / ${items.length}`}</div>
@@ -187,13 +214,13 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
       </div>
       <div className="mt-2 flex gap-2">
         <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
-               placeholder="Saját tétel (pl. kabala plüss)" maxLength={60}
+               placeholder="Saját tétel (megmarad a többi versenyre is)" maxLength={60}
                className="flex-1 text-sm px-2.5 py-2 border border-gray-300 rounded-lg" />
         <button onClick={addItem} disabled={!newItem.trim()} className="px-3 py-2 rounded-lg text-white text-sm font-semibold flex items-center gap-1 shadow-sm disabled:opacity-40" style={{ backgroundColor: PINK }}>
           <Plus className="w-4 h-4" /> Hozzáad
         </button>
       </div>
-      <div className="text-xs text-gray-500 mt-2">{forParent ? 'A gyermekeddel közös lista — amit ő kipipál, itt is látszik.' : 'A szüleiddel közös lista — amit ők kipipálnak, nálad is látszik.'}</div>
+      <div className="text-xs text-gray-500 mt-2">{forParent ? 'A gyermekeddel közös lista — amit ő kipipál, itt is látszik. A saját tételek a többi versenyre is megmaradnak.' : 'A szüleiddel közös lista — amit ők kipipálnak, nálad is látszik. A saját tételeid a többi versenyre is megmaradnak.'}</div>
       {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
     </div>
   );

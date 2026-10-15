@@ -23,7 +23,7 @@ function infoFor(view, role) {
   switch (view) {
     case 'dashboard':
       return kid
-        ? ['A napi köszöntés, a profilképed és a napi idézet.', 'Versenyre készülök: visszaszámláló, gyülekező, rajtidők és pipálható pakolólista (a szüleiddel közös).', 'Az érmeid, az edzéseid és a legutóbbi eredményed.', 'A klub hírei és a közelgő versenyek.',
+        ? ['A napi köszöntés, a profilképed és a napi idézet.', 'Versenyre készülök (a verseny előtti 5 napban): visszaszámláló, gyülekező, rajtidők és pipálható pakolólista, a szüleiddel közös. A saját tételeid megmaradnak.', 'Az érmeid, az edzéseid és a legutóbbi eredményed.', 'A klub hírei és a közelgő versenyek.',
            'Ha egy csapattársadnak szülinapja van, a „Köszöntöm” gombbal matricát és jókívánságot küldhetsz neki (a napján és utána 7 napig).']
         : ['A klub hírei, a közelgő versenyek és események, a szülinaposok.',
            ...(parent || role === 'szulo_admin' ? ['A gyermeked legfrissebb adatai és az új edzői bejegyzések jelzése.'] : []),
