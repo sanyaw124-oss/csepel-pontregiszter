@@ -16,6 +16,7 @@ import { SeasonSummaryButton } from './seasonSummary';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 import { FriendsPanel, GreetingsPanel } from './friends';
+import { MusicPanel } from './music';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -2205,6 +2206,7 @@ function StaffCompetitorProfile({ supabase, competitor: initial, userRole, onBac
         <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
         <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
         <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole={userRole} />
+        <MusicPanel supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} userRole={userRole} />
         <CompetitorTrainingHistory supabase={supabase} competitorId={competitor.id} />
         <EvaluationsView supabase={supabase} competitorId={competitor.id} />
         <BadgesPanel supabase={supabase} competitorId={competitor.id} />
@@ -2528,6 +2530,8 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {competitor?.id && (
           <StoriesPanel supabase={supabase} competitorId={competitor.id} canWrite title="Kedvencei és céljai" />
         )}
+        {/* v0.9.83: gyakorlatzenék (az edző tölti fel; a szülő meghallgatja, letölti) */}
+        {competitor?.id && <MusicPanel supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} userRole="szulo" />}
         {/* v0.9.82: barátnők + köszöntések — a szülő látja, jelölni a gyerek tud */}
         {competitor?.id && <FriendsPanel supabase={supabase} competitorId={competitor.id} />}
         {competitor?.id && <GreetingsPanel supabase={supabase} competitorId={competitor.id} />}

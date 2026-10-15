@@ -30,8 +30,9 @@ function infoFor(view, role) {
            ...(staff ? ['Klubszintű összesítők, a klub legjobbjai.'] : [])];
     case 'profile':
       return kid
-        ? ['A saját adataid, profilkép feltöltése (csak RG témájú kép).', 'Legfeljebb 3 legjobb barátnőt jelölhetsz — csak ti ketten és a szüleitek látjátok.', 'Az eredményeid, a fejlődési grafikonod és a statisztikád.']
+        ? ['A saját adataid, profilkép feltöltése (csak RG témájú kép).', 'Legfeljebb 3 legjobb barátnőt jelölhetsz — csak ti ketten és a szüleitek látjátok.', 'A gyakorlatzenéid: belehallgatás és letöltés a telefonodra.', 'Az eredményeid, a fejlődési grafikonod és a statisztikád.']
         : ['A gyermeked adatai: érmek, eredmények, grafikon, statisztika, edzések, kitűzők, edzői értékelés és napló.',
+           'A gyakorlatzenéi (az edző tölti fel): belehallgatás és letöltés.',
            'Edzést rögzíthetsz neki (ma és az elmúlt 7 nap), korábbi eredményt vihetsz fel, és szerkesztheted a személyes adatait.',
            'A „Verseny összesítő” gombbal egy évről PDF-et készíthetsz.'];
     case 'treasure':
@@ -41,7 +42,7 @@ function infoFor(view, role) {
       return staff
         ? ['A klub összes aktív versenyzője, profilképpel. Keresés és kategóriaszűrő.',
            'Egy versenyzőt megnyitva mindent látsz róla: érmek, eredmények, grafikon, statisztika, edzések, kitűzők, értékelés, edzői napló.',
-           ...(editor ? ['Innen szerkesztheted az adatait („Adatok szerkesztése”), és elrejtheted a nem megfelelő profilképet.'] : [])]
+           ...(editor ? ['Innen szerkesztheted az adatait („Adatok szerkesztése”), elrejtheted a nem megfelelő profilképet, és feltöltheted a gyakorlatzenéit szerenként.'] : [])]
         : ['A klubtársak listája. Egy versenyzőt megnyitva látod az érmeit, helyezéseit és a kedvenceit.',
            'Pontszámot csak a saját (gyermeked) adatlapján látsz.'];
     case 'competitions':

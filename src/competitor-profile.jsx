@@ -16,6 +16,7 @@ import { Loader, AlertCircle } from 'lucide-react';
 import { safeQuery } from './competitor-dashboard';
 import { CompetitorProgressChart } from './progress-chart';
 import { FriendsPanel } from './friends';
+import { MusicPanel } from './music';
 import { useAvatarUrl, uploadAvatar, AvatarImage, AVATAR_RULES_TEXT } from './avatar';
 import { loadBadgeData } from './badges';
 
@@ -355,6 +356,9 @@ export default function CompetitorProfileView({ supabase, profile }) {
 
       {/* 3. LEGJOBB BARÁTNŐK — v0.9.82: legfeljebb 3, csak ti ketten + a szülők látjátok */}
       <FriendsPanel supabase={supabase} competitorId={competitor.id} canWrite />
+
+      {/* v0.9.83: gyakorlatzenék (az edző tölti fel) */}
+      <MusicPanel supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} userRole="versenyzo" />
 
       {/* 4. FEJLŐDÉSI GRAFIKON */}
       <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
