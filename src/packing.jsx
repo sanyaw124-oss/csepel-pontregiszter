@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════════════════════════
 // Versenyre készülés (v1.1.0) — Sándor 2026.10.15: a gyerek következő
 // versenye (ahol a startlistán szerepel, egyéniben vagy csapatban):
-// visszaszámláló, gyülekező, helyszín, rajtidők, és pipálható pakolólista
+// visszaszámláló, gyülekező, helyszín, a szerei (rajtidő NEM — Sándor), és pipálható pakolólista
 // (alap tételek + a versenyen használt szerek + saját tételek).
 // A listát a gyerek és a szülője közösen pipálja (packing_lists tábla); a saját
 // tételek a gyerekhez mentődnek (competitor_packing_items), minden versenyre.
@@ -12,7 +12,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Luggage, Check, Plus, X, MapPin, Clock, CalendarDays, AlertTriangle } from 'lucide-react';
 import { ApparatusIcon } from './apparatusIcons';
-import { formatStartTime } from './names';
 
 const PINK = '#BE185D';
 const KID_DAYS_BEFORE = 5;   // a gyereknél ennyi nappal a verseny előtt jelenik meg
@@ -76,7 +75,9 @@ async function loadNextCompetition(supabase, competitorId) {
   const c = comp(rows[0]);
   const starts = rows.filter(r => comp(r).id === c.id).map(r => ({
     date: r.competition_category.competition_day.date, time: r.start_time, apparatus: r.apparatus, team: r.team
-  })).sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`));
+  })).sort((a, b) => `${a.date}${a.time || ''}`.localeCompare(`${b.date}${b.time || ''}`))
+    // egy szer egyszer (pl. a csapat két gyakorlata ugyanazzal a szerrel)
+    .filter((x, i, arr) => arr.findIndex(y => y.team === x.team && y.apparatus === x.apparatus) === i);
   const apps = [...new Set(starts.flatMap(s => appKeysOf(s.apparatus)))];
   return { competition: c, starts, apps };
 }
@@ -176,7 +177,6 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
             <span key={i} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-900 font-semibold">
               {appKeysOf(s.apparatus)[0] ? <ApparatusIcon kind={appKeysOf(s.apparatus)[0]} size={18} /> : null}
               {s.team ? 'Csapat' : ''}{s.team && s.apparatus ? ': ' : ''}{appLabel(s.apparatus)}
-              {s.time && <span className="text-blue-700">· {formatStartTime(s.time)}</span>}
               {c.end_date !== c.start_date && s.date && <span className="font-normal text-blue-700">({huDate(s.date).slice(5)})</span>}
             </span>
           ))}

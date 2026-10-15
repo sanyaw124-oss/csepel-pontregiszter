@@ -23,7 +23,7 @@ function infoFor(view, role) {
   switch (view) {
     case 'dashboard':
       return kid
-        ? ['A napi köszöntés, a profilképed és a napi idézet.', 'Versenyre készülök (a verseny előtti 5 napban): visszaszámláló, gyülekező, rajtidők és pipálható pakolólista, a szüleiddel közös. A saját tételeid megmaradnak.', 'Az érmeid, az edzéseid és a legutóbbi eredményed.', 'A klub hírei és a közelgő versenyek.',
+        ? ['A napi köszöntés, a profilképed és a napi idézet.', 'Versenyre készülök (a verseny előtti 5 napban): visszaszámláló, gyülekező, a szereid és pipálható pakolólista, a szüleiddel közös. A saját tételeid megmaradnak.', 'Az érmeid, az edzéseid és a legutóbbi eredményed.', 'A klub hírei és a közelgő versenyek.',
            'Ha egy csapattársadnak szülinapja van, a „Köszöntöm” gombbal matricát és jókívánságot küldhetsz neki (a napján és utána 7 napig).']
         : ['A klub hírei, a közelgő versenyek és események, a szülinaposok.',
            ...(parent || role === 'szulo_admin' ? ['A gyermeked legfrissebb adatai és az új edzői bejegyzések jelzése.'] : []),
@@ -31,7 +31,7 @@ function infoFor(view, role) {
     case 'profile':
       return kid
         ? ['A saját adataid, profilkép feltöltése (csak RG témájú kép).', 'Legfeljebb 3 legjobb barátnőt jelölhetsz — csak ti ketten és a szüleitek látjátok.', 'A gyakorlatzenéid: belehallgatás és letöltés a telefonodra.', 'Az eredményeid, a fejlődési grafikonod és a statisztikád.']
-        : ['Versenyre készülés: a gyermeked következő versenye, rajtidők és a vele közös pakolólista.',
+        : ['Versenyre készülés: a gyermeked következő versenye, szerei és a vele közös pakolólista.',
            'A gyermeked adatai: érmek, eredmények, grafikon, statisztika, edzések, kitűzők, edzői értékelés és napló.',
            'A gyakorlatzenéi (az edző tölti fel): belehallgatás és letöltés.',
            'Edzést rögzíthetsz neki (ma és az elmúlt 7 nap), korábbi eredményt vihetsz fel, és szerkesztheted a személyes adatait.',
