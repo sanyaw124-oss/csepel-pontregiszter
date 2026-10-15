@@ -17,6 +17,7 @@ import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 import { FriendsPanel, GreetingsPanel } from './friends';
 import { MusicPanel } from './music';
+import { PackingCard } from './packing';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -2477,6 +2478,9 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
 
       <div className="space-y-3">
         {/* === FELÜL: ÉRDEKES RÉSZEK === */}
+
+        {/* v1.1.0: versenyre készülés — a gyerekkel közös pakolólista */}
+        {competitor?.id && <PackingCard supabase={supabase} competitorId={competitor.id} forParent />}
 
         {/* Évvégi statisztika - érmek évre bontva */}
         {competitor?.id && (

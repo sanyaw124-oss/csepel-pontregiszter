@@ -24,6 +24,7 @@ import { Loader, AlertCircle } from 'lucide-react';
 import { useAvatarUrl, AvatarImage } from './avatar';
 import { loadBadgeData } from './badges';
 import { GreetingsPanel } from './friends';
+import { PackingCard } from './packing';
 
 // HELPER
 function getGreeting(name) {
@@ -280,6 +281,9 @@ function MySelfBlock({ supabase, profile }) {
           <div className="text-xs mt-1">Tölts fel egy új, RG témájú képet a Profil menüben — addig az avatarod látszik.</div>
         </div>
       )}
+
+      {/* v1.1.0: versenyre készülés — visszaszámláló + pakolólista a következő versenyhez */}
+      {competitor?.id && <div className="mb-3"><PackingCard supabase={supabase} competitorId={competitor.id} /></div>}
 
       {/* Saját éremfal */}
       {stats && stats.osszes > 0 && (
