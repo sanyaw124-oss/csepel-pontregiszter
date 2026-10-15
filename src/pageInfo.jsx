@@ -110,7 +110,7 @@ export function PageInfo({ view, role }) {
   if (!items || items.length === 0) return null;
   const shown = open || hover;
   return (
-    <div ref={ref} className="relative flex justify-end -mb-2" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
+    <div ref={ref} className="relative flex justify-end mb-3" onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}>
       <button onClick={() => setOpen(o => !o)} aria-label="Mit tehetek itt?"
               className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-full text-white shadow-sm hover:opacity-90"
               style={{ backgroundColor: '#1D4ED8' }}>

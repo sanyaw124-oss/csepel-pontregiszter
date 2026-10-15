@@ -847,7 +847,13 @@ function BasicsTab({ supabase, competition, canManage, onSaved, onAction }) {
           <Input
             type="date"
             value={form.start_date}
-            onChange={(e) => setForm({...form, start_date: e.target.value, end_date: form.end_date || e.target.value})}
+            onChange={(e) => {
+              // v1.0.0 (Sándor): kézi gépelésnél a böngésző minden leütésnél új (fél) dátumot ad —
+              // a befejező dátum addig követi a kezdőt, amíg azzal egyezik (vagy üres / korábbi)
+              const v = e.target.value;
+              const follow = !form.end_date || form.end_date === form.start_date || form.end_date < v;
+              setForm({ ...form, start_date: v, end_date: follow ? v : form.end_date });
+            }}
             disabled={!canManage}
           />
         </Field>
