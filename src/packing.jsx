@@ -12,21 +12,30 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Luggage, Check, Plus, X, MapPin, Clock, CalendarDays, AlertTriangle } from 'lucide-react';
 import { ApparatusIcon } from './apparatusIcons';
+import { formatStartTime } from './names';
 
 const PINK = '#BE185D';
 const KID_DAYS_BEFORE = 5;   // a gyereknél ennyi nappal a verseny előtt jelenik meg
-const BASE_ITEMS = [
-  { key: 'dressz', label: 'Versenydressz' },
-  { key: 'melegito', label: 'Klubmelegítő' },
-  { key: 'cipo', label: 'Fél-spicc / tornacipő' },
-  { key: 'haj', label: 'Hajháló, hajtű, hajgumi, hajlakk' },
-  { key: 'smink', label: 'Smink (ha kell)' },
-  { key: 'engedely', label: 'Versenyengedély' },
-  { key: 'kulacs', label: 'Kulacs vízzel' },
-  { key: 'uzsonna', label: 'Uzsonna, gyümölcs' },
-  { key: 'tape', label: 'Tapasz, sportszalag' },
-  { key: 'torolkozo', label: 'Törölköző' },
-  { key: 'zene', label: 'A zenéim a telefonon (tartalék)' }
+// v1.1.0 (Sándor 2026.10.15): a klub valódi pakolólistája, csoportokban
+const GROUPS = [
+  { title: 'Alap', items: [
+    ['dresszek', 'Versenydressz / dresszek'], ['lazitoparna', 'Lazítópárna'], ['terdvedo', 'Térdvédő'],
+    ['jogakocka', 'Jógakocka'], ['bokasuly', 'Bokasúly'], ['szamosgumi', 'Számos gumi'],
+    ['kotel_bemelegito', 'Kötél (bemelegítéshez)'], ['spiccgumi', 'Spicc gumi'], ['kistorolkozo', 'Kis törölköző'],
+    ['spicccipo', 'Spicc cipő']] },
+  { title: 'Haj', items: [
+    ['hajlakk', 'Hajlakk'], ['hajhalo', 'Hajháló'], ['kontytu', 'Kontytű'], ['diszkontytu', 'Díszes kontytű'],
+    ['befottesgumi', 'Befőttesgumi'], ['kisgumi', 'Kisgumi'], ['hullamcsat', 'Hullámcsat'], ['hajkefe', 'Hajkefe'],
+    ['kisfesu', 'Kisfésű']] },
+  { title: 'Smink', items: [
+    ['szemceruza', 'Szemceruza (fekete)'], ['spiral', 'Szempillaspirál (fekete)'], ['pirosito', 'Pirosító'],
+    ['ruzs', 'Piros rúzs'], ['paletta', 'Sminkpaletta (fekete és színes)'], ['pirositoecset', 'Pirosító ecset'],
+    ['sminkecset', 'Sminkecset'], ['fulpiszkalo', 'Fülpiszkáló'], ['sminklemoso', 'Sminklemosó']] },
+  { title: 'Neszeszer', items: [
+    ['leukoplaszt', 'Leukoplaszt'], ['sebtapasz', 'Sebtapasz'], ['ollo', 'Olló'], ['szolocukor', 'Szőlőcukor'],
+    ['zsebkendo', 'Zsebkendő']] },
+  { title: 'Ruha és innivaló', items: [
+    ['csepelesruha', 'Csepeles ruházat'], ['zokni', 'Zokni (fehér és fekete)'], ['innivalo', 'Innivaló']] }
 ];
 const APP_ITEMS = {
   karika: 'Karika', labda: 'Labda', buzogany: 'Buzogány (2 db)',
@@ -117,11 +126,12 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
   const c = next.competition;
   const d = daysUntil(c.start_date);
   if (!forParent && d > KID_DAYS_BEFORE) return null;
-  const items = [
-    ...BASE_ITEMS,
-    ...next.apps.map(k => ({ key: `app_${k}`, label: APP_ITEMS[k], app: k })),
-    ...list.extra.map((label, i) => ({ key: `x_${label}`, label, extraIndex: i }))
+  const sections = [
+    ...(next.apps.length ? [{ title: 'Szerek a versenyre', items: next.apps.map(k => ({ key: `app_${k}`, label: APP_ITEMS[k], app: k })) }] : []),
+    ...GROUPS.map(g => ({ title: g.title, items: g.items.map(([key, label]) => ({ key, label })) })),
+    ...(list.extra.length ? [{ title: 'Saját tételeim', items: list.extra.map((label, i) => ({ key: `x_${label}`, label, extraIndex: i })) }] : [])
   ];
+  const items = sections.flatMap(sec => sec.items);
   const done = items.filter(it => list.checked.includes(it.key)).length;
   const all = done === items.length;
   const toggle = (key) => save({ ...list, checked: list.checked.includes(key) ? list.checked.filter(k => k !== key) : [...list.checked, key] });
@@ -166,7 +176,7 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
             <span key={i} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-900 font-semibold">
               {appKeysOf(s.apparatus)[0] ? <ApparatusIcon kind={appKeysOf(s.apparatus)[0]} size={18} /> : null}
               {s.team ? 'Csapat' : ''}{s.team && s.apparatus ? ': ' : ''}{appLabel(s.apparatus)}
-              {s.time && <span className="text-blue-700">· {String(s.time).slice(0, 5)}</span>}
+              {s.time && <span className="text-blue-700">· {formatStartTime(s.time)}</span>}
               {c.end_date !== c.start_date && s.date && <span className="font-normal text-blue-700">({huDate(s.date).slice(5)})</span>}
             </span>
           ))}
@@ -188,8 +198,13 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
       <div className="h-2 rounded-full bg-gray-100 mt-1 overflow-hidden">
         <div className="h-full rounded-full transition-all" style={{ width: `${Math.round(done / items.length * 100)}%`, backgroundColor: all ? '#10B981' : PINK }} />
       </div>
-      <div className="mt-2 grid sm:grid-cols-2 gap-1.5">
-        {items.map(it => {
+      {sections.map(sec => (
+        <div key={sec.title} className="mt-3">
+          <div className="text-xs font-bold uppercase tracking-wide text-gray-500 mb-1">
+            {sec.title} <span className="font-normal">({sec.items.filter(it => list.checked.includes(it.key)).length}/{sec.items.length})</span>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-1.5">
+        {sec.items.map(it => {
           const on = list.checked.includes(it.key);
           return (
             <div key={it.key} className="flex items-center gap-1">
@@ -211,7 +226,9 @@ export function PackingCard({ supabase, competitorId, forParent = false }) {
             </div>
           );
         })}
-      </div>
+          </div>
+        </div>
+      ))}
       <div className="mt-2 flex gap-2">
         <input value={newItem} onChange={e => setNewItem(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addItem(); }}
                placeholder="Saját tétel (megmarad a többi versenyre is)" maxLength={60}
