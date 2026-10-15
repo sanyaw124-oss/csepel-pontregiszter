@@ -16,6 +16,7 @@ import { ApparatusIcon } from './apparatusIcons';
 
 const BUCKET = 'music';
 const MAX_BYTES = 15 * 1024 * 1024;
+const PREVIEW_SECONDS = 30;  // gyerek / szülő ennyit hallgathat bele
 const UPLOADERS = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'];
 const BLUE = '#1e3a8a';
 const APPARATUS = [
@@ -94,6 +95,7 @@ function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [playUrl, setPlayUrl] = useState(null);
+  const [previewEnded, setPreviewEnded] = useState(false);
   const fileRef = useRef(null);
 
   const upload = async (file) => {
@@ -114,7 +116,7 @@ function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload
   };
   const play = async () => {
     const { data, error: err } = await supabase.storage.from(BUCKET).createSignedUrl(item.file_path, 3600);
-    if (err) setError(err.message); else setPlayUrl(data.signedUrl);
+    if (err) setError(err.message); else { setPreviewEnded(false); setPlayUrl(data.signedUrl); }
   };
   const download = async () => {
     const name = musicFileName(competitorName, app.label, item.original_name);
@@ -159,7 +161,25 @@ function MusicRow({ supabase, item, app, competitorId, competitorName, canUpload
           </>
         )}
       </div>
-      {playUrl && <audio controls autoPlay src={playUrl} className="w-full mt-2" />}
+      {playUrl && (
+        <div className="mt-2">
+          <audio controls autoPlay preload="none" src={playUrl} className="w-full"
+                 onTimeUpdate={canUpload ? undefined : (e) => {
+                   // v0.9.83 (Sándor): a gyerek / szülő csak 30 mp-et hallgathat bele — gyakorláshoz letöltés
+                   const a = e.currentTarget;
+                   if (a.currentTime >= PREVIEW_SECONDS) { a.pause(); a.currentTime = 0; setPreviewEnded(true); }
+                 }}
+                 onSeeking={canUpload ? undefined : (e) => {
+                   const a = e.currentTarget;
+                   if (a.currentTime > PREVIEW_SECONDS) a.currentTime = 0;
+                 }} />
+          {!canUpload && (
+            <div className="text-xs mt-1" style={{ color: previewEnded ? '#BE185D' : '#6B7280', fontWeight: previewEnded ? 600 : 400 }}>
+              {previewEnded ? 'Ennyi volt a belehallgatás — a teljes zenéhez nyomd meg a Letöltés gombot.' : `Belehallgatás: az első ${PREVIEW_SECONDS} másodperc.`}
+            </div>
+          )}
+        </div>
+      )}
       {error && <div className="text-xs text-red-600 mt-1">{error}</div>}
     </div>
   );
