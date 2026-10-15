@@ -20,6 +20,7 @@ import { CompetitorStatsPanel } from './stats';
 import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 import { GreetingsPanel } from './friends';
+import { useAvatarUrl, AvatarImage } from './avatar';
 
 const COLORS = {
   purpleDeep: '#831843',
@@ -32,6 +33,7 @@ const COLORS = {
 
 export default function CompetitorTreasureView({ supabase, profile }) {
   const [competitor, setCompetitor] = useState(null);
+  const photo = useAvatarUrl(supabase, competitor); // v0.9.84: a profilkép itt is (Sándor)
   const [medalStats, setMedalStats] = useState({ gold: 0, silver: 0, bronze: 0 });
   const [lastMedal, setLastMedal] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -54,7 +56,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         // 2) Saját competitor
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, avatar_emoji, birth_year')
+            .select('id, full_name, nickname, kategoria, korosztaly, avatar_emoji, avatar_path, birth_year')
             .eq('id', competitorId).maybeSingle()
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
@@ -133,7 +135,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         </div>
 
         <div className="flex-1 min-w-0 text-center">
-          <div className="text-5xl leading-none mb-1">{competitor.avatar_emoji || '🦄'}</div>
+          <div className="mb-1 flex justify-center"><AvatarImage url={photo.url} emoji={competitor.avatar_emoji || '🦄'} size={88} /></div>
           <div className="text-base font-bold leading-tight" style={{ color: COLORS.amberDark }}>
             {competitor.nickname
               ? `"${competitor.nickname}"`
