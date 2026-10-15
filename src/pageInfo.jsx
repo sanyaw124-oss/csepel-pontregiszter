@@ -30,13 +30,13 @@ function infoFor(view, role) {
            ...(staff ? ['Klubszintű összesítők, a klub legjobbjai.'] : [])];
     case 'profile':
       return kid
-        ? ['A saját adataid, profilkép feltöltése (csak RG témájú kép).', 'Az eredményeid, a fejlődési grafikonod és a statisztikád.']
+        ? ['A saját adataid, profilkép feltöltése (csak RG témájú kép).', 'Legfeljebb 3 legjobb barátnőt jelölhetsz — csak ti ketten és a szüleitek látjátok.', 'Az eredményeid, a fejlődési grafikonod és a statisztikád.']
         : ['A gyermeked adatai: érmek, eredmények, grafikon, statisztika, edzések, kitűzők, edzői értékelés és napló.',
            'Edzést rögzíthetsz neki (ma és az elmúlt 7 nap), korábbi eredményt vihetsz fel, és szerkesztheted a személyes adatait.',
            'A „Verseny összesítő” gombbal egy évről PDF-et készíthetsz.'];
     case 'treasure':
       return ['Az éremfalad, a kitűzőid, a kedvenceid és céljaid.', 'Az edződ értékelése és a statisztikád.',
-              'Legfeljebb 3 legjobb barátnőt jelölhetsz — csak ti ketten és a szüleitek látjátok.', 'A kapott szülinapi köszöntéseid.'];
+              'A kapott szülinapi köszöntéseid.'];
     case 'competitors':
       return staff
         ? ['A klub összes aktív versenyzője, profilképpel. Keresés és kategóriaszűrő.',

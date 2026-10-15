@@ -12,9 +12,10 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import { useEffect, useState, useMemo } from 'react';
-import { Loader, AlertCircle, X, Search } from 'lucide-react';
+import { Loader, AlertCircle } from 'lucide-react';
 import { safeQuery } from './competitor-dashboard';
 import { CompetitorProgressChart } from './progress-chart';
+import { FriendsPanel } from './friends';
 import { useAvatarUrl, uploadAvatar, AvatarImage, AVATAR_RULES_TEXT } from './avatar';
 import { loadBadgeData } from './badges';
 
@@ -69,12 +70,8 @@ function calculateWeeklyStreak(trainingDates) {
 
 export default function CompetitorProfileView({ supabase, profile }) {
   const [competitor, setCompetitor] = useState(null);
-  const [allCompetitors, setAllCompetitors] = useState([]);
-  const [bestFriend, setBestFriend] = useState(null);
   const [selectedAvatar, setSelectedAvatar] = useState('🦄');
   const [showAvatarPicker, setShowAvatarPicker] = useState(false);
-  const [showFriendPicker, setShowFriendPicker] = useState(false);
-  const [friendSearch, setFriendSearch] = useState('');
   const [trainingDates, setTrainingDates] = useState([]);
   const [competitionsThisYear, setCompetitionsThisYear] = useState(null);
   const [medalsThisYear, setMedalsThisYear] = useState(null);
@@ -120,10 +117,10 @@ export default function CompetitorProfileView({ supabase, profile }) {
         }
         if (!competitorId) { if (mounted) setLoading(false); return; }
 
-        // 2) Saját competitor (külön mert kell hozzá a best_friend_competitor_id)
+        // 2) Saját competitor
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path, best_friend_competitor_id')
+            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path')
             .eq('id', competitorId).maybeSingle()
         );
         if (!compRes.data || !mounted) { setLoading(false); return; }
@@ -136,24 +133,8 @@ export default function CompetitorProfileView({ supabase, profile }) {
 
         // ═══════ PÁRHUZAMOS LEKÉRDEZÉSEK ═══════
         // v0.9.77: a „verseny idén / érem idén” számot a loadBadgeData adja (lent, külön)
-        const [friendRes, allRes, trainingRes] = await Promise.all([
-          // a) Legjobb barátnő
-          compRes.data.best_friend_competitor_id
-            ? safeQuery(() =>
-                supabase.from('competitors')
-                  .select('id, full_name, nickname, avatar_emoji, kategoria')
-                  .eq('id', compRes.data.best_friend_competitor_id).maybeSingle()
-              )
-            : Promise.resolve({ data: null }),
-
-          // b) Klubtagok (legjobb barátnő választáshoz)
-          safeQuery(() =>
-            supabase.from('competitors')
-              .select('id, full_name, nickname, avatar_emoji, kategoria')
-              .eq('is_active', true).neq('id', competitorId)
-          ),
-
-          // c) Edzések — JAVÍTVA: training_sessions!inner(date) JOIN
+        const [trainingRes] = await Promise.all([
+          // Edzések — JAVÍTVA: training_sessions!inner(date) JOIN
           safeQuery(() =>
             supabase.from('training_attendance')
               .select('id, training_sessions!inner(date)')
@@ -164,19 +145,6 @@ export default function CompetitorProfileView({ supabase, profile }) {
         ]);
 
         if (!mounted) return;
-
-        // Legjobb barátnő
-        if (friendRes?.data) setBestFriend(friendRes.data);
-
-        // Klubtagok (becenév/abc rendezés)
-        if (allRes?.data) {
-          const sorted = allRes.data.sort((a, b) => {
-            const aKey = (a.nickname || a.full_name || '').trim();
-            const bKey = (b.nickname || b.full_name || '').trim();
-            return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base' });
-          });
-          setAllCompetitors(sorted);
-        }
 
         // Edzések (training_sessions.date a JOIN-ról)
         if (trainingRes?.data) {
@@ -224,15 +192,6 @@ export default function CompetitorProfileView({ supabase, profile }) {
     }
   };
 
-  const saveBestFriend = async (friend) => {
-    if (!competitor?.id) return;
-    const friendId = friend?.id || null;
-    await supabase.from('competitors').update({ best_friend_competitor_id: friendId }).eq('id', competitor.id);
-    setBestFriend(friend);
-    setShowFriendPicker(false);
-    setFriendSearch('');
-  };
-
   const birthdayCountdown = useMemo(() => {
     if (!competitor?.birth_date) return null;
     const today = new Date();
@@ -249,14 +208,6 @@ export default function CompetitorProfileView({ supabase, profile }) {
     return new Set(trainingDates.map(d => d.split('T')[0])).size;
   }, [trainingDates]);
 
-  const filteredFriends = useMemo(() => {
-    if (!friendSearch) return allCompetitors;
-    const q = friendSearch.toLowerCase().trim();
-    return allCompetitors.filter(c =>
-      (c.nickname || '').toLowerCase().includes(q) ||
-      (c.full_name || '').toLowerCase().includes(q)
-    );
-  }, [friendSearch, allCompetitors]);
 
   if (loading) {
     return (
@@ -402,88 +353,8 @@ export default function CompetitorProfileView({ supabase, profile }) {
         </div>
       )}
 
-      {/* 3. LEGJOBB BARÁTNŐ */}
-      <div className="rounded-2xl p-4 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
-        <div className="text-xs font-bold mb-2" style={{ color: COLORS.pinkDark }}>
-          💖 LEGJOBB BARÁTNŐM
-        </div>
-        {bestFriend ? (
-          <div className="flex items-center gap-3 p-3 rounded-xl" style={{ background: COLORS.pinkBg }}>
-            <div className="text-4xl">{bestFriend.avatar_emoji || '🎀'}</div>
-            <div className="flex-1">
-              <div className="font-bold" style={{ color: COLORS.purpleDeep }}>
-                {bestFriend.nickname || bestFriend.full_name?.split(' ').slice(-1)[0]}
-              </div>
-              {bestFriend.nickname && (
-                <div className="text-xs text-gray-500">{bestFriend.full_name}</div>
-              )}
-              <div className="text-xs" style={{ color: COLORS.pinkDark }}>{bestFriend.kategoria}</div>
-            </div>
-            <button
-              onClick={() => setShowFriendPicker(true)}
-              className="px-3 py-1 rounded-full text-xs font-bold"
-              style={{ background: '#FCE4EC', color: COLORS.pinkDark }}
-            >
-              Csere
-            </button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowFriendPicker(true)}
-            className="w-full p-3 rounded-xl border-2 border-dashed text-sm font-medium transition"
-            style={{ borderColor: '#F9A8D4', color: COLORS.pinkDark }}
-          >
-            💕 Válassz egy legjobb barátnőt!
-          </button>
-        )}
-      </div>
-
-      {showFriendPicker && (
-        <div className="rounded-2xl p-4 bg-white border-2" style={{ borderColor: COLORS.pink }}>
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-sm font-bold" style={{ color: COLORS.pinkDark }}>Ki a legjobb barátnőd?</div>
-            <button onClick={() => { setShowFriendPicker(false); setFriendSearch(''); }}>
-              <X className="w-5 h-5 text-gray-400" />
-            </button>
-          </div>
-          <div className="relative mb-3">
-            <Search className="w-4 h-4 absolute left-3 top-3 text-gray-400" />
-            <input
-              type="text" value={friendSearch}
-              onChange={(e) => setFriendSearch(e.target.value)}
-              placeholder="Keresés név vagy becenév szerint..."
-              className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg"
-            />
-          </div>
-          <div className="max-h-64 overflow-y-auto space-y-1">
-            {bestFriend && (
-              <button onClick={() => saveBestFriend(null)}
-                className="w-full text-left px-3 py-2 rounded-lg text-xs italic text-gray-500 hover:bg-gray-50">
-                ✕ Eltávolítom a választást
-              </button>
-            )}
-            {filteredFriends.length === 0 ? (
-              <div className="text-center text-xs text-gray-500 py-4">Nincs találat.</div>
-            ) : (
-              filteredFriends.map(c => (
-                <button key={c.id} onClick={() => saveBestFriend(c)}
-                  className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-pink-50 transition text-left">
-                  <div className="text-2xl">{c.avatar_emoji || '🎀'}</div>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-medium text-sm truncate" style={{ color: COLORS.purpleDeep }}>
-                      {c.nickname || c.full_name?.split(' ').slice(-1)[0]}
-                    </div>
-                    {c.nickname && (
-                      <div className="text-xs text-gray-500 truncate">{c.full_name}</div>
-                    )}
-                  </div>
-                  <div className="text-xs" style={{ color: COLORS.pinkDark }}>{c.kategoria}</div>
-                </button>
-              ))
-            )}
-          </div>
-        </div>
-      )}
+      {/* 3. LEGJOBB BARÁTNŐK — v0.9.82: legfeljebb 3, csak ti ketten + a szülők látjátok */}
+      <FriendsPanel supabase={supabase} competitorId={competitor.id} canWrite />
 
       {/* 4. FEJLŐDÉSI GRAFIKON */}
       <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
