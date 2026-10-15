@@ -30,6 +30,12 @@ export const MESSAGES = [
   { key: 'm8', text: 'Boldog szülinapot, barátnőm! 🎂' }
 ];
 const stickerOf = (k) => STICKERS.find(s => s.key === k) || STICKERS[0];
+// v0.9.82: RG-s matricák (ChatGPT-vel rajzolva, public/stickers/<kulcs>.webp)
+export function Sticker({ k, size = 56 }) {
+  const st = stickerOf(k);
+  return <img src={`/stickers/${st.key}.webp`} alt={st.label} width={size} height={size}
+              className="select-none" draggable={false} style={{ width: size, height: size, objectFit: 'contain' }} />;
+}
 const messageOf = (k) => (MESSAGES.find(m => m.key === k) || MESSAGES[0]).text;
 
 // ─── Legjobb barátnők ───────────────────────────────────────────────
@@ -142,9 +148,9 @@ export function GreetDialog({ supabase, target, onClose, onSent }) {
         <div className="text-sm font-semibold text-gray-700">Válassz matricát</div>
         <div className="grid grid-cols-4 gap-2">
           {STICKERS.map(s => (
-            <button key={s.key} onClick={() => setSticker(s.key)} className="rounded-lg border-2 py-2 text-3xl"
+            <button key={s.key} onClick={() => setSticker(s.key)} className="rounded-lg border-2 p-1 flex items-center justify-center"
                     style={{ borderColor: sticker === s.key ? PINK : '#E5E7EB', backgroundColor: sticker === s.key ? '#FDF2F8' : 'white' }}
-                    title={s.label}>{s.emoji}</button>
+                    title={s.label}><Sticker k={s.key} size={64} /></button>
           ))}
         </div>
         <div className="text-sm font-semibold text-gray-700">Válassz jókívánságot</div>
@@ -158,7 +164,7 @@ export function GreetDialog({ supabase, target, onClose, onSent }) {
         </div>
         {error && <div className="text-sm text-red-600">{error}</div>}
         <button onClick={send} disabled={busy} className="w-full py-3 rounded-lg text-white font-semibold flex items-center justify-center gap-2 shadow-md disabled:opacity-50" style={{ backgroundColor: PINK }}>
-          {busy ? <Loader className="w-5 h-5 animate-spin" /> : <Gift className="w-5 h-5" />} Küldöm {stickerOf(sticker).emoji}
+          {busy ? <Loader className="w-5 h-5 animate-spin" /> : <Gift className="w-5 h-5" />} Küldöm <Sticker k={sticker} size={28} />
         </button>
         <div className="text-xs text-gray-500 text-center">Csak ő és a szülei látják, és a te szüleid.</div>
       </div>
@@ -198,7 +204,7 @@ export function GreetingsPanel({ supabase, competitorId, recentOnly = false, tit
           <div className="grid sm:grid-cols-2 gap-2">
             {items.filter(g => g.bd_year === y).map(g => (
               <div key={g.id} className="bg-white/90 rounded-lg p-2.5 flex items-center gap-3 shadow-sm">
-                <div className="text-4xl leading-none">{stickerOf(g.sticker).emoji}</div>
+                <Sticker k={g.sticker} size={64} />
                 <div className="min-w-0">
                   <div className="text-sm font-semibold">{messageOf(g.message)}</div>
                   <div className="text-xs text-gray-600">— {g.name}</div>
