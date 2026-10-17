@@ -20,7 +20,7 @@ end $$;
 
 -- Ellenőrzés: üres lista = nincs dupla sor; a második sor jelzi, hogy él-e a védelem
 select 'DUPLA SOR' as allapot, r.startlist_entry_id, count(*) as darab,
-       string_agg(coalesce(r.score_total::text, '—') || ' @ ' || coalesce(r.modified_at::text, r.created_at::text), '  |  ') as ertekek
+       string_agg(coalesce(r.score_total::text, '—') || ' @ ' || coalesce(r.modified_at::text, '—'), '  |  ') as ertekek
 from public.results r
 group by r.startlist_entry_id having count(*) > 1
 union all
