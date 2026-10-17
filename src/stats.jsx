@@ -32,7 +32,7 @@ export async function loadStatsData(supabase, competitorId) {
   const [res, hist, att] = await Promise.all([
     supabase.from('results')
       .select(`apparatus, score_total, score_d, score_a, score_e, score_p,
-        startlist_entry:startlist_entries!inner(competitor_id, did_not_start,
+        startlist_entry:startlist_entries!inner(competitor_id, did_not_start, is_exhibition,
           competition_category:competition_categories!inner(type,
             competition_day:competition_days!inner(
               competition:competitions!inner(id, name, start_date, is_finalized))))`)
@@ -48,7 +48,7 @@ export async function loadStatsData(supabase, competitorId) {
   (res.data || []).forEach(r => {
     const se = r.startlist_entry;
     const comp = se?.competition_category?.competition_day?.competition;
-    if (!comp || !comp.is_finalized || se.did_not_start) return;
+    if (!comp || !comp.is_finalized || se.did_not_start || se.is_exhibition) return;
     if (se.competition_category.type === 'csapat' || !APP_KEYS.includes(r.apparatus)) return;
     const total = num(r.score_total);
     if (total === null) return;

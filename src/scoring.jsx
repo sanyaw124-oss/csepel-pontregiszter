@@ -208,7 +208,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club,
-          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year, did_not_start, start_time,
+          apparatus, performance_number, team_id, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year, did_not_start, is_exhibition, start_time,
           competitors:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -306,7 +306,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       // Egyéni: v0.9.49 — szerenként rangsorolunk (mint a Csepeli fül és a lezáráskor
       // mentett helyezés, placements.js), hogy a látott és a mentett helyezés egyezzen
       const withResults = entries.filter(e => {
-        if (e.did_not_start) return false; // v0.9.50: nem indult — nem rangsoroljuk
+        if (e.did_not_start || e.is_exhibition) return false; // v0.9.50 nem indult / v1.2.0 bemutató — nem rangsoroljuk
         const r = results[e.id];
         return r && r.score_total !== null && r.score_total !== undefined;
       });

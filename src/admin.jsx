@@ -4196,7 +4196,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
         .select(`
           placement, apparatus, score_total,
           startlist_entry:startlist_entries!inner(
-            competitor_id, did_not_start,
+            competitor_id, did_not_start, is_exhibition,
             competition_category:competition_categories!inner(
               type,
               competition_day:competition_days!inner(
@@ -4270,7 +4270,7 @@ export function CompetitorYearlyStats({ supabase, competitorId, competitorName, 
       (resultsData || []).forEach(r => {
         const comp = r.startlist_entry?.competition_category?.competition_day?.competition;
         if (!comp || !comp.is_finalized) return; // CSAK lezárt versenyek
-        if (r.startlist_entry?.did_not_start) return; // v0.9.77: a „nem indult” nem számít versenynek
+        if (r.startlist_entry?.did_not_start || r.startlist_entry?.is_exhibition) return; // v0.9.77: a „nem indult” nem számít versenynek
         const year = parseInt(comp.start_date?.slice(0, 4), 10);
         const key = `live_${comp.id}`;
         if (!compMap.has(key)) {

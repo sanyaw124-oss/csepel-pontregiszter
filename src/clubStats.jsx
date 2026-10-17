@@ -46,7 +46,7 @@ export function ClubStatsWidget({ supabase }) {
             .gte('training_sessions.date', `${year}-01-01`).lte('training_sessions.date', `${year}-12-31`),
           supabase.from('results')
             .select(`apparatus, placement, score_total,
-              startlist_entry:startlist_entries!inner(competitor_id, did_not_start,
+              startlist_entry:startlist_entries!inner(competitor_id, did_not_start, is_exhibition,
                 competition_category:competition_categories!inner(type,
                   competition_day:competition_days!inner(
                     competition:competitions!inner(start_date, is_finalized))))`)
@@ -141,7 +141,7 @@ export function ClubStatsWidget({ supabase }) {
   data.res.forEach(r => {
     const se = r.startlist_entry;
     const comp = se?.competition_category?.competition_day?.competition;
-    if (!comp || !comp.is_finalized || se.did_not_start || !comp.start_date.startsWith(String(year))) return;
+    if (!comp || !comp.is_finalized || se.did_not_start || se.is_exhibition || !comp.start_date.startsWith(String(year))) return;
     if (se.competition_category.type === 'csapat') return;
     addMedal(se.competitor_id, r.placement);
   });
@@ -166,7 +166,7 @@ export function ClubStatsWidget({ supabase }) {
   data.res.forEach(r => {
     const se = r.startlist_entry;
     const comp = se?.competition_category?.competition_day?.competition;
-    if (!comp || !comp.is_finalized || se.did_not_start || se.competition_category.type === 'csapat') return;
+    if (!comp || !comp.is_finalized || se.did_not_start || se.is_exhibition || se.competition_category.type === 'csapat') return;
     if (!APP_KEYS.includes(r.apparatus)) return;
     addScore(se.competitor_id, r.apparatus, parseInt(comp.start_date.slice(0, 4), 10), num(r.score_total));
   });

@@ -3390,9 +3390,23 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 // számolódik (a bemutatások összege a kategórián belül); a kézzel beírt helyezés csak felülír.
 // Lezárás előtt „ideiglenes” jelöléssel.
 // ───────────────────────────────────────────────────────────────────
-function CsepeliTeamResultsSection({ supabase, competition }) {
+function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
   const [teams, setTeams] = useState(null);
   const [error, setError] = useState(null);
+  const [reload, setReload] = useState(0);
+  const [edit, setEdit] = useState({}); // team_id → beírt helyezés
+  const [savingId, setSavingId] = useState(null);
+  const canEdit = ['admin', 'szulo', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole) && !competition?.is_finalized;
+  const savePlacement = async (t) => {
+    const raw = (edit[t.team_id] ?? '').toString().trim();
+    const val = raw === '' ? null : parseInt(raw, 10);
+    if (raw !== '' && (isNaN(val) || val < 1)) { setError('A helyezés pozitív egész szám legyen (üresen hagyva a pontokból számolt marad).'); return; }
+    setSavingId(t.team_id); setError(null);
+    const { error: uErr } = await supabase.from('competition_teams').update({ placement: val, modified_at: new Date().toISOString() }).eq('id', t.team_id);
+    setSavingId(null);
+    if (uErr) setError('Mentés sikertelen: ' + uErr.message);
+    else { setEdit(e => { const n = { ...e }; delete n[t.team_id]; return n; }); setReload(r => r + 1); }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -3417,8 +3431,8 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
         const entryRows = [];
         (days || []).forEach(day => {
           (day.categories || [])
-            // v1.1.3 (Sándor): a Csepeli fülön csak a LEZÁRT kategória eredménye jelenik meg
-            .filter(c => c.type === 'csapat' && c.is_finalized)
+            // v1.2.0 (Sándor): kontrollfelület — lezárás előtt is, minden csepeli csapat
+            .filter(c => c.type === 'csapat')
             .forEach(cat => {
               (cat.entries || []).forEach(e => {
                 if (e.team_id) {
@@ -3481,7 +3495,6 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
           const isCsepeli = (nev + ' ' + (e.external_club || '')).toLowerCase().includes('csepel');
           if (!isCsepeli) return;
           const manual = info.placement !== null && info.placement !== undefined;
-          if (!manual && calcRank[e.team_id] === undefined) return; // se pont, se helyezés
 
           if (!grouped[e.team_id]) {
             grouped[e.team_id] = {
@@ -3489,7 +3502,9 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
               name: nev,
               kategoria: e.kategoria,
               korosztaly: e.korosztaly,
-              placement: manual ? info.placement : calcRank[e.team_id],
+              placement: manual ? info.placement : (calcRank[e.team_id] ?? null),
+              manualPlacement: manual ? info.placement : null,
+              calcPlacement: calcRank[e.team_id] ?? null,
               provisional: false,
               perf: {} // performance_number → score_total
             };
@@ -3500,14 +3515,14 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
           if (provByEntry[e.id]) grouped[e.team_id].provisional = true;
         });
 
-        const list = Object.values(grouped).sort((a, b) => (a.placement || 999) - (b.placement || 999));
+        const list = Object.values(grouped).sort((a, b) => (a.placement || 999) - (b.placement || 999) || a.name.localeCompare(b.name, 'hu'));
         if (!cancelled) setTeams(list);
       } catch (err) {
         if (!cancelled) setError(err.message);
       }
     })();
     return () => { cancelled = true; };
-  }, [supabase, competition.id]);
+  }, [supabase, competition.id, reload]);
 
   if (teams === null && !error) {
     return <div className="text-sm text-gray-500 py-4">Betöltés…</div>;
@@ -3518,7 +3533,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
   if (teams.length === 0) {
     return (
       <div className="text-center text-sm text-gray-500 py-8">
-        Még nincs lezárt kategória csepeli csapattal — az eredmény a kategória lezárásakor jelenik meg.
+        Ezen a versenyen nincs csepeli EKCS-csapat a startlistán.
       </div>
     );
   }
@@ -3565,8 +3580,21 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
                   )}
                 </div>
                 <div className="text-right whitespace-nowrap">
-                  <div className="font-bold text-base" style={{ color: placementColor }}>{t.placement}. hely</div>
+                  <div className="font-bold text-base" style={{ color: placementColor }}>{t.placement ? `${t.placement}. hely` : '—'}</div>
+                  <div className="text-xs text-gray-500">
+                    {t.manualPlacement ? `kézi (számolt: ${t.calcPlacement ?? '—'}.)` : (t.calcPlacement ? 'pontokból számolt' : 'még nincs pont')}
+                  </div>
                   {t.provisional && <div className="text-xs" style={{ color: '#B45309' }}>ideiglenes</div>}
+                  {canEdit && (
+                    <div className="mt-1 flex items-center gap-1 justify-end">
+                      <input value={edit[t.team_id] ?? (t.manualPlacement ?? '')} onChange={ev => setEdit(e => ({ ...e, [t.team_id]: ev.target.value.replace(/[^0-9]/g, '') }))}
+                             placeholder="hely" inputMode="numeric" className="w-14 text-center text-sm px-1 py-1 border border-gray-300 rounded" />
+                      <button onClick={() => savePlacement(t)} disabled={savingId === t.team_id}
+                              className="px-2 py-1 rounded text-white text-xs font-semibold disabled:opacity-50" style={{ backgroundColor: COLORS.red }}>
+                        {savingId === t.team_id ? '…' : 'Mentés'}
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -3600,48 +3628,31 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
     return () => { cancelled = true; };
   }, [supabase, competition.id]);
   
+  // v1.2.0 (Sándor): a verseny lezárásáig KONTROLLFELÜLET — egyéni, EKCS, klubcsapat, kombinált csapat
+  const tabs = [
+    ...((!isTeamCompetition || hasIndividual) ? [['individual', 'Egyéni', Award]] : []),
+    ...(isTeamCompetition ? [['ekcs', 'EKCS csapatok', UsersIcon]] : []),
+    ['teams', 'Klubcsapatok', UsersIcon],
+    ['kombinalt', 'Kombinált csapatok', UsersIcon]
+  ];
+  const active = tabs.some(t => t[0] === section) ? section : tabs[0][0];
   return (
     <div className="space-y-4">
-      {/* Szekció választó — csapatversenynél nincs Klub-csapatok */}
-      {!isTeamCompetition && (
-      <div className="flex gap-2 bg-gray-100 p-1 rounded-lg w-fit">
-        <button
-          onClick={() => setSection('individual')}
-          className="px-4 py-2 rounded text-sm font-medium transition-all"
-          style={{
-            backgroundColor: section === 'individual' ? 'white' : 'transparent',
-            color: section === 'individual' ? COLORS.red : COLORS.gray700,
-            boxShadow: section === 'individual' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-          }}
-        >
-          <Award className="w-4 h-4 inline mr-1" />
-          Egyéni eredmények
-        </button>
-        <button
-          onClick={() => setSection('teams')}
-          className="px-4 py-2 rounded text-sm font-medium transition-all"
-          style={{
-            backgroundColor: section === 'teams' ? 'white' : 'transparent',
-            color: section === 'teams' ? COLORS.red : COLORS.gray700,
-            boxShadow: section === 'teams' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
-          }}
-        >
-          <UsersIcon className="w-4 h-4 inline mr-1" />
-          Klub-csapatok
-        </button>
+      <div className="flex gap-1 bg-gray-100 p-1 rounded-lg w-fit flex-wrap">
+        {tabs.map(([id, label, Icon]) => (
+          <button key={id} onClick={() => setSection(id)}
+                  className="px-4 py-2 rounded text-sm font-semibold transition-all flex items-center gap-1.5"
+                  style={{
+                    backgroundColor: active === id ? 'white' : 'transparent',
+                    color: active === id ? COLORS.red : COLORS.gray700,
+                    boxShadow: active === id ? '0 1px 3px rgba(0,0,0,0.1)' : 'none'
+                  }}>
+            <Icon className="w-4 h-4" /> {label}
+          </button>
+        ))}
       </div>
-      )}
 
-      {section === 'individual' && !isTeamCompetition && (
-        <CsepeliIndividualSection 
-          supabase={supabase} 
-          userRole={userRole} 
-          competition={competition}
-          onCompetitionChange={onCompetitionChange}
-        />
-      )}
-      {/* v1.1.1: csapatversenyen is, ha vannak egyéni kategóriák is */}
-      {isTeamCompetition && hasIndividual && (
+      {active === 'individual' && (
         <CsepeliIndividualSection
           supabase={supabase}
           userRole={userRole}
@@ -3649,19 +3660,14 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
           onCompetitionChange={onCompetitionChange}
         />
       )}
-      {/* v0.9.56: EKCS (csapat) versenynél a csepeli csapateredmények */}
-      {isTeamCompetition && (
-        <CsepeliTeamResultsSection
-          supabase={supabase}
-          competition={competition}
-        />
+      {active === 'ekcs' && (
+        <CsepeliTeamResultsSection supabase={supabase} competition={competition} userRole={userRole} />
       )}
-      {section === 'teams' && !isTeamCompetition && (
-        <CompetitionTeamsView 
-          supabase={supabase} 
-          userRole={userRole} 
-          competitionId={competition.id}
-        />
+      {active === 'teams' && (
+        <CompetitionTeamsView supabase={supabase} userRole={userRole} competitionId={competition.id} teamType="klub" />
+      )}
+      {active === 'kombinalt' && (
+        <CompetitionTeamsView supabase={supabase} userRole={userRole} competitionId={competition.id} teamType="kombinalt" />
       )}
     </div>
   );
@@ -3700,7 +3706,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           categories:competition_categories (
             id, kategoria, korosztaly, type, apparatuses, time_range,
             entries:startlist_entries (
-              id, start_order, competitor_id, apparatus,
+              id, start_order, competitor_id, apparatus, is_exhibition,
               competitor:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
             )
           )
@@ -4108,6 +4114,14 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                 const name = formatCompetitorName(competitor);
                 
                 const sortedEntries = [...cData.entries].sort((a, b) => (a.start_order || 0) - (b.start_order || 0));
+                // v1.2.0: BEMUTATÓ — pontozták, de a végleges értékelésbe nem számít
+                const exhibition = cData.entries.some(e => e.is_exhibition);
+                const toggleExhibition = async () => {
+                  const next = !exhibition;
+                  if (next && !window.confirm(`${name}: bemutatóként jelölöd? A pontjai megmaradnak, de helyezést nem kap, és nem számít bele az érmekbe, a versenyszámba és a statisztikába.`)) return;
+                  const { error: xErr } = await supabase.from('startlist_entries').update({ is_exhibition: next }).in('id', cData.entries.map(e => e.id));
+                  if (xErr) setError('Mentés sikertelen: ' + xErr.message); else loadData();
+                };
                 
                 return (
                   <div 
@@ -4120,7 +4134,15 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                       <div className="flex-1 min-w-0">
                         <div className="font-semibold text-base" style={{ color: COLORS.red }}>
                           ★ {name}
+                          {exhibition && <span className="ml-2 text-xs px-2 py-0.5 rounded-full font-semibold text-white" style={{ backgroundColor: '#6B7280' }}>BEMUTATÓ — nem számít bele</span>}
                         </div>
+                        {canEdit && (
+                          <button onClick={toggleExhibition}
+                                  className="mt-1 text-xs px-2.5 py-1 rounded-lg border-2 font-semibold bg-white"
+                                  style={{ borderColor: '#6B7280', color: '#374151' }}>
+                            {exhibition ? 'Mégis versenyben volt (bemutató jelölés le)' : 'Bemutató volt (nem számít bele)'}
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-2">
                         <label className="text-xs font-medium text-gray-700">Összetett:</label>

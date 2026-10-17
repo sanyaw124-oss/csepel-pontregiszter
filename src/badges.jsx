@@ -37,7 +37,7 @@ export async function loadBadgeData(supabase, competitorId) {
       .eq('competitor_id', competitorId),
     supabase.from('results')
       .select(`placement, apparatus, score_total,
-        startlist_entry:startlist_entries!inner(competitor_id, did_not_start,
+        startlist_entry:startlist_entries!inner(competitor_id, did_not_start, is_exhibition,
           competition_category:competition_categories!inner(type,
             competition_day:competition_days!inner(
               competition:competitions!inner(id, name, start_date, is_finalized, importance))))`)
@@ -73,7 +73,7 @@ export async function loadBadgeData(supabase, competitorId) {
   (res.data || []).forEach(r => {
     const se = r.startlist_entry;
     const comp = se?.competition_category?.competition_day?.competition;
-    if (!comp || !comp.is_finalized || se.did_not_start) return;
+    if (!comp || !comp.is_finalized || se.did_not_start || se.is_exhibition) return; // v1.2.0: bemutató nem számít
     const key = 'live_' + comp.id;
     notePlacement(key, comp.name, comp.start_date, r.placement,
       se.competition_category.type === 'csapat' ? 'Csapat' : (APP_NAMES[r.apparatus] || r.apparatus || 'Szer'),

@@ -932,7 +932,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.1.4 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.2.0 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -2180,7 +2180,7 @@ function ClubRankingsWidget() {
             if (categoryIds.length > 0) {
               const { data: entries, error: eErr } = await supabase
                 .from('startlist_entries')
-                .select('id, competition_category_id, competitor_id, apparatus, did_not_start')
+                .select('id, competition_category_id, competitor_id, apparatus, did_not_start, is_exhibition')
                 .in('competition_category_id', categoryIds)
                 .not('competitor_id', 'is', null);
               if (eErr) throw eErr;
@@ -2205,7 +2205,7 @@ function ClubRankingsWidget() {
                 const resultsByCategory = {};
                 (results || []).forEach(r => {
                   const entry = entries.find(e => e.id === r.startlist_entry_id);
-                  if (!entry || entry.did_not_start) return;
+                  if (!entry || entry.did_not_start || entry.is_exhibition) return;
                   if (r.placement) {
                     if (r.placement <= 8) {
                       individualPlacements.push({ placement: r.placement, competition_id: entryToCompMap[r.startlist_entry_id] });

@@ -35,9 +35,12 @@ const COLORS = {
 // FŐ KOMPONENS — Klub-csapatok listája egy versenyhez
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitionTeamsView({ supabase, userRole, competitionId, onChange }) {
+// v1.2.0: teamType = 'klub' (klubcsapat) vagy 'kombinalt' (kombinált csapat) — mindkettő helyezése kézi.
+// A tagválasztó alapból CSAK a versenyen indult csepeli versenyzőket kínálja (Sándor).
+export function CompetitionTeamsView({ supabase, userRole, competitionId, onChange, teamType = 'klub', title }) {
   const [teams, setTeams] = useState([]);
   const [csepeliCompetitors, setCsepeliCompetitors] = useState([]);
+  const [starterIds, setStarterIds] = useState(null); // a versenyen indult csepeliek
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null); // null | 'new' | team object
   const [error, setError] = useState(null);
@@ -71,7 +74,15 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
         .select('team_id')
         .not('team_id', 'is', null);
       const linkedTeamIds = new Set((linkedRows || []).map(r => r.team_id));
-      const clubTeams = (teamsData || []).filter(t => !linkedTeamIds.has(t.id));
+      const clubTeams = (teamsData || []).filter(t => !linkedTeamIds.has(t.id) && (t.team_type || 'klub') === teamType);
+
+      // A versenyen indult csepeli versenyzők (startlista alapján)
+      const { data: starters } = await supabase
+        .from('startlist_entries')
+        .select('competitor_id, competition_categories!inner(competition_days!inner(competition_id))')
+        .eq('competition_categories.competition_days.competition_id', competitionId)
+        .not('competitor_id', 'is', null);
+      setStarterIds(new Set((starters || []).map(r => r.competitor_id)));
 
       // Csepeli versenyzők (csak klubtagok)
       const { data: compsData, error: cErr } = await supabase
@@ -89,7 +100,7 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
     } finally {
       setLoading(false);
     }
-  }, [supabase, competitionId]);
+  }, [supabase, competitionId, teamType]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -106,6 +117,7 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
         placement: formData.placement ? parseInt(formData.placement, 10) : null,
         score: formData.score ? parseFloat(formData.score) : null,
         notes: formData.notes?.trim() || null,
+        team_type: teamType,
         modified_at: new Date().toISOString()
       };
 
@@ -179,6 +191,8 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
       <CompetitionTeamForm
         team={editing === 'new' ? null : editing}
         csepeliCompetitors={csepeliCompetitors}
+        starterIds={starterIds}
+        teamType={teamType}
         onSave={handleSave}
         onCancel={() => setEditing(null)}
       />
@@ -209,7 +223,7 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
           style={{ backgroundColor: COLORS.red }}
         >
           <Plus className="w-4 h-4" />
-          Új csapat
+          {teamType === 'kombinalt' ? 'Új kombinált csapat' : 'Új klubcsapat'}
         </button>
       )}
 
@@ -217,8 +231,7 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
       {teams.length === 0 ? (
         <div className="bg-gray-50 rounded-lg border border-gray-200 p-6 text-center text-sm text-gray-500">
           <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-          Még nincs rögzített csapat ezen a versenyen.
-          {canEdit && <div className="mt-1">Kattints az "Új csapat" gombra a hozzáadáshoz.</div>}
+          {teamType === 'kombinalt' ? 'Még nincs kombinált csapat ezen a versenyen.' : 'Még nincs klubcsapat ezen a versenyen.'}
         </div>
       ) : (
         <div className="space-y-2">
@@ -306,7 +319,8 @@ function TeamCard({ team, canEdit, onEdit, onDelete }) {
 // Csapat szerkesztő űrlap
 // ═══════════════════════════════════════════════════════════════════
 
-function CompetitionTeamForm({ team, csepeliCompetitors, onSave, onCancel }) {
+function CompetitionTeamForm({ team, csepeliCompetitors, starterIds, teamType = 'klub', onSave, onCancel }) {
+  const [showAll, setShowAll] = useState(false);
   const isNew = !team;
   const [form, setForm] = useState({
     name: team?.name || '',
@@ -348,13 +362,16 @@ function CompetitionTeamForm({ team, csepeliCompetitors, onSave, onCancel }) {
     }
   };
 
-  // Szűrt versenyzők (kereséshez)
+  // v1.2.0: alapból csak a versenyen indultak (+ a már kiválasztott tagok)
+  const pool = (showAll || !starterIds)
+    ? csepeliCompetitors
+    : csepeliCompetitors.filter(c => starterIds.has(c.id) || memberIds.includes(c.id));
   const filtered = search 
-    ? csepeliCompetitors.filter(c => 
+    ? pool.filter(c => 
         (c.full_name || '').toLowerCase().includes(search.toLowerCase()) ||
         (c.nickname || '').toLowerCase().includes(search.toLowerCase())
       )
-    : csepeliCompetitors;
+    : pool;
 
   return (
     <div className="space-y-4">
@@ -362,7 +379,7 @@ function CompetitionTeamForm({ team, csepeliCompetitors, onSave, onCancel }) {
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-semibold flex items-center gap-2">
             <Users className="w-5 h-5" />
-            {isNew ? 'Új csapat' : 'Csapat szerkesztése'}
+            {isNew ? (teamType === 'kombinalt' ? 'Új kombinált csapat' : 'Új klubcsapat') : 'Csapat szerkesztése'}
           </h3>
           <button onClick={onCancel} className="text-sm text-gray-500 hover:text-gray-700">
             Mégse
@@ -438,7 +455,16 @@ function CompetitionTeamForm({ team, csepeliCompetitors, onSave, onCancel }) {
       <div className="bg-white rounded-lg border border-gray-200 p-4">
         <div className="mb-3">
           <div className="font-medium text-sm mb-1">Csapat tagjai * ({memberIds.length} kiválasztva)</div>
-          <div className="text-xs text-gray-500">Csak csepeli (klubtag) versenyzők szerepelhetnek.</div>
+          <div className="text-xs text-gray-500">
+            {showAll || !starterIds ? 'Az összes csepeli klubtag.' : 'Csak a versenyen indult csepeli versenyzők.'}
+          </div>
+          {starterIds && (
+            <button type="button" onClick={() => setShowAll(v => !v)}
+                    className="mt-2 text-xs px-3 py-1.5 rounded-lg border-2 font-semibold bg-white"
+                    style={{ borderColor: COLORS.red, color: COLORS.red }}>
+              {showAll ? 'Csak a versenyen indultak' : 'Mégis más klubtag kell (összes mutatása)'}
+            </button>
+          )}
         </div>
 
         <input
