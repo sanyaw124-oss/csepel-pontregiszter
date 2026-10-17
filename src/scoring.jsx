@@ -435,17 +435,11 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         const fmt3 = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(3));
         const when = existing.modified_at ? new Date(existing.modified_at).toLocaleTimeString('hu-HU') : '';
         const ok = window.confirm(
-          'FIGYELEM: közben valaki más is pontozta ezt a sort!
-
-' +
+          'FIGYELEM: közben valaki más is pontozta ezt a sort!\n\n' +
           `Az ő mentése (${when}): D ${fmt3(existing.score_d)} · A ${fmt3(existing.score_a)} · E ${fmt3(existing.score_e)}` +
-          `${existing.score_p ? ` · P ${fmt3(existing.score_p)}` : ''} → Total ${fmt3(existing.score_total)}
-` +
-          `A te értékeid: Total ${fmt3(total)}
-
-` +
-          'OK = a te értékeid kerülnek be (az övé a változásnaplóban megmarad)
-Mégse = az övé marad, a te beírásod elvetjük'
+          `${existing.score_p ? ` · P ${fmt3(existing.score_p)}` : ''} → Total ${fmt3(existing.score_total)}\n` +
+          `A te értékeid: Total ${fmt3(total)}\n\n` +
+          'OK = a te értékeid kerülnek be (az övé a változásnaplóban megmarad)\nMégse = az övé marad, a te beírásod elvetjük'
         );
         if (!ok) {
           setEditingId(null);
