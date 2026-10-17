@@ -1625,6 +1625,7 @@ function TeamPlacementsView({ supabase, category, entries, canManage, onBack }) 
 
 function StartlistView({ supabase, category, competitionId, canManage, userRole, onClose }) {
   const [entries, setEntries] = useState(null);
+  const [scores, setScores] = useState({}); // v1.1.1: entryId → score_total (a lepontozott soroknál látszik)
   const [competitors, setCompetitors] = useState([]);
   const [error, setError] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);  // null | 'new' | entry
@@ -1646,6 +1647,19 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         .order('start_order');
       if (error) throw error;
       setEntries(data || []);
+      // v1.1.1 (Sándor): ami már le van pontozva, annak a pontja a startlistán is látszik
+      const ids = (data || []).map(e => e.id);
+      if (ids.length) {
+        const { data: res } = await supabase.from('results')
+          .select('startlist_entry_id, score_total, modified_at, created_at').in('startlist_entry_id', ids);
+        const m = {}; const at = {};
+        (res || []).forEach(r => {
+          const t = String(r.modified_at || r.created_at || '');
+          if (at[r.startlist_entry_id] !== undefined && at[r.startlist_entry_id] > t) return;
+          at[r.startlist_entry_id] = t; m[r.startlist_entry_id] = r.score_total;
+        });
+        setScores(m);
+      }
       
       // Klubtagok listája (válaszható csepeli versenyzők)
       const { data: comps } = await supabase
@@ -1830,6 +1844,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
               <StartlistRow
                 key={entry.id}
                 entry={entry}
+                score={scores[entry.id]}
                 canManage={canManage}
                 canAdmin={canAdminStartlist}
                 isFirst={idx === 0}
@@ -1854,7 +1869,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
   );
 }
 
-function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onRemove, onToggleDidNotStart, onMove }) {
+function StartlistRow({ entry, score, canManage, canAdmin, isFirst, isLast, onEdit, onRemove, onToggleDidNotStart, onMove }) {
   const isCsepeli = !!entry.competitor_id;
   const dns = !!entry.did_not_start;
   const competitor = entry.competitor;
@@ -1908,6 +1923,12 @@ function StartlistRow({ entry, canManage, canAdmin, isFirst, isLast, onEdit, onR
           {club}
         </div>
       </div>
+      {score !== null && score !== undefined && (
+        <div className="flex-shrink-0 text-sm font-bold tabular-nums px-2 py-1 rounded-lg" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}
+             title="Lepontozva">
+          ✓ {parseFloat(score).toFixed(3)}
+        </div>
+      )}
       <div className="text-sm flex-shrink-0">
         {apparatus}
       </div>
@@ -3345,7 +3366,9 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 // ───────────────────────────────────────────────────────────────────
 // CsepeliTeamResultsSection (v0.9.56) — EKCS csapateredmények a Csepeli fülön
 // Egy kártyán, csapatonként egy blokk: név + kategória + 1.bem + 2.bem + összpont + helyezés
-// Csak csepeli csapatok, amiknek VAN beírt helyezése (competition_teams.placement).
+// v1.1.1 (Sándor): minden csepeli csapat, amelynek van pontja — a helyezés a pontokból
+// számolódik (a bemutatások összege a kategórián belül); a kézzel beírt helyezés csak felülír.
+// Lezárás előtt „ideiglenes” jelöléssel.
 // ───────────────────────────────────────────────────────────────────
 function CsepeliTeamResultsSection({ supabase, competition }) {
   const [teams, setTeams] = useState(null);
@@ -3400,10 +3423,33 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
         const entryIds = entryRows.map(e => e.id);
         const { data: resData } = await supabase
           .from('results')
-          .select('startlist_entry_id, score_total')
+          .select('startlist_entry_id, score_total, is_provisional, modified_at, created_at')
           .in('startlist_entry_id', entryIds);
         const scoreByEntry = {};
-        (resData || []).forEach(r => { scoreByEntry[r.startlist_entry_id] = r.score_total; });
+        const provByEntry = {};
+        const seenAt = {};
+        (resData || []).forEach(r => {
+          const at = String(r.modified_at || r.created_at || '');
+          if (seenAt[r.startlist_entry_id] !== undefined && seenAt[r.startlist_entry_id] > at) return; // duplikátumnál a legfrissebb
+          seenAt[r.startlist_entry_id] = at;
+          scoreByEntry[r.startlist_entry_id] = r.score_total;
+          provByEntry[r.startlist_entry_id] = !!r.is_provisional;
+        });
+
+        // Számolt helyezés kategóriánként: a csapat bemutatásainak összege szerint (mint a pontozóban)
+        const sumByTeam = {}; const catOfTeam = {};
+        entryRows.forEach(e => {
+          const v = scoreByEntry[e.id];
+          if (v === null || v === undefined) return;
+          sumByTeam[e.team_id] = (sumByTeam[e.team_id] || 0) + (parseFloat(v) || 0);
+          catOfTeam[e.team_id] = `${e.kategoria}|${e.korosztaly}`;
+        });
+        const calcRank = {};
+        const byCat = {};
+        Object.keys(sumByTeam).forEach(tid => { (byCat[catOfTeam[tid]] = byCat[catOfTeam[tid]] || []).push(tid); });
+        Object.values(byCat).forEach(tids => {
+          tids.sort((a, b) => sumByTeam[b] - sumByTeam[a]).forEach((tid, i) => { calcRank[tid] = i + 1; });
+        });
 
         // 4) Csoportosítás team_id szerint, csepeli szűrés + csak beírt helyezés
         const grouped = {};
@@ -3413,7 +3459,8 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
           const nev = info.name || e.external_name || '';
           const isCsepeli = (nev + ' ' + (e.external_club || '')).toLowerCase().includes('csepel');
           if (!isCsepeli) return;
-          if (info.placement === null || info.placement === undefined) return; // csak beírt helyezés
+          const manual = info.placement !== null && info.placement !== undefined;
+          if (!manual && calcRank[e.team_id] === undefined) return; // se pont, se helyezés
 
           if (!grouped[e.team_id]) {
             grouped[e.team_id] = {
@@ -3421,13 +3468,15 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
               name: nev,
               kategoria: e.kategoria,
               korosztaly: e.korosztaly,
-              placement: info.placement,
+              placement: manual ? info.placement : calcRank[e.team_id],
+              provisional: false,
               perf: {} // performance_number → score_total
             };
           }
           if (e.performance_number) {
             grouped[e.team_id].perf[e.performance_number] = scoreByEntry[e.id] ?? null;
           }
+          if (provByEntry[e.id]) grouped[e.team_id].provisional = true;
         });
 
         const list = Object.values(grouped).sort((a, b) => (a.placement || 999) - (b.placement || 999));
@@ -3448,7 +3497,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
   if (teams.length === 0) {
     return (
       <div className="text-center text-sm text-gray-500 py-8">
-        Még nincs csepeli csapat-helyezés ezen a versenyen.
+        Még nincs pontozott csepeli csapat ezen a versenyen.
       </div>
     );
   }
@@ -3494,8 +3543,9 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
                     </div>
                   )}
                 </div>
-                <div className="font-bold text-base whitespace-nowrap" style={{ color: placementColor }}>
-                  {t.placement}. hely
+                <div className="text-right whitespace-nowrap">
+                  <div className="font-bold text-base" style={{ color: placementColor }}>{t.placement}. hely</div>
+                  {t.provisional && <div className="text-xs" style={{ color: '#B45309' }}>ideiglenes</div>}
                 </div>
               </div>
             </div>
@@ -3511,16 +3561,17 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
   const canFinalize = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
   // v0.9.50: csapatversenynél (van csapat-kategória) ne jelenjen meg a Klub-csapatok rész
   const [isTeamCompetition, setIsTeamCompetition] = useState(false);
+  const [hasIndividual, setHasIndividual] = useState(false); // v1.1.1: vegyes versenyen az egyéni is látszik
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const { data } = await supabase
         .from('competition_categories')
         .select('type, competition_day_id, competition_days!inner(competition_id)')
-        .eq('competition_days.competition_id', competition.id)
-        .eq('type', 'csapat')
-        .limit(1);
-      if (!cancelled && data && data.length > 0) {
+        .eq('competition_days.competition_id', competition.id);
+      if (cancelled || !data) return;
+      setHasIndividual(data.some(c => c.type !== 'csapat'));
+      if (data.some(c => c.type === 'csapat')) {
         setIsTeamCompetition(true);
         setSection('individual');
       }
@@ -3564,6 +3615,15 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
         <CsepeliIndividualSection 
           supabase={supabase} 
           userRole={userRole} 
+          competition={competition}
+          onCompetitionChange={onCompetitionChange}
+        />
+      )}
+      {/* v1.1.1: csapatversenyen is, ha vannak egyéni kategóriák is */}
+      {isTeamCompetition && hasIndividual && (
+        <CsepeliIndividualSection
+          supabase={supabase}
+          userRole={userRole}
           competition={competition}
           onCompetitionChange={onCompetitionChange}
         />

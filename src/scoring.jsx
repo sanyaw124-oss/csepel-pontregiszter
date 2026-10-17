@@ -11,7 +11,7 @@
 //   - Csepeli kiemelés: piros háttér + csillag (de pontmezők ugyanazok)
 // ═══════════════════════════════════════════════════════════════════
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ArrowLeft, Save, Loader, AlertCircle, CheckCircle2, Lock, Unlock,
   Trophy, Star, Edit2, X, Check, RefreshCw, Award
@@ -66,6 +66,19 @@ const CSEPEL_CLUB_NAMES = ['csepeli rg club', 'csepel sc', 'csepel sc rg', 'csep
 // ═══════════════════════════════════════════════════════════════════
 // HELPER FÜGGVÉNYEK
 // ═══════════════════════════════════════════════════════════════════
+
+// v1.1.1: több pontozó egyszerre — ha (régen) egy sorhoz több eredmény-sor került,
+// mindig a legutoljára módosítottat vesszük (determinisztikus, nem a sorrenden múlik)
+function newerResult(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  return String(b.modified_at || b.created_at || '') > String(a.modified_at || a.created_at || '') ? b : a;
+}
+function buildResultsMap(rows) {
+  const map = {};
+  (rows || []).forEach(r => { map[r.startlist_entry_id] = newerResult(map[r.startlist_entry_id], r); });
+  return map;
+}
 
 function isCsepeliEntry(entry) {
   // Ha competitor_id van, akkor csepeli
@@ -139,6 +152,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   const [successMsg, setSuccessMsg] = useState(null);
   const [editingId, setEditingId] = useState(null);  // melyik sor szerkesztés alatt
   const [editForm, setEditForm] = useState({});
+  const editBaseRef = useRef(null); // v1.1.1: a szerkesztés kezdetekor látott eredmény-sor (ütközésfigyelés)
   const [showRankings, setShowRankings] = useState(false);
   // v0.9.63: lezárás — a kategória ÉS a verseny állapota (lezárt versenyen nincs pontozás)
   const [catFinalized, setCatFinalized] = useState(!!category.is_finalized);
@@ -209,11 +223,8 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
           .select('*')
           .in('startlist_entry_id', entryIds);
         if (rErr) throw rErr;
-        (resData || []).forEach(r => {
-          // Egy entry-hez több apparatus is lehet (több szer), de itt egyszerűsítünk:
-          // a startlista soron eleve van apparatus → 1 sor = 1 pont
-          resultsMap[r.startlist_entry_id] = r;
-        });
+        // a startlista soron eleve van apparatus → 1 sor = 1 pont (duplikátumnál a legfrissebb)
+        resultsMap = buildResultsMap(resData);
       }
 
       setEntries(entriesData || []);
@@ -227,6 +238,32 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   }, [supabase, category.id]);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  // v1.1.1 (Sándor, Magyar Kupa): ha többen pontoznak, a másik pontozó beírása is
+  // jelenjen meg — 5 másodpercenként frissítjük az eredményeket (csak ha látszik az oldal),
+  // és visszatéréskor azonnal. A nyitott pontozólapot ez nem írja át.
+  const entryIdsKey = entries.map(e => e.id).join(',');
+  useEffect(() => {
+    if (!entryIdsKey) return undefined;
+    const ids = entryIdsKey.split(',');
+    let active = true;
+    const refresh = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const { data, error: rErr } = await supabase.from('results').select('*').in('startlist_entry_id', ids);
+      if (!active || rErr) return;
+      setResults(buildResultsMap(data));
+    };
+    const timer = setInterval(refresh, 5000);
+    const onFocus = () => refresh();
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onFocus);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onFocus);
+    };
+  }, [supabase, entryIdsKey]);
 
   // ─── Helyezések kiszámítása (csak megjelenítéshez) ────────────
   // v0.9.50: a kézi placement MINDIG felülírja a pontból számolt helyezést.
@@ -307,6 +344,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       apparatus: entry.apparatus || '',
       _isCsepeli: isCsepeli
     });
+    editBaseRef.current = r ? { id: r.id, modified_at: r.modified_at || null } : null;
     setEditingId(entry.id);
     setError(null);
     setSuccessMsg(null);
@@ -385,7 +423,38 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         if (!ok) { setSaving(false); return false; }
       }
 
-      const existing = results[entry.id];
+      // v1.1.1: NEM a képernyőn lévő (esetleg régi) állapotból dolgozunk — mentés előtt
+      // frissen lekérjük a sort. Ha közben más is pontozta, megkérdezzük (adat nem veszhet el).
+      const { data: freshRows, error: fErr } = await supabase
+        .from('results').select('*').eq('startlist_entry_id', entry.id);
+      if (fErr) throw fErr;
+      const existing = buildResultsMap(freshRows)[entry.id] || null;
+      const base = editBaseRef.current;
+      const changedMeanwhile = existing && (!base || base.id !== existing.id || (base.modified_at || null) !== (existing.modified_at || null));
+      if (changedMeanwhile) {
+        const fmt3 = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(3));
+        const when = existing.modified_at ? new Date(existing.modified_at).toLocaleTimeString('hu-HU') : '';
+        const ok = window.confirm(
+          'FIGYELEM: közben valaki más is pontozta ezt a sort!
+
+' +
+          `Az ő mentése (${when}): D ${fmt3(existing.score_d)} · A ${fmt3(existing.score_a)} · E ${fmt3(existing.score_e)}` +
+          `${existing.score_p ? ` · P ${fmt3(existing.score_p)}` : ''} → Total ${fmt3(existing.score_total)}
+` +
+          `A te értékeid: Total ${fmt3(total)}
+
+` +
+          'OK = a te értékeid kerülnek be (az övé a változásnaplóban megmarad)
+Mégse = az övé marad, a te beírásod elvetjük'
+        );
+        if (!ok) {
+          setEditingId(null);
+          await loadData();
+          setSuccessMsg('Az előző mentés maradt meg — ellenőrizd a sort.');
+          setTimeout(() => setSuccessMsg(null), 4000);
+          return false;
+        }
+      }
 
       // Audit nyom készítése ha módosítás
       let scoreHistory = existing?.score_history || [];
@@ -433,7 +502,15 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         const { error: insErr } = await supabase
           .from('results')
           .insert(payload);
-        if (insErr) throw insErr;
+        if (insErr) {
+          // v1.1.1: ugyanabban a pillanatban más is beírta (egyedi index) → frissítünk, semmi nem vész el
+          if (insErr.code === '23505') {
+            editBaseRef.current = null;
+            await loadData();
+            throw new Error('Közben valaki más is elmentette ezt a sort. Frissítettem — nyisd meg újra, és nézd meg az értékeket.');
+          }
+          throw insErr;
+        }
       }
 
       // Apparatus mentés ha változott
@@ -486,7 +563,17 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   const handleFinalize = async () => {
     if (!canFinalizeOrEdit) return;
     
-    const pontozott = Object.values(results).filter(r => r.score_total !== null);
+    // v1.1.1: lezárás előtt friss adat (a többi pontozó mentései is benne legyenek)
+    let freshResults = results;
+    {
+      const ids = entries.map(e => e.id);
+      if (ids.length) {
+        const { data } = await supabase.from('results').select('*').in('startlist_entry_id', ids);
+        freshResults = buildResultsMap(data);
+        setResults(freshResults);
+      }
+    }
+    const pontozott = Object.values(freshResults).filter(r => r.score_total !== null);
     if (pontozott.length === 0) {
       setError('Még nincs egyetlen pontozás sem.');
       return;
@@ -508,7 +595,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       const userId = userResp.data?.user?.id;
 
       // Eredmények véglegesítése
-      const resultIds = Object.values(results).map(r => r.id);
+      const resultIds = Object.values(freshResults).map(r => r.id);
       if (resultIds.length > 0) {
         const { error: updErr } = await supabase
           .from('results')
@@ -677,7 +764,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       {/* Versenyzők lista */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
         {showRankings ? (
-          <RankingsView entries={entries} results={results} calculatedRankings={calculatedRankings} userRole={userRole} />
+          <RankingsView entries={entries} results={results} calculatedRankings={calculatedRankings} userRole={userRole} isTeam={isTeam} />
         ) : (
           <StartlistScoringView 
             entries={entries} 
@@ -1031,7 +1118,79 @@ function ScoreSheet({ entry, result, editForm, setEditForm, onSave, onSaveNext, 
 // Helyezések nézet
 // ═══════════════════════════════════════════════════════════════════
 
-function RankingsView({ entries, results, calculatedRankings, userRole }) {
+// v1.1.1 (Sándor, Magyar Kupa): csapatnál csapatonként EGY sor — az eredmény a
+// bemutatások összege; alatta bemutatásonként a részpontok. (Eddig bemutatásonként
+// külön sorban, duplán jelent meg minden csapat.)
+function TeamRankingsView({ entries, results, calculatedRankings }) {
+  const teams = {};
+  entries.forEach(e => {
+    const key = e.team_id || `e_${e.id}`;
+    const r = results[e.id];
+    const t = teams[key] || (teams[key] = { key, entry: e, perfs: [], total: 0, scored: false, provisional: false, rank: null });
+    t.perfs.push({ entry: e, r });
+    if (r && r.score_total !== null && r.score_total !== undefined) {
+      t.total += parseFloat(r.score_total) || 0;
+      t.scored = true;
+      if (r.is_provisional) t.provisional = true;
+    }
+    if (calculatedRankings[e.id] !== undefined) t.rank = calculatedRankings[e.id];
+  });
+  const list = Object.values(teams).filter(t => t.scored || t.rank !== null)
+    .sort((a, b) => (a.rank ?? 999) - (b.rank ?? 999) || b.total - a.total);
+  if (list.length === 0) {
+    return <div className="p-6 text-center text-sm text-gray-500">Még nincs pontozott csapat.</div>;
+  }
+  return (
+    <div>
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200 text-sm text-gray-700">
+        <Award className="w-4 h-4 inline mr-1" />
+        Csapat-helyezések (a bemutatások összege)
+      </div>
+      <div className="divide-y divide-gray-100">
+        {list.map(t => {
+          const e = t.entry;
+          const isCsepeli = isCsepeliEntry(e);
+          const name = e.competitors ? formatCompetitorName(e.competitors) : e.external_name;
+          const perfs = [...t.perfs].sort((a, b) => (a.entry.performance_number || 0) - (b.entry.performance_number || 0));
+          return (
+            <div key={t.key} className="p-3 flex items-center gap-3 flex-wrap"
+                 style={isCsepeli ? { backgroundColor: COLORS.redPink, borderLeft: `3px solid ${COLORS.red}` } : {}}>
+              <div className="w-10 text-center">
+                <div className="font-bold text-lg" style={{ color: t.rank === 1 ? COLORS.amber : (t.rank === 2 ? COLORS.secondary : (t.rank === 3 ? '#92400E' : COLORS.primary)) }}>
+                  {t.rank ?? '—'}.
+                </div>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-medium flex items-center gap-1">
+                  {isCsepeli && <Star className="w-3 h-3" style={{ color: COLORS.red, fill: COLORS.red }} />}
+                  <span style={isCsepeli ? { color: COLORS.red } : {}}>{name}</span>
+                </div>
+                <div className="text-xs text-gray-600 mt-1 space-y-0.5">
+                  {perfs.map(({ entry: pe, r }) => (
+                    <div key={pe.id} className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-medium">{pe.performance_number ? `${pe.performance_number}. bem.` : 'Bem.'}</span>
+                      <ApparatusMark value={pe.apparatus} size={18} fallback="" />
+                      {r && r.score_total !== null && r.score_total !== undefined ? (
+                        <span>D {formatNum(r.score_d)} · A {formatNum(r.score_a)} · E {formatNum(r.score_e)}{r.score_p > 0 ? ` · P ${formatNum(r.score_p)}` : ''} → <b>{formatNum(r.score_total)}</b></span>
+                      ) : <span className="italic text-gray-400">még nincs pont</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-lg font-semibold">{t.total.toFixed(3)}</div>
+                <div className="text-xs" style={{ color: t.provisional ? COLORS.amber : COLORS.green }}>{t.provisional ? 'ideiglenes' : 'végleges'}</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function RankingsView({ entries, results, calculatedRankings, userRole, isTeam }) {
+  if (isTeam) return <TeamRankingsView entries={entries} results={results} calculatedRankings={calculatedRankings} />;
   const sortedEntries = [...entries]
     .filter(e => {
       const r = results[e.id];
