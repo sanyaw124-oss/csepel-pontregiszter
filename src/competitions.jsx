@@ -1651,7 +1651,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
       const ids = (data || []).map(e => e.id);
       if (ids.length) {
         const { data: res } = await supabase.from('results')
-          .select('startlist_entry_id, score_total, modified_at, created_at').in('startlist_entry_id', ids);
+          .select('startlist_entry_id, score_total, modified_at').in('startlist_entry_id', ids);
         const m = {}; const at = {};
         (res || []).forEach(r => {
           const t = String(r.modified_at || r.created_at || '');
@@ -3456,10 +3456,11 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
 
         // 3) results (score_total) a startlista-sorokra
         const entryIds = entryRows.map(e => e.id);
-        const { data: resData } = await supabase
+        const { data: resData, error: resErr } = await supabase
           .from('results')
-          .select('startlist_entry_id, score_total, is_provisional, modified_at, created_at')
+          .select('startlist_entry_id, score_total, is_provisional, modified_at')
           .in('startlist_entry_id', entryIds);
+        if (resErr) throw resErr; // v1.2.1: a hibát kiírjuk, nem nyeljük el
         const scoreByEntry = {};
         const provByEntry = {};
         const seenAt = {};
