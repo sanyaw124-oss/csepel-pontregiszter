@@ -23,7 +23,7 @@ async function loadRows(supabase, categoryIds) {
   if (!categoryIds || categoryIds.length === 0) return [];
   const { data: entries, error: eErr } = await supabase
     .from('startlist_entries')
-    .select('id, competition_category_id, apparatus, did_not_start')
+    .select('id, competition_category_id, apparatus, did_not_start, team_id, is_exhibition')
     .in('competition_category_id', categoryIds);
   if (eErr) throw eErr;
   const entryMap = {};
@@ -43,7 +43,9 @@ export async function fillAutoPlacements(supabase, categoryIds) {
   const rows = await loadRows(supabase, categoryIds);
   const groups = {};
   // v0.9.50: a „nem indult” sor nem kap helyezést
-  rows.filter(r => r.score_total !== null && r.score_total !== undefined && !r._entry.did_not_start).forEach(r => {
+  // v1.3.0: csapatsor (EKCS) és bemutató sem kap egyéni helyezést
+  rows.filter(r => r.score_total !== null && r.score_total !== undefined && !r._entry.did_not_start
+    && !r._entry.team_id && !r._entry.is_exhibition).forEach(r => {
     const key = `${r._entry.competition_category_id}__${r._entry.apparatus || '__none__'}`;
     (groups[key] = groups[key] || []).push(r);
   });
@@ -79,6 +81,51 @@ export async function clearAutoPlacements(supabase, categoryIds) {
       .update({ placement: null, calculated_rank: null })
       .eq('id', r.id);
     if (error) throw error;
+  }
+}
+
+// ─── v1.3.0: EKCS csapathelyezés ─────────────────────────────────────
+// A csapat helyezése = a bemutatásai összpontszáma a kategórián belül (mint a pontozóban).
+// Lezáráskor ott, ahol nincs kézi helyezés (competition_teams.placement üres), a számolt kerül be;
+// újranyitáskor csak az törlődik, ami a számolttal egyezik (a kézi marad).
+async function teamRanks(supabase, categoryIds) {
+  const rows = await loadRows(supabase, categoryIds);
+  const sum = {}; const cat = {};
+  rows.filter(r => r._entry.team_id && !r._entry.did_not_start && !r._entry.is_exhibition
+    && r.score_total !== null && r.score_total !== undefined).forEach(r => {
+    sum[r._entry.team_id] = (sum[r._entry.team_id] || 0) + num(r.score_total);
+    cat[r._entry.team_id] = r._entry.competition_category_id;
+  });
+  const byCat = {};
+  Object.keys(sum).forEach(t => { (byCat[cat[t]] = byCat[cat[t]] || []).push(t); });
+  const rank = {};
+  Object.values(byCat).forEach(ts => ts.sort((a, b) => sum[b] - sum[a]).forEach((t, i) => { rank[t] = i + 1; }));
+  return rank;
+}
+export async function fillTeamPlacements(supabase, categoryIds) {
+  const rank = await teamRanks(supabase, categoryIds);
+  const ids = Object.keys(rank);
+  if (ids.length === 0) return;
+  const { data: teams, error } = await supabase.from('competition_teams').select('id, placement').in('id', ids);
+  if (error) throw error;
+  for (const t of teams || []) {
+    if (t.placement === null || t.placement === undefined) {
+      const { error: uErr } = await supabase.from('competition_teams').update({ placement: rank[t.id] }).eq('id', t.id);
+      if (uErr) throw uErr;
+    }
+  }
+}
+export async function clearTeamPlacements(supabase, categoryIds) {
+  const rank = await teamRanks(supabase, categoryIds);
+  const ids = Object.keys(rank);
+  if (ids.length === 0) return;
+  const { data: teams, error } = await supabase.from('competition_teams').select('id, placement').in('id', ids);
+  if (error) throw error;
+  for (const t of teams || []) {
+    if (t.placement !== null && t.placement === rank[t.id]) {
+      const { error: uErr } = await supabase.from('competition_teams').update({ placement: null }).eq('id', t.id);
+      if (uErr) throw uErr;
+    }
   }
 }
 

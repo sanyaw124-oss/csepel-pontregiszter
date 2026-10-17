@@ -12,7 +12,7 @@ import {
   ChevronUp, ChevronDown, UserX, UserCheck, Lock, Unlock
 } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname, formatStartTime } from './names';
-import { fillAutoPlacements, clearAutoPlacements } from './placements';
+import { fillAutoPlacements, clearAutoPlacements, fillTeamPlacements, clearTeamPlacements } from './placements';
 import { ScoringView } from './scoring';
 import { ApparatusMark } from './apparatusIcons';
 import { CompetitionTeamsView } from './teams';
@@ -169,8 +169,8 @@ async function setCompetitionFinalized(supabase, competitionId, finalize) {
     }
     const { error: aaErr } = await supabase.from('all_around_results').update(stamp).in('competition_category_id', catIds);
     if (aaErr) throw aaErr;
-    if (finalize) await fillAutoPlacements(supabase, catIds);
-    else await clearAutoPlacements(supabase, catIds);
+    if (finalize) { await fillAutoPlacements(supabase, catIds); await fillTeamPlacements(supabase, catIds); }
+    else { await clearAutoPlacements(supabase, catIds); await clearTeamPlacements(supabase, catIds); }
     const catStamp = finalize
       ? { is_finalized: true, finalized_by: stamp.finalized_by, finalized_at: stamp.finalized_at }
       : { is_finalized: false, finalized_by: null, finalized_at: null };
@@ -3665,10 +3665,10 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
         <CsepeliTeamResultsSection supabase={supabase} competition={competition} userRole={userRole} />
       )}
       {active === 'teams' && (
-        <CompetitionTeamsView supabase={supabase} userRole={userRole} competitionId={competition.id} teamType="klub" />
+        <CompetitionTeamsView supabase={supabase} userRole={userRole} competitionId={competition.id} teamType="klub" locked={!!competition?.is_finalized} />
       )}
       {active === 'kombinalt' && (
-        <CompetitionTeamsView supabase={supabase} userRole={userRole} competitionId={competition.id} teamType="kombinalt" />
+        <CompetitionTeamsView supabase={supabase} userRole={userRole} competitionId={competition.id} teamType="kombinalt" locked={!!competition?.is_finalized} />
       )}
     </div>
   );

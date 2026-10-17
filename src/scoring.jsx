@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { formatCompetitorName, formatStartTime } from './names';
 import { ApparatusMark } from './apparatusIcons';
-import { fillAutoPlacements, clearAutoPlacements, manualPlacementOf } from './placements';
+import { fillAutoPlacements, clearAutoPlacements, fillTeamPlacements, clearTeamPlacements, manualPlacementOf } from './placements';
 
 // ═══════════════════════════════════════════════════════════════════
 // KONSTANSOK
@@ -607,6 +607,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
 
       // v0.9.49: a kézi helyezés nélküli sorokba a számolt helyezés
       if (!isTeam) await fillAutoPlacements(supabase, [category.id]);
+      else await fillTeamPlacements(supabase, [category.id]); // v1.3.0
 
       // Kategória véglegesítése
       const { error: catErr } = await supabase
@@ -659,6 +660,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       }
       // v0.9.49: a lezáráskor beírt számolt helyezések törlése (a kézi marad)
       if (!isTeam) await clearAutoPlacements(supabase, [category.id]);
+      else await clearTeamPlacements(supabase, [category.id]); // v1.3.0
       const { error: catErr } = await supabase
         .from('competition_categories')
         .update({ is_finalized: false, finalized_by: null, finalized_at: null })

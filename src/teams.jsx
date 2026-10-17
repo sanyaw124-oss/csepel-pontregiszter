@@ -37,7 +37,7 @@ const COLORS = {
 
 // v1.2.0: teamType = 'klub' (klubcsapat) vagy 'kombinalt' (kombinált csapat) — mindkettő helyezése kézi.
 // A tagválasztó alapból CSAK a versenyen indult csepeli versenyzőket kínálja (Sándor).
-export function CompetitionTeamsView({ supabase, userRole, competitionId, onChange, teamType = 'klub', title }) {
+export function CompetitionTeamsView({ supabase, userRole, competitionId, onChange, teamType = 'klub', title, locked = false }) {
   const [teams, setTeams] = useState([]);
   const [csepeliCompetitors, setCsepeliCompetitors] = useState([]);
   const [starterIds, setStarterIds] = useState(null); // a versenyen indult csepeliek
@@ -46,7 +46,8 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
   const [error, setError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
 
-  const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
+  // v1.3.0: lezárt versenyen nem szerkeszthető — előbb az edzőnek fel kell oldania
+  const canEdit = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole) && !locked;
 
   // ─── Adatok betöltése ─────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -82,7 +83,14 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
         .select('competitor_id, competition_categories!inner(competition_days!inner(competition_id))')
         .eq('competition_categories.competition_days.competition_id', competitionId)
         .not('competitor_id', 'is', null);
-      setStarterIds(new Set((starters || []).map(r => r.competitor_id)));
+      // v1.3.0: az EKCS-csapatok (és a többi csapat) tagjai is a versenyen indultak közé számítanak
+      const compTeamIds = (teamsData || []).map(t => t.id);
+      let memberIds = [];
+      if (compTeamIds.length) {
+        const { data: mem } = await supabase.from('competition_team_members').select('competitor_id').in('team_id', compTeamIds);
+        memberIds = (mem || []).map(m => m.competitor_id).filter(Boolean);
+      }
+      setStarterIds(new Set([...(starters || []).map(r => r.competitor_id), ...memberIds]));
 
       // Csepeli versenyzők (csak klubtagok)
       const { data: compsData, error: cErr } = await supabase
