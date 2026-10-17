@@ -3917,7 +3917,11 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           continue;
         }
 
-        const existing = results[entry.id];
+        // v1.1.4: friss sor az adatbázisból (a pontozó közben menthetett; soronként egy eredmény)
+        const { data: freshRows, error: fErr } = await supabase
+          .from('results').select('id, modified_at').eq('startlist_entry_id', entry.id);
+        if (fErr) throw new Error(`${compName}: ${fErr.message}`);
+        const existing = (freshRows || []).sort((a, b) => String(b.modified_at || '').localeCompare(String(a.modified_at || '')))[0] || null;
         const payload = {
           startlist_entry_id: entry.id,
           apparatus: entry.apparatus,
@@ -3929,15 +3933,17 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           score_e: scoreE,
           score_p: scoreP,
           score_total: scoreTotal,
-          notes: vals.notes || null,
+          // v1.1.4: a results táblában NINCS notes oszlop — eddig emiatt csendben elbukott minden mentés
           modified_at: new Date().toISOString()
         };
 
         if (existing) {
-          await supabase.from('results').update(payload).eq('id', existing.id);
+          const { error: uErr } = await supabase.from('results').update(payload).eq('id', existing.id);
+          if (uErr) throw new Error(`${compName} (${entry.apparatus || 'szer'}): mentés sikertelen — ${uErr.message}`);
         } else {
           payload.is_provisional = true;
-          await supabase.from('results').insert(payload);
+          const { error: iErr } = await supabase.from('results').insert(payload);
+          if (iErr) throw new Error(`${compName} (${entry.apparatus || 'szer'}): mentés sikertelen — ${iErr.message}`);
         }
       }
 
@@ -3955,10 +3961,12 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
         
         const existingAA = allAroundResults[key];
         if (existingAA) {
-          await supabase.from('all_around_results').update(aaPayload).eq('id', existingAA.id);
+          const { error: aErr } = await supabase.from('all_around_results').update(aaPayload).eq('id', existingAA.id);
+          if (aErr) throw new Error(`${compName} összetett: mentés sikertelen — ${aErr.message}`);
         } else {
           aaPayload.is_provisional = true;
-          await supabase.from('all_around_results').insert(aaPayload);
+          const { error: aErr } = await supabase.from('all_around_results').insert(aaPayload);
+          if (aErr) throw new Error(`${compName} összetett: mentés sikertelen — ${aErr.message}`);
         }
       }
 

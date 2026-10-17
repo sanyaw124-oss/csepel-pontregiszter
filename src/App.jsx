@@ -932,7 +932,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.1.3 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.1.4 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
