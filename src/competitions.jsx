@@ -1676,6 +1676,26 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
   }, [supabase, category.id]);
   
   useEffect(() => { load(); }, [load]);
+  // v1.1.2: a pontok élőben frissülnek a startlistán is (10 mp-enként, ha látszik az oldal)
+  const startlistIdsKey = (entries || []).map(e => e.id).join(',');
+  useEffect(() => {
+    if (!startlistIdsKey) return undefined;
+    const ids = startlistIdsKey.split(',');
+    const tick = async () => {
+      if (document.visibilityState !== 'visible') return;
+      const { data: res } = await supabase.from('results')
+        .select('startlist_entry_id, score_total, modified_at').in('startlist_entry_id', ids);
+      const m = {}; const at = {};
+      (res || []).forEach(r => {
+        const t = String(r.modified_at || '');
+        if (at[r.startlist_entry_id] !== undefined && at[r.startlist_entry_id] > t) return;
+        at[r.startlist_entry_id] = t; m[r.startlist_entry_id] = r.score_total;
+      });
+      setScores(m);
+    };
+    const timer = setInterval(tick, 10000);
+    return () => clearInterval(timer);
+  }, [supabase, startlistIdsKey]);
   
   const removeEntry = async (entryId) => {
     if (!window.confirm('Biztos törlöd ezt a sort?')) return;
@@ -3373,6 +3393,12 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 function CsepeliTeamResultsSection({ supabase, competition }) {
   const [teams, setTeams] = useState(null);
   const [error, setError] = useState(null);
+  // v1.1.2: élő frissítés pontozás közben (15 mp-enként, ha látszik az oldal)
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => { if (document.visibilityState === 'visible') setTick(x => x + 1); }, 15000);
+    return () => clearInterval(t);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -3486,7 +3512,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [supabase, competition.id]);
+  }, [supabase, competition.id, tick]);
 
   if (teams === null && !error) {
     return <div className="text-sm text-gray-500 py-4">Betöltés…</div>;

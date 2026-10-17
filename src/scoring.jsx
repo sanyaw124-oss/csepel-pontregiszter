@@ -152,6 +152,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
   const [successMsg, setSuccessMsg] = useState(null);
   const [editingId, setEditingId] = useState(null);  // melyik sor szerkesztés alatt
   const [editForm, setEditForm] = useState({});
+  const [lastSync, setLastSync] = useState(null); // v1.1.2: mikor frissült utoljára (látszik a pontozónak)
   const editBaseRef = useRef(null); // v1.1.1: a szerkesztés kezdetekor látott eredmény-sor (ütközésfigyelés)
   const [showRankings, setShowRankings] = useState(false);
   // v0.9.63: lezárás — a kategória ÉS a verseny állapota (lezárt versenyen nincs pontozás)
@@ -229,6 +230,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
 
       setEntries(entriesData || []);
       setResults(resultsMap);
+      setLastSync(new Date());
     } catch (err) {
       console.error('ScoringView load error:', err);
       setError(err.message || 'Hiba történt');
@@ -252,6 +254,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
       const { data, error: rErr } = await supabase.from('results').select('*').in('startlist_entry_id', ids);
       if (!active || rErr) return;
       setResults(buildResultsMap(data));
+      setLastSync(new Date());
     };
     const timer = setInterval(refresh, 5000);
     const onFocus = () => refresh();
@@ -754,6 +757,17 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
           <span>{successMsg}</span>
         </div>
       )}
+
+      {/* v1.1.2: élő jelzés — a többi pontozó beírása 5 mp-en belül megjelenik */}
+      <div className="flex items-center justify-between gap-2 text-xs px-1">
+        <span className="flex items-center gap-1.5 font-semibold" style={{ color: '#047857' }}>
+          <span className="inline-block w-2.5 h-2.5 rounded-full animate-pulse" style={{ backgroundColor: '#10B981' }} />
+          Élő — frissítve {lastSync ? lastSync.toLocaleTimeString('hu-HU') : '…'}
+        </span>
+        <button onClick={() => loadData()} className="px-3 py-1.5 rounded-lg border-2 font-semibold bg-white" style={{ borderColor: '#047857', color: '#047857' }}>
+          Frissítés most
+        </button>
+      </div>
 
       {/* Versenyzők lista */}
       <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
