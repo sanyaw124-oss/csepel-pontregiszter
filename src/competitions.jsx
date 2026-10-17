@@ -3393,12 +3393,6 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
 function CsepeliTeamResultsSection({ supabase, competition }) {
   const [teams, setTeams] = useState(null);
   const [error, setError] = useState(null);
-  // v1.1.2: élő frissítés pontozás közben (15 mp-enként, ha látszik az oldal)
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === 'visible') setTick(x => x + 1); }, 15000);
-    return () => clearInterval(t);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -3410,7 +3404,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
           .from('competition_days')
           .select(`
             categories:competition_categories (
-              id, kategoria, korosztaly, type,
+              id, kategoria, korosztaly, type, is_finalized,
               entries:startlist_entries (
                 id, team_id, performance_number, external_name, external_club
               )
@@ -3423,7 +3417,8 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
         const entryRows = [];
         (days || []).forEach(day => {
           (day.categories || [])
-            .filter(c => c.type === 'csapat')
+            // v1.1.3 (Sándor): a Csepeli fülön csak a LEZÁRT kategória eredménye jelenik meg
+            .filter(c => c.type === 'csapat' && c.is_finalized)
             .forEach(cat => {
               (cat.entries || []).forEach(e => {
                 if (e.team_id) {
@@ -3512,7 +3507,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [supabase, competition.id, tick]);
+  }, [supabase, competition.id]);
 
   if (teams === null && !error) {
     return <div className="text-sm text-gray-500 py-4">Betöltés…</div>;
@@ -3523,7 +3518,7 @@ function CsepeliTeamResultsSection({ supabase, competition }) {
   if (teams.length === 0) {
     return (
       <div className="text-center text-sm text-gray-500 py-8">
-        Még nincs pontozott csepeli csapat ezen a versenyen.
+        Még nincs lezárt kategória csepeli csapattal — az eredmény a kategória lezárásakor jelenik meg.
       </div>
     );
   }
