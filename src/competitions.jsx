@@ -4207,6 +4207,22 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
                             <div className="flex items-center gap-2 mb-1.5">
                               <span className="text-xs font-medium text-gray-500 w-6">{entry.start_order}.</span>
                               <span className="text-sm font-medium text-gray-700 min-w-[80px]">{apparatusLabel}</span>
+                              {/* v1.4.1 (Sándor): lezárt versenynél is látszódjon a helyezés és a pontszám */}
+                              {!canEdit && (() => {
+                                const r = results[entry.id];
+                                const f3 = (v) => (v === null || v === undefined || v === '' ? null : Number(v).toFixed(3));
+                                if (!r) return <span className="text-xs italic text-gray-400">nincs eredmény</span>;
+                                return (
+                                  <span className="flex items-center gap-2 flex-wrap text-xs">
+                                    {r.placement && <span className="px-2 py-0.5 rounded-full font-bold text-white" style={{ backgroundColor: r.placement <= 3 ? '#B45309' : COLORS.blue }}>{r.placement}. hely</span>}
+                                    <span className="text-gray-600">
+                                      {[f3(r.score_d) && `D ${f3(r.score_d)}`, f3(r.score_a) && `A ${f3(r.score_a)}`, f3(r.score_e) && `E ${f3(r.score_e)}`, Number(r.score_p) > 0 && `P ${f3(r.score_p)}`].filter(Boolean).join(' · ')}
+                                    </span>
+                                    {f3(r.score_total) && <span className="font-bold text-gray-900">{f3(r.score_total)}</span>}
+                                    {entry.is_exhibition && <span className="px-1.5 py-0.5 rounded bg-gray-500 text-white font-semibold">bemutató</span>}
+                                  </span>
+                                );
+                              })()}
                               {canEdit && (
                                 <>
                                   <label className="text-xs text-gray-500">Helyezés:</label>
