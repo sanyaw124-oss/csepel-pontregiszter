@@ -526,7 +526,8 @@ function CompetitionCard({ competition, onClick }) {
 
 function CompetitionEditor({ supabase, competition, canManage, userRole, onClose }) {
   const isNew = !competition;
-  const [tab, setTab] = useState('basics');
+  // v1.4.0 (Sándor): meglévő versenynél egyből a Napok és kategóriák fül
+  const [tab, setTab] = useState(competition ? 'days' : 'basics');
   const [current, setCurrent] = useState(competition);
   const [showImportToCurrent, setShowImportToCurrent] = useState(false);
   
@@ -985,6 +986,7 @@ function DaysTab({ supabase, competitionId, canManage, userRole }) {
   const [days, setDays] = useState(null);
   const [error, setError] = useState(null);
   const [openCategory, setOpenCategory] = useState(null);  // ÚJ: nyitott kategória startlistája
+  const [openMode, setOpenMode] = useState('startlist');   // v1.4.0: 'startlist' | 'scoring'
 
   const load = useCallback(async () => {
     try {
@@ -1028,7 +1030,8 @@ function DaysTab({ supabase, competitionId, canManage, userRole }) {
         competitionId={competitionId}
         canManage={canManage}
         userRole={userRole}
-        onClose={() => { setOpenCategory(null); load(); }}
+        initialMode={openMode}
+        onClose={() => { setOpenCategory(null); setOpenMode('startlist'); load(); }}
       />
     );
   }
@@ -1059,7 +1062,9 @@ function DaysTab({ supabase, competitionId, canManage, userRole }) {
             canManage={canManage}
             onTypeChange={updateDayType}
             onReload={load}
-            onOpenStartlist={(cat) => setOpenCategory(cat)}
+            onOpenStartlist={(cat) => { setOpenMode('startlist'); setOpenCategory(cat); }}
+            onOpenScoring={(cat) => { setOpenMode('scoring'); setOpenCategory(cat); }}
+            scoringLabel={userRole === 'versenyzo' ? 'Élő eredmények' : 'Pontozás'}
           />
         ))
       )}
@@ -1067,7 +1072,7 @@ function DaysTab({ supabase, competitionId, canManage, userRole }) {
   );
 }
 
-function DayCard({ day, supabase, canManage, onTypeChange, onReload, onOpenStartlist }) {
+function DayCard({ day, supabase, canManage, onTypeChange, onReload, onOpenStartlist, onOpenScoring, scoringLabel }) {
   const [showAddCategory, setShowAddCategory] = useState(false);
   const dateStr = new Date(day.date).toLocaleDateString('hu-HU', {
     year: 'numeric', month: 'long', day: 'numeric', weekday: 'short'
@@ -1119,6 +1124,8 @@ function DayCard({ day, supabase, canManage, onTypeChange, onReload, onOpenStart
             canManage={canManage}
             onChanged={onReload}
             onOpenStartlist={onOpenStartlist}
+            onOpenScoring={onOpenScoring}
+            scoringLabel={scoringLabel}
           />
         ))}
         
@@ -1145,7 +1152,7 @@ function DayCard({ day, supabase, canManage, onTypeChange, onReload, onOpenStart
   );
 }
 
-function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpenStartlist }) {
+function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpenStartlist, onOpenScoring, scoringLabel = 'Pontozás' }) {
   const [editing, setEditing] = useState(false);
   
   const categoryType = category.type || dayType || 'egyeni';
@@ -1218,6 +1225,14 @@ function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpen
         <SecondaryButton onClick={() => onOpenStartlist && onOpenStartlist(category)}>
           <UsersIcon className="w-4 h-4" /> Startlista
         </SecondaryButton>
+        {/* v1.4.0 (Sándor): egy kattintással a pontozás / élő eredmények */}
+        {onOpenScoring && (
+          <button onClick={() => onOpenScoring(category)}
+                  className="px-3 py-2 rounded text-white font-medium text-sm flex items-center gap-1.5 shadow-sm"
+                  style={{ backgroundColor: COLORS.blue }}>
+            <Trophy className="w-4 h-4" /> {scoringLabel}
+          </button>
+        )}
         {canManage && (
           <>
             <button
@@ -1623,13 +1638,13 @@ function TeamPlacementsView({ supabase, category, entries, canManage, onBack }) 
 // STARTLIST VIEW (egy kategória startlistája)
 // ═══════════════════════════════════════════════════════════════════
 
-function StartlistView({ supabase, category, competitionId, canManage, userRole, onClose }) {
+function StartlistView({ supabase, category, competitionId, canManage, userRole, onClose, initialMode = 'startlist' }) {
   const [entries, setEntries] = useState(null);
   const [scores, setScores] = useState({}); // v1.1.1: entryId → score_total (a lepontozott soroknál látszik)
   const [competitors, setCompetitors] = useState([]);
   const [error, setError] = useState(null);
   const [editingEntry, setEditingEntry] = useState(null);  // null | 'new' | entry
-  const [viewMode, setViewMode] = useState('startlist');  // 'startlist' | 'scoring'
+  const [viewMode, setViewMode] = useState(initialMode);  // 'startlist' | 'scoring'
   
   const isTeam = category.type === 'csapat';
   
@@ -1784,7 +1799,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         supabase={supabase}
         userRole={userRole}
         category={category}
-        onBack={() => setViewMode('startlist')}
+        onBack={() => (initialMode === 'scoring' ? onClose() : setViewMode('startlist'))}
         onChange={() => load()}
       />
     );
