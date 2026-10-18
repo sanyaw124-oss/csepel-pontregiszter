@@ -932,7 +932,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.4.1 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.5.0 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1767,64 +1767,90 @@ function AnthemPlayer() {
 // ═══════════════════════════════════════════════════════════════════
 
 function RecentSuccessesWidget() {
-  const [successes, setSuccesses] = useState(null);
-  const [loading, setLoading] = useState(true);
-
+  // v1.5.0 (Sándor): minden dobogó (1–3.) a lezárt versenyekről — egyéni (szerenként és
+  // összetett), EKCS, klubcsapat, kombinált csapat; versenyenként csoportosítva, legfrissebb felül.
+  // A klub- és kombinált csapat név nélkül is csepeli (mi rögzítjük). Bemutató / nem indult kimarad.
+  const [groups, setGroups] = useState(null);
+  const [showAll, setShowAll] = useState(false);
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         const { data: comps } = await supabase
           .from('competitions')
-          .select('id, name, start_date, importance')
+          .select('id, name, start_date')
           .eq('is_finalized', true)
           .order('start_date', { ascending: false })
-          .limit(20);
-
-        if (!comps || comps.length === 0) {
-          if (active) { setSuccesses([]); setLoading(false); }
-          return;
+          .limit(15);
+        if (!comps || comps.length === 0) { if (active) setGroups([]); return; }
+        const ids = comps.map(c => c.id);
+        const nest = 'competition_category:competition_categories!inner(competition_day:competition_days!inner(competition_id))';
+        const [res, aa, teams] = await Promise.all([
+          supabase.from('results')
+            .select(`placement, apparatus, startlist_entry:startlist_entries!inner(competitor_id, did_not_start, is_exhibition, team_id,
+              competitor:competitors(full_name, nickname), ${nest})`)
+            .gte('placement', 1).lte('placement', 3)
+            .in('startlist_entry.competition_category.competition_day.competition_id', ids),
+          supabase.from('all_around_results')
+            .select(`placement, competitor:competitors(full_name, nickname), ${nest}`)
+            .gte('placement', 1).lte('placement', 3)
+            .in('competition_category.competition_day.competition_id', ids),
+          supabase.from('competition_teams')
+            .select('id, name, placement, competition_id, team_type')
+            .in('competition_id', ids).gte('placement', 1).lte('placement', 3)
+        ]);
+        // EKCS-csapat = amelyre startlista-sor mutat; az csak akkor csepeli, ha a nevében benne van
+        const teamIds = (teams.data || []).map(t => t.id);
+        let linked = new Set();
+        if (teamIds.length) {
+          const { data: lk } = await supabase.from('startlist_entries').select('team_id').in('team_id', teamIds);
+          linked = new Set((lk || []).map(r => r.team_id));
         }
-
-        const compMap = {};
-        comps.forEach(c => { compMap[c.id] = c; });
-
-        const { data: teams } = await supabase
-          .from('competition_teams')
-          .select('name, placement, competition_id')
-          .in('competition_id', comps.map(c => c.id))
-          .not('placement', 'is', null)
-          .lte('placement', 3);
-
-        const items = [];
-        (teams || []).forEach(t => {
-          const comp = compMap[t.competition_id];
-          if (!comp) return;
-          // v0.9.49: csak csepeli csapat (a versenyek modul szabálya: a névben „csepel”)
-          if (!isCsepeliTeamName(t.name)) return;
-          items.push({
-            type: 'team', placement: t.placement, name: t.name,
-            competitionName: comp.name, date: comp.start_date
+        const APP = { szabad: 'Szabad', karika: 'Karika', labda: 'Labda', buzogany: 'Buzogány', szalag: 'Szalag', kotel: 'Kötél' };
+        const byComp = {};
+        const add = (compId, item) => { (byComp[compId] = byComp[compId] || []).push(item); };
+        (res.data || []).forEach(r => {
+          const se = r.startlist_entry;
+          if (!se || !se.competitor_id || se.did_not_start || se.is_exhibition || se.team_id) return;
+          add(se.competition_category.competition_day.competition_id, {
+            placement: r.placement, who: formatCompetitorName(se.competitor), what: APP[r.apparatus] || r.apparatus || ''
           });
         });
-
-        items.sort((a, b) => {
-          if (a.date !== b.date) return b.date.localeCompare(a.date);
-          return a.placement - b.placement;
+        (aa.data || []).forEach(a => {
+          add(a.competition_category.competition_day.competition_id, {
+            placement: a.placement, who: formatCompetitorName(a.competitor), what: 'Összetett'
+          });
         });
-
-        if (active) setSuccesses(items.slice(0, 6));
+        (teams.data || []).forEach(t => {
+          const isEkcs = linked.has(t.id);
+          if (isEkcs && !isCsepeliTeamName(t.name)) return;
+          add(t.competition_id, {
+            placement: t.placement, who: t.name,
+            what: isEkcs ? 'EKCS' : (t.team_type === 'kombinalt' ? 'Kombinált csapat' : 'Klubcsapat')
+          });
+        });
+        const list = comps.filter(c => byComp[c.id]).map(c => ({
+          comp: c,
+          items: byComp[c.id].sort((a, b) => a.placement - b.placement || a.who.localeCompare(b.who, 'hu'))
+        }));
+        if (active) setGroups(list);
       } catch (err) {
         console.error('RecentSuccesses:', err);
-        if (active) setSuccesses([]);
-      } finally {
-        if (active) setLoading(false);
+        if (active) setGroups([]);
       }
     })();
     return () => { active = false; };
   }, []);
 
-  const medalEmoji = (p) => p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : `${p}.`;
+  const medalEmoji = (p) => p === 1 ? '🥇' : p === 2 ? '🥈' : '🥉';
+  const LIMIT = 10;
+  let left = showAll ? Infinity : LIMIT;
+  const shown = (groups || []).map(g => {
+    const items = g.items.slice(0, Math.max(0, left));
+    left -= items.length;
+    return { ...g, items };
+  }).filter(g => g.items.length > 0);
+  const total = (groups || []).reduce((n, g) => n + g.items.length, 0);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
@@ -1834,33 +1860,36 @@ function RecentSuccessesWidget() {
           🏆 Legutóbbi csepeli sikerek
         </h3>
       </div>
-      
-      {loading && (
+      {groups === null && (
         <div className="text-center py-4"><Loader className="w-4 h-4 animate-spin text-gray-400 inline" /></div>
       )}
-      
-      {!loading && successes && successes.length === 0 && (
-        <div className="text-xs text-gray-500 italic py-2">
-          Még nincsenek véglegesített eredmények.
-        </div>
+      {groups && total === 0 && (
+        <div className="text-xs text-gray-500 italic py-2">Még nincsenek dobogós helyezések lezárt versenyről.</div>
       )}
-      
-      {!loading && successes && successes.length > 0 && (
-        <div className="space-y-1.5">
-          {successes.map((s, idx) => (
-            <div key={idx} className="flex items-start gap-2 text-sm">
-              <span className="text-base flex-shrink-0">{medalEmoji(s.placement)}</span>
-              <div className="flex-1 min-w-0">
-                <span className="font-medium" style={{ color: '#BE123C' }}>
-                  {s.name}
-                </span>
-                <span className="text-xs text-gray-500 ml-1">
-                  · {s.competitionName} (csapat)
-                </span>
+      {shown.map(g => (
+        <div key={g.comp.id} className="mb-3 last:mb-0">
+          <div className="text-xs font-semibold text-gray-500 border-b pb-0.5 mb-1" style={{ borderColor: '#F3F4F6' }}>
+            {g.comp.name} · {(g.comp.start_date || '').replace(/-/g, '.')}.
+          </div>
+          <div className="space-y-1">
+            {g.items.map((s, idx) => (
+              <div key={idx} className="flex items-start gap-2 text-sm">
+                <span className="text-base flex-shrink-0 leading-5">{medalEmoji(s.placement)}</span>
+                <div className="flex-1 min-w-0">
+                  <span className="font-medium" style={{ color: '#BE123C' }}>{s.who}</span>
+                  {s.what && <span className="text-xs text-gray-500 ml-1">· {s.what}</span>}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
+      ))}
+      {total > LIMIT && (
+        <button onClick={() => setShowAll(v => !v)}
+                className="mt-2 w-full px-3 py-1.5 rounded-lg border-2 text-xs font-semibold bg-white"
+                style={{ borderColor: '#BE123C', color: '#BE123C' }}>
+          {showAll ? 'Kevesebb' : `Összes (${total})`}
+        </button>
       )}
     </div>
   );
