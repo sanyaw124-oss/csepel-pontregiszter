@@ -932,7 +932,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.5.0 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.5.1 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1833,7 +1833,8 @@ function RecentSuccessesWidget() {
           comp: c,
           items: byComp[c.id].sort((a, b) => a.placement - b.placement || a.who.localeCompare(b.who, 'hu'))
         }));
-        if (active) setGroups(list);
+        // v1.5.1 (Sándor): elég az utolsó verseny eredményei
+        if (active) setGroups(list.slice(0, 1));
       } catch (err) {
         console.error('RecentSuccesses:', err);
         if (active) setGroups([]);
@@ -1843,7 +1844,7 @@ function RecentSuccessesWidget() {
   }, []);
 
   const medalEmoji = (p) => p === 1 ? '🥇' : p === 2 ? '🥈' : '🥉';
-  const LIMIT = 10;
+  const LIMIT = 15;
   let left = showAll ? Infinity : LIMIT;
   const shown = (groups || []).map(g => {
     const items = g.items.slice(0, Math.max(0, left));
