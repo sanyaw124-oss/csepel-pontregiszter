@@ -213,6 +213,7 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
   const [filter, setFilter] = useState({ search: '', kategoria: 'all', showInactive: false });
   const [error, setError] = useState(null);
   const [generatedCreds, setGeneratedCreds] = useState(null); // v0.9.44: új versenyzői fiók credentials
+  const [loginIds, setLoginIds] = useState(null); // v1.6.0: versenyzők, akiknek van saját belépése
 
   const load = useCallback(async () => {
     setError(null);
@@ -229,6 +230,11 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
       });
       setCompetitors(sorted);
     }
+    // v1.6.0 (Sándor): kinek van saját belépése — a fiók a profiles.competitor_id-val kötődik
+    const { data: profs } = await supabase.from('profiles').select('competitor_id').not('competitor_id', 'is', null);
+    const ids = new Set((profs || []).map(p => p.competitor_id));
+    (data || []).forEach(c => { if (c.linked_user_id) ids.add(c.id); });
+    setLoginIds(ids);
   }, [supabase]);
 
   useEffect(() => { load(); }, [load, dataReloadKey]);
@@ -318,14 +324,14 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(c => <CompetitorRow key={c.id} competitor={c} onEdit={() => setEditing(c)} />)}
+          {filtered.map(c => <CompetitorRow key={c.id} competitor={c} hasLogin={loginIds ? loginIds.has(c.id) : null} onEdit={() => setEditing(c)} />)}
         </div>
       )}
     </div>
   );
 }
 
-function CompetitorRow({ competitor, onEdit }) {
+function CompetitorRow({ competitor, onEdit, hasLogin = null }) {
   const age = calculateAge(competitor.birth_date) ?? (new Date().getFullYear() - competitor.birth_year);
   return (
     <div 
@@ -346,6 +352,12 @@ function CompetitorRow({ competitor, onEdit }) {
             <span className="text-xs px-2 py-0.5 rounded font-medium" style={{ backgroundColor: '#f59e0b', color: 'white' }}>
               ⚠ Ideiglenes
             </span>
+          )}
+          {hasLogin === true && (
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>✓ Van belépés</span>
+          )}
+          {hasLogin === false && (
+            <span className="text-xs px-2 py-0.5 rounded-full font-semibold" style={{ backgroundColor: '#F3F4F6', color: '#6B7280' }}>Nincs belépés</span>
           )}
         </div>
         <div className="text-xs text-gray-500">
