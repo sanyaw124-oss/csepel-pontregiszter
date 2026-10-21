@@ -354,7 +354,8 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
   // Csoportosítás: közelgő / élő / lezárt
   const today = new Date().toISOString().split('T')[0];
   // v0.9.63 (Sándor): „nem élő csak az a verseny, amiben minden le van zárva”
-  const upcoming = filtered.filter(c => c.start_date > today && !isCompetitionClosed(c));
+  // v1.8.0 (Sándor): a közelgő versenyek időrendben (a legközelebbi felül); az elmúltak maradnak a legfrissebbel felül
+  const upcoming = filtered.filter(c => c.start_date > today && !isCompetitionClosed(c)).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const live = filtered.filter(c => c.start_date <= today && c.end_date >= today && !isCompetitionClosed(c));
   const past = filtered.filter(c => !upcoming.includes(c) && !live.includes(c));
 
