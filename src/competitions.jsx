@@ -3352,10 +3352,14 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                   // v1.7.0: a JSON-ban megadott csapattagok közül a csepeliek hozzárendelése
                   const srcRow = (catData.startlist || []).find(r => (r.name || '').trim() === teamName && Array.isArray(r.members));
                   if (srcRow && /csepel/i.test(srcRow.club || '')) {
-                    const norm = (x) => (x || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                    // ékezet és kis/nagybetű nélkül; a profilban lehet plusz keresztnév („Majszin Nikolett” ↔ „Majszin Nikolett Mercédesz”)
+                    const norm = (x) => (x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
                     const memberRows = [];
                     srcRow.members.forEach((mName, idx) => {
-                      const hit = allCompetitors.find(c => norm(c.full_name) === norm(mName));
+                      const n = norm(mName);
+                      const exact = allCompetitors.filter(c => norm(c.full_name) === n);
+                      const prefix = allCompetitors.filter(c => norm(c.full_name).startsWith(n + ' '));
+                      const hit = exact.length === 1 ? exact[0] : (exact.length === 0 && prefix.length === 1 ? prefix[0] : null);
                       if (hit) memberRows.push({ team_id: tData.id, competitor_id: hit.id, position: idx + 1 });
                       else unmatchedMembers.push(`${teamName}: ${mName}`);
                     });
