@@ -171,20 +171,68 @@ export function CalendarView({ supabase, onOpenCompetitions }) {
 }
 
 // ─── Áttekintés: a következő 30 nap versenyei ─────────────────────────
-export function UpcomingCompetitionsWidget({ supabase, onOpen }) {
+export function UpcomingCompetitionsWidget({ supabase, onOpen, onOpenCompetitions }) {
   const [comps, setComps] = useState(null);
+  const [lists, setLists] = useState({}); // v1.8.0: competition_id → { total, csepel }
   useEffect(() => {
     let active = true;
     const t = new Date();
     const until = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 30);
-    supabase.from('competitions').select(SELECT)
-      .gte('end_date', iso(t)).lte('start_date', iso(until)).order('start_date')
-      .then(({ data }) => { if (active) setComps(data || []); });
+    (async () => {
+      const { data } = await supabase.from('competitions').select(SELECT)
+        .gte('end_date', iso(t)).lte('start_date', iso(until)).order('start_date');
+      if (!active) return;
+      setComps(data || []);
+      const ids = (data || []).map(c => c.id);
+      if (!ids.length) return;
+      // v1.8.0 (Sándor): van-e már startlista — és hány csepeli induló van rajta
+      const { data: ents } = await supabase.from('startlist_entries')
+        .select('competitor_id, external_name, external_club, competition_categories!inner(competition_days!inner(competition_id))')
+        .in('competition_categories.competition_days.competition_id', ids);
+      if (!active) return;
+      const out = {};
+      (ents || []).forEach(e => {
+        const cid = e.competition_categories?.competition_days?.competition_id;
+        if (!cid) return;
+        const o = out[cid] || (out[cid] = { total: 0, csepel: new Set() });
+        o.total += 1;
+        if (e.competitor_id) o.csepel.add('c' + e.competitor_id);
+        else if (/csepel/i.test(e.external_club || '')) o.csepel.add('t' + (e.external_name || ''));
+      });
+      Object.values(out).forEach(o => { o.csepel = o.csepel.size; });
+      setLists(out);
+    })();
     return () => { active = false; };
   }, [supabase]);
   if (!comps) return null;
+  const withList = comps.filter(c => lists[c.id]);
+  const openComps = onOpenCompetitions || onOpen;
   return (
     <div className="bg-white rounded-xl border p-4 mb-4 shadow-sm" style={{ borderColor: '#E5E7EB' }}>
+      {withList.length > 0 && (
+        <div className="mb-3 rounded-xl p-3 text-white shadow-md" style={{ background: 'linear-gradient(135deg, #BE185D 0%, #DB2777 60%, #F472B6 100%)' }}>
+          <div className="flex items-center gap-2 font-bold">
+            <span className="relative flex w-3 h-3">
+              <span className="absolute inline-flex h-full w-full rounded-full bg-white opacity-75 animate-ping" />
+              <span className="relative inline-flex rounded-full w-3 h-3 bg-white" />
+            </span>
+            📋 Megjelent a startlista!
+          </div>
+          <div className="mt-2 space-y-1.5">
+            {withList.map(c => (
+              <div key={c.id} className="flex items-center gap-2 flex-wrap">
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold truncate">{c.name}</div>
+                  <div className="text-xs opacity-90">{dateRange(c)} · {lists[c.id].csepel > 0 ? `${lists[c.id].csepel} csepeli induló / csapat` : 'csepeli induló még nincs rajta'}</div>
+                </div>
+                <button onClick={openComps} className="px-3 py-1.5 rounded-lg bg-white text-sm font-bold shadow-sm" style={{ color: '#BE185D' }}>
+                  Megnézem
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       <button onClick={onOpen} className="w-full flex items-center justify-between gap-2 mb-2 text-left">
         <div className="font-semibold flex items-center gap-2" style={{ color: BLUE }}><CalendarDays className="w-5 h-5" /> Versenynaptár · következő 30 nap</div>
         <span className="text-xs font-semibold flex items-center px-2.5 py-1.5 rounded-lg text-white shadow-sm" style={{ backgroundColor: BLUE }}>Teljes naptár <ChevronRight className="w-4 h-4" /></span>
@@ -200,6 +248,7 @@ export function UpcomingCompetitionsWidget({ supabase, onOpen }) {
                 <div className="text-sm font-medium truncate">{c.name}</div>
                 {venueText(c) && <div className="text-xs text-gray-500 truncate">{venueText(c)}</div>}
               </div>
+              {lists[c.id] && <span className="text-[11px] px-2 py-0.5 rounded font-bold text-white whitespace-nowrap" style={{ backgroundColor: '#BE185D' }}>📋 Startlista</span>}
               <ImpChip value={c.importance} />
             </button>
           ))}

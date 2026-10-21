@@ -932,7 +932,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.7.0 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.8.0 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1154,7 +1154,7 @@ function DashboardView({ setActiveView }) {
       {/* HERO + Születésnap + Események - MINDENKINEK */}
       <NextCompetitionHero />
       {/* v0.9.81: a következő 30 nap versenyei → Versenynaptár */}
-      <UpcomingCompetitionsWidget supabase={supabase} onOpen={() => setActiveView('calendar')} />
+      <UpcomingCompetitionsWidget supabase={supabase} onOpen={() => setActiveView('calendar')} onOpenCompetitions={() => setActiveView('competitions')} />
       <BirthdayWidget supabase={supabase} />
       <div className="mb-4">
         <UpcomingEventsWidget 
