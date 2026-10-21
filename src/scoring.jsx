@@ -719,7 +719,7 @@ export function ScoringView({ supabase, userRole, category, onBack, onChange }) 
         <h1 className="text-base sm:text-lg font-semibold flex items-center gap-2">
           <Trophy className="w-5 h-5 text-amber-600 flex-shrink-0" />
           <span>
-            {category.kategoria} · {category.korosztaly}
+            {category.kategoria} · {category.korosztaly}{category.age_group ? ` · ${category.age_group}` : ''}
             {category.time_range && (
               <span className="text-sm font-normal text-gray-500"> ({category.time_range})</span>
             )}

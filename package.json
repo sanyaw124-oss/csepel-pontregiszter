@@ -1,6 +1,6 @@
 {
   "name": "csepel-pontregiszter",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "private": true,
   "dependencies": {
     "@supabase/supabase-js": "^2.45.0",

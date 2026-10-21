@@ -63,7 +63,16 @@ const IMPORTANCE_OPTIONS = [
   { value: 'egyeb', label: 'Egyéb' }
 ];
 
-const KATEGORIA_OPTIONS = ['VSK I', 'VSK II', 'SZK', 'BNK'];
+const KATEGORIA_OPTIONS = ['VSK I', 'VSK II', 'SZK', 'BNK', 'FIG', 'NON-FIG', 'CAT 0', 'CAT 1', 'CAT 2', 'CAT 3']; // v1.7.0: nemzetközi
+// v1.7.0: a kategória teljes neve, évszám-csoporttal (pl. „CAT 1 · serdülő · 2013”)
+const catName = (c) => (c ? `${c.kategoria} · ${c.korosztaly}${c.age_group ? ` · ${c.age_group}` : ''}` : '');
+// Évszám-csoport értelmezése: '2013' → 2013–2013, '2010-2011' / '2010–2011' → 2010–2011
+function parseYearGroup(label) {
+  const m = String(label || '').trim().match(/^(\d{4})\s*(?:[-–]\s*(\d{4}))?$/);
+  if (!m) return null;
+  const a = parseInt(m[1], 10), b = m[2] ? parseInt(m[2], 10) : a;
+  return { label: a === b ? String(a) : `${Math.min(a, b)}–${Math.max(a, b)}`, from: Math.min(a, b), to: Math.max(a, b) };
+}
 const KOROSZTALY_OPTIONS = ['kisgyermek', 'gyermek', 'serdülő', 'junior', 'felnőtt'];
 
 const APPARATUS_OPTIONS = [
@@ -1154,6 +1163,7 @@ function DayCard({ day, supabase, canManage, onTypeChange, onReload, onOpenStart
 
 function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpenStartlist, onOpenScoring, scoringLabel = 'Pontozás' }) {
   const [editing, setEditing] = useState(false);
+  const [splitting, setSplitting] = useState(false); // v1.7.0: évszám szerinti bontás
   
   const categoryType = category.type || dayType || 'egyeni';
   
@@ -1182,6 +1192,16 @@ function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpen
       />
     );
   }
+  if (splitting) {
+    return (
+      <SplitByYearForm
+        category={category}
+        supabase={supabase}
+        onCancel={() => setSplitting(false)}
+        onDone={() => { setSplitting(false); onChanged(); }}
+      />
+    );
+  }
   
   return (
     <div className="border rounded-lg p-3 flex items-center justify-between gap-2 flex-wrap"
@@ -1189,7 +1209,7 @@ function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpen
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="font-medium" style={{ color: COLORS.blueDark }}>
-            {category.kategoria} · {category.korosztaly}
+            {catName(category)}
           </span>
           <span 
             className="text-xs px-2 py-0.5 rounded-full font-medium"
@@ -1231,6 +1251,14 @@ function CategoryRow({ category, dayType, supabase, canManage, onChanged, onOpen
                   className="px-3 py-2 rounded text-white font-medium text-sm flex items-center gap-1.5 shadow-sm"
                   style={{ backgroundColor: COLORS.blue }}>
             <Trophy className="w-4 h-4" /> {scoringLabel}
+          </button>
+        )}
+        {canManage && !category.is_finalized && (
+          <button onClick={() => setSplitting(true)}
+                  className="px-3 py-2 rounded border-2 text-sm font-medium bg-white"
+                  style={{ borderColor: COLORS.blue, color: COLORS.blue }}
+                  title="A kategória szétbontása születési év szerint (külön rangsor)">
+            Évszám szerinti bontás
           </button>
         )}
         {canManage && (
@@ -1378,13 +1406,120 @@ function NewCategoryForm({ dayId, dayType, supabase, onCancel, onSaved }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// v1.7.0 (Sándor): ÉVSZÁM SZERINTI BONTÁS — ha a versenyen derül ki, hogy egy
+// korosztályt születési év szerint külön értékelnek (pl. serdülő 2013 | 2014,
+// vagy 2010–2011 | 2012). Az első csoport az eredeti kategóriában marad (évszámot
+// kap), a többi új kategóriába kerül, a startlista-sorok (és a pontjaik) a
+// születési év szerint átköltöznek. Akinek nem ismert az évszáma, annál itt kell
+// választani. A helyezés kategóriánként számolódik → csoportonként külön rangsor.
+// ═══════════════════════════════════════════════════════════════════
+function SplitByYearForm({ category, supabase, onCancel, onDone }) {
+  const [text, setText] = useState('');
+  const [entries, setEntries] = useState(null);
+  const [pick, setPick] = useState({}); // ismeretlen évszámú sor → csoport-címke
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    supabase.from('startlist_entries')
+      .select('id, start_order, external_name, snapshot_birth_year, competitor:competitors(full_name, nickname, birth_year)')
+      .eq('competition_category_id', category.id).order('start_order')
+      .then(({ data, error: err }) => { if (err) setError(err.message); setEntries(data || []); });
+  }, [supabase, category.id]);
+
+  const groups = text.split(/[;,\n]+/).map(x => x.trim()).filter(Boolean).map(parseYearGroup);
+  const bad = groups.some(g => !g);
+  const valid = groups.filter(Boolean);
+  const yearOf = (e) => e.snapshot_birth_year || e.competitor?.birth_year || null;
+  const groupOf = (e) => {
+    const y = yearOf(e);
+    if (y) { const g = valid.find(x => y >= x.from && y <= x.to); if (g) return g.label; }
+    return pick[e.id] || null;
+  };
+  const nameOf = (e) => (e.competitor ? formatCompetitorName(e.competitor) : e.external_name);
+  const unknown = (entries || []).filter(e => { const y = yearOf(e); return !y || !valid.some(x => y >= x.from && y <= x.to); });
+  const missing = unknown.filter(e => !pick[e.id]);
+  const counts = Object.fromEntries(valid.map(g => [g.label, (entries || []).filter(e => groupOf(e) === g.label).length]));
+
+  const run = async () => {
+    if (valid.length < 2 || bad) { setError('Legalább két évszám-csoport kell, pl. 2013; 2014 vagy 2010–2011; 2012'); return; }
+    if (missing.length) { setError('Válaszd ki a csoportot azoknál is, akiknek nem ismert a születési éve.'); return; }
+    if (!window.confirm(`A(z) ${catName(category)} kategória ${valid.length} részre bomlik: ${valid.map(g => `${g.label} (${counts[g.label]} fő)`).join(', ')}. Folytatod?`)) return;
+    setBusy(true); setError(null);
+    try {
+      const { data: full, error: cErr } = await supabase.from('competition_categories').select('*').eq('id', category.id).single();
+      if (cErr) throw cErr;
+      // az első csoport az eredeti kategóriában marad
+      const { error: uErr } = await supabase.from('competition_categories').update({ age_group: valid[0].label }).eq('id', category.id);
+      if (uErr) throw uErr;
+      for (const g of valid.slice(1)) {
+        const { data: nc, error: iErr } = await supabase.from('competition_categories').insert({
+          competition_day_id: full.competition_day_id, kategoria: full.kategoria, korosztaly: full.korosztaly,
+          type: full.type, apparatuses: full.apparatuses || [], time_range: full.time_range || null, age_group: g.label
+        }).select('id').single();
+        if (iErr) throw iErr;
+        const ids = (entries || []).filter(e => groupOf(e) === g.label).map(e => e.id);
+        if (ids.length) {
+          const { error: mErr } = await supabase.from('startlist_entries').update({ competition_category_id: nc.id }).in('id', ids);
+          if (mErr) throw mErr;
+        }
+      }
+      onDone();
+    } catch (err) {
+      setError('A bontás nem sikerült: ' + err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 space-y-2">
+      <div className="font-medium text-sm text-blue-900">Évszám szerinti bontás: {catName(category)}</div>
+      <div className="text-xs text-blue-900">
+        Add meg a csoportokat pontosvesszővel: <b>2013; 2014</b> vagy <b>2010–2011; 2012</b>. A versenyzők a születési évük szerint
+        kerülnek a csoportba (a startlistán megadott év, ennek hiányában a csepeli gyerek profilja). Csoportonként külön rangsor lesz.
+      </div>
+      <Input type="text" value={text} onChange={(e) => setText(e.target.value)} placeholder="pl. 2013; 2014" />
+      {bad && <div className="text-xs text-red-600">Hibás évszám — formátum: 2013 vagy 2010–2011.</div>}
+      {entries === null ? <Loader className="w-4 h-4 animate-spin text-gray-400" /> : valid.length > 0 && (
+        <div className="text-sm space-y-1">
+          {valid.map(g => <div key={g.label}><b>{g.label}</b>: {counts[g.label]} versenyző</div>)}
+          {unknown.length > 0 && (
+            <div className="mt-2 bg-white rounded border p-2 space-y-1" style={{ borderColor: '#FCD34D' }}>
+              <div className="text-xs font-semibold" style={{ color: '#92400E' }}>Nem ismert vagy csoporton kívüli születési év — válassz csoportot:</div>
+              {unknown.map(e => (
+                <div key={e.id} className="flex items-center gap-2 text-sm">
+                  <span className="flex-1">{e.start_order}. {nameOf(e)}{yearOf(e) ? ` (${yearOf(e)})` : ''}</span>
+                  <select value={pick[e.id] || ''} onChange={(ev) => setPick(p => ({ ...p, [e.id]: ev.target.value }))}
+                          className="text-sm px-2 py-1 border border-gray-300 rounded bg-white">
+                    <option value="">— csoport —</option>
+                    {valid.map(g => <option key={g.label} value={g.label}>{g.label}</option>)}
+                  </select>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+      <ErrorBox>{error}</ErrorBox>
+      <div className="flex gap-2">
+        <PrimaryButton onClick={run} disabled={busy || valid.length < 2}>
+          {busy ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Bontás
+        </PrimaryButton>
+        <SecondaryButton onClick={onCancel}><X className="w-4 h-4" /> Mégse</SecondaryButton>
+      </div>
+    </div>
+  );
+}
+
 function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
   const [form, setForm] = useState({
     kategoria: category.kategoria,
     korosztaly: category.korosztaly,
     type: category.type || dayType || 'egyeni',
     apparatuses: category.apparatuses || [],
-    time_range: category.time_range || ''
+    time_range: category.time_range || '',
+    age_group: category.age_group || ''
   });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -1409,7 +1544,8 @@ function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
           korosztaly: form.korosztaly,
           type: form.type,
           apparatuses: form.apparatuses,
-          time_range: form.time_range.trim() || null
+          time_range: form.time_range.trim() || null,
+          age_group: (() => { const v = form.age_group.trim(); if (!v) return null; const g = parseYearGroup(v); return g ? g.label : v; })()
         })
         .eq('id', category.id);
       if (error) throw error;
@@ -1461,6 +1597,9 @@ function CategoryEditForm({ category, dayType, supabase, onCancel, onSaved }) {
           />
         </Field>
       </div>
+      <Field label="Évszám-csoport (opcionális)" hint="Ha a korosztályt évszám szerint bontják: pl. 2013 vagy 2010–2011">
+        <Input type="text" value={form.age_group} onChange={(e) => setForm({ ...form, age_group: e.target.value })} placeholder="pl. 2013" />
+      </Field>
       
       <Field label={form.type === 'csapat' ? 'Csapatgyakorlat (1 vagy 2)' : 'Szerek'}>
         <div className="flex flex-wrap gap-2">
@@ -1575,7 +1714,7 @@ function TeamPlacementsView({ supabase, category, entries, canManage, onBack }) 
         </button>
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold truncate" style={{ color: COLORS.blueDark }}>
-            Csapat helyezések: {category.kategoria} · {category.korosztaly}
+            Csapat helyezések: {catName(category)}
           </h3>
           <div className="text-xs text-gray-500">Csapatonként egy helyezés (a két bemutatás összevonva)</div>
         </div>
@@ -1655,7 +1794,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         .from('startlist_entries')
         .select(`
           id, start_order, competitor_id, external_name, external_club, 
-          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly, did_not_start, start_time,
+          apparatus, team_id, performance_number, snapshot_kategoria, snapshot_korosztaly, snapshot_birth_year, did_not_start, start_time,
           competitor:competitors(id, full_name, nickname, kategoria, korosztaly, birth_year)
         `)
         .eq('competition_category_id', category.id)
@@ -1825,7 +1964,7 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
         </button>
         <div className="flex-1 min-w-0">
           <h3 className="font-semibold truncate" style={{ color: COLORS.blueDark }}>
-            Startlista: {category.kategoria} · {category.korosztaly}
+            Startlista: {catName(category)}
           </h3>
           <div className="text-xs text-gray-500 flex flex-wrap gap-x-3">
             <span>{isTeam ? 'Csapat' : 'Egyéni'}</span>
@@ -1955,7 +2094,7 @@ function StartlistRow({ entry, score, canManage, canAdmin, isFirst, isLast, onEd
           )}
         </div>
         <div className="text-xs text-gray-500 truncate">
-          {club}
+          {club}{(entry.snapshot_birth_year || competitor?.birth_year) ? ` · ${entry.snapshot_birth_year || competitor.birth_year}` : ''}
         </div>
       </div>
       {score !== null && score !== undefined && (
@@ -3040,6 +3179,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
       }
       
       // 3. minden napra: kategóriák + startlista
+      const unmatchedMembers = []; // v1.7.0
       for (const dayData of parsed.days) {
         // Megfelelő nap a competition_days-ből
         const day = days.find(d => d.day_number === dayData.day_number);
@@ -3057,6 +3197,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
               .eq('kategoria', catData.kategoria)
               .eq('korosztaly', catData.korosztaly)
               .eq('type', catData.type || 'egyeni')
+              .filter('age_group', catData.age_group ? 'eq' : 'is', catData.age_group || null)
               .maybeSingle();
             
             if (existingCat) {
@@ -3080,7 +3221,8 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                 korosztaly: catData.korosztaly,
                 type: catData.type || 'egyeni',
                 apparatuses: catData.apparatuses || [],
-                time_range: catData.time_range || null
+                time_range: catData.time_range || null,
+                age_group: catData.age_group || null // v1.7.0
               })
               .select()
               .single();
@@ -3110,7 +3252,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                   external_club: null,
                   apparatus: s.apparatus || null,
                   performance_number: s.performance || null,
-                  start_time: s.time ? String(s.time).trim() : null
+                  start_time: s.time ? String(s.time).trim() : null, snapshot_birth_year: parseInt(s.year, 10) || null
                 });
                 continue;
               }
@@ -3153,7 +3295,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                     external_club: null,
                     apparatus: s.apparatus || null,
                     performance_number: s.performance || null,
-                  start_time: s.time ? String(s.time).trim() : null
+                  start_time: s.time ? String(s.time).trim() : null, snapshot_birth_year: parseInt(s.year, 10) || null
                   });
                   continue;
                 }
@@ -3168,7 +3310,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                 external_club: isTeamCategory ? (s.club || 'Csepeli RG Club') : 'Csepeli RG Club (ismeretlen)', // v0.9.70
                 apparatus: s.apparatus || null,
                 performance_number: s.performance || null,
-                  start_time: s.time ? String(s.time).trim() : null
+                  start_time: s.time ? String(s.time).trim() : null, snapshot_birth_year: parseInt(s.year, 10) || null
               });
               continue;
             }
@@ -3181,7 +3323,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
               external_club: s.club || null,
               apparatus: s.apparatus || null,
               performance_number: s.performance || null,
-                  start_time: s.time ? String(s.time).trim() : null
+                  start_time: s.time ? String(s.time).trim() : null, snapshot_birth_year: parseInt(s.year, 10) || null
             });
           }
           
@@ -3207,6 +3349,21 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
                     .single();
                   if (tErr) throw new Error('Csapat létrehozása (' + teamName + '): ' + tErr.message);
                   nameToTeamId[teamName] = tData.id;
+                  // v1.7.0: a JSON-ban megadott csapattagok közül a csepeliek hozzárendelése
+                  const srcRow = (catData.startlist || []).find(r => (r.name || '').trim() === teamName && Array.isArray(r.members));
+                  if (srcRow && /csepel/i.test(srcRow.club || '')) {
+                    const norm = (x) => (x || '').toLowerCase().replace(/\s+/g, ' ').trim();
+                    const memberRows = [];
+                    srcRow.members.forEach((mName, idx) => {
+                      const hit = allCompetitors.find(c => norm(c.full_name) === norm(mName));
+                      if (hit) memberRows.push({ team_id: tData.id, competitor_id: hit.id, position: idx + 1 });
+                      else unmatchedMembers.push(`${teamName}: ${mName}`);
+                    });
+                    if (memberRows.length) {
+                      const { error: mErr } = await supabase.from('competition_team_members').insert(memberRows);
+                      if (mErr) throw new Error('Csapattagok (' + teamName + '): ' + mErr.message);
+                    }
+                  }
                 }
                 e.team_id = nameToTeamId[teamName];
               }
@@ -3238,6 +3395,9 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
       }
       
       // Sikeres
+      if (unmatchedMembers.length) {
+        window.alert('Ezeket a csapattagokat nem találtam a klubtagok között (kézzel rendeld hozzá):\n' + unmatchedMembers.join('\n'));
+      }
       onImported(comp);
     } catch (err) {
       setImportError('Importálás sikertelen: ' + err.message);
@@ -3433,7 +3593,7 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
           .from('competition_days')
           .select(`
             categories:competition_categories (
-              id, kategoria, korosztaly, type, is_finalized,
+              id, kategoria, korosztaly, type, is_finalized, age_group,
               entries:startlist_entries (
                 id, team_id, performance_number, external_name, external_club
               )
@@ -3451,7 +3611,7 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
             .forEach(cat => {
               (cat.entries || []).forEach(e => {
                 if (e.team_id) {
-                  entryRows.push({ ...e, kategoria: cat.kategoria, korosztaly: cat.korosztaly });
+                  entryRows.push({ ...e, kategoria: cat.kategoria, korosztaly: cat.korosztaly, age_group: cat.age_group, catId: cat.id });
                 }
               });
             });
@@ -3493,7 +3653,7 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
           const v = scoreByEntry[e.id];
           if (v === null || v === undefined) return;
           sumByTeam[e.team_id] = (sumByTeam[e.team_id] || 0) + (parseFloat(v) || 0);
-          catOfTeam[e.team_id] = `${e.kategoria}|${e.korosztaly}`;
+          catOfTeam[e.team_id] = e.catId; // v1.7.0: kategóriánként (évszám-csoport is külön)
         });
         const calcRank = {};
         const byCat = {};
@@ -3518,6 +3678,7 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
               name: nev,
               kategoria: e.kategoria,
               korosztaly: e.korosztaly,
+              age_group: e.age_group,
               placement: manual ? info.placement : (calcRank[e.team_id] ?? null),
               manualPlacement: manual ? info.placement : null,
               calcPlacement: calcRank[e.team_id] ?? null,
@@ -3582,7 +3743,7 @@ function CsepeliTeamResultsSection({ supabase, competition, userRole }) {
                   <div className="font-semibold" style={{ color: COLORS.red }}>
                     {t.name}
                     <span className="font-normal text-gray-500 ml-2">
-                      {t.kategoria}{t.korosztaly ? ` · ${t.korosztaly}` : ''}
+                      {t.kategoria}{t.korosztaly ? ` · ${t.korosztaly}` : ''}{t.age_group ? ` · ${t.age_group}` : ''}
                     </span>
                   </div>
                   {hasScore && (
@@ -3720,7 +3881,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
         .select(`
           id, day_number, date,
           categories:competition_categories (
-            id, kategoria, korosztaly, type, apparatuses, time_range,
+            id, kategoria, korosztaly, type, apparatuses, time_range, age_group,
             entries:startlist_entries (
               id, start_order, competitor_id, apparatus, is_exhibition,
               competitor:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
@@ -4119,7 +4280,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
         return (
           <div key={catId} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
             <div className="bg-gray-50 px-4 py-2 border-b border-gray-200">
-              <div className="font-semibold text-sm">{cat.kategoria} · {cat.korosztaly}</div>
+              <div className="font-semibold text-sm">{catName(cat)}</div>
               <div className="text-xs text-gray-500">{compIds.length} csepeli versenyző</div>
             </div>
             <div className="p-3 space-y-3">
