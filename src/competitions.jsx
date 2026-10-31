@@ -63,7 +63,7 @@ const IMPORTANCE_OPTIONS = [
   { value: 'egyeb', label: 'Egyéb' }
 ];
 
-const KATEGORIA_OPTIONS = ['VSK I', 'VSK II', 'SZK', 'BNK', 'FIG', 'NON-FIG', 'CAT 0', 'CAT 1', 'CAT 2', 'CAT 3']; // v1.7.0: nemzetközi
+const KATEGORIA_OPTIONS = ['VSK I', 'VSK II', 'SZK', 'BNK', 'FIG', 'NON-FIG', 'CAT 0', 'CAT 1', 'CAT 2', 'CAT 3', 'Kismester', 'Mesterfokú']; // v1.7.0: nemzetközi; v1.8.1: bajnokságok
 // v1.7.0: a kategória teljes neve, évszám-csoporttal (pl. „CAT 1 · serdülő · 2013”)
 const catName = (c) => (c ? `${c.kategoria} · ${c.korosztaly}${c.age_group ? ` · ${c.age_group}` : ''}` : '');
 // Évszám-csoport értelmezése: '2013' → 2013–2013, '2010-2011' / '2010–2011' → 2010–2011
