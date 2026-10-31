@@ -2957,6 +2957,8 @@ function CsepeliMatchRow({ match, allCompetitors, currentValue, onChange, onCrea
 
 function JsonImportView({ supabase, onClose, onImported, existingCompetition = null }) {
   const [jsonText, setJsonText] = useState('');
+  // v1.9.0 (Sándor): a startlista gyakran változik — meglévő versenynél alapból CSERE (nem hozzáfűzés)
+  const [replaceMode, setReplaceMode] = useState(true);
   const [parsed, setParsed] = useState(null);  // null | object - parsed JSON
   const [parseError, setParseError] = useState(null);
   const [validationResult, setValidationResult] = useState(null);
@@ -3179,6 +3181,64 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
         }
       }
       
+      // v1.9.0: STARTLISTA CSERÉJE — a JSON-ban szereplő kategóriák régi startlistája (és az importból lett,
+      // hozzájuk kötött csapatok) törlődik, a friss kerül a helyére. Ha bármelyikben már van pont, SEMMIHEZ
+      // nem nyúlunk, hanem megmondjuk, hol (pontozott sort csak tudatosan szabad cserélni).
+      if (existingCompetition && replaceMode) {
+        const targets = [];
+        const teamNames = new Set();
+        for (const dayData of parsed.days) {
+          const day = days.find(d => d.day_number === dayData.day_number);
+          if (!day) continue;
+          for (const catData of (dayData.categories || [])) {
+            const { data: ec } = await supabase.from('competition_categories').select('id, kategoria, korosztaly, age_group')
+              .eq('competition_day_id', day.id).eq('kategoria', catData.kategoria).eq('korosztaly', catData.korosztaly)
+              .eq('type', catData.type || 'egyeni')
+              .filter('age_group', catData.age_group ? 'eq' : 'is', catData.age_group || null)
+              .maybeSingle();
+            if (ec) targets.push({ ...ec, date: day.date });
+            if ((catData.type || 'egyeni') === 'csapat') (catData.startlist || []).forEach(r => r.name && teamNames.add(r.name.trim()));
+          }
+        }
+        if (targets.length) {
+          const { data: oldEntries, error: oeErr } = await supabase.from('startlist_entries')
+            .select('id, team_id, competition_category_id').in('competition_category_id', targets.map(t => t.id));
+          if (oeErr) throw oeErr;
+          const oldIds = (oldEntries || []).map(e => e.id);
+          if (oldIds.length) {
+            const { data: scored, error: scErr } = await supabase.from('results')
+              .select('startlist_entry_id').in('startlist_entry_id', oldIds);
+            if (scErr) throw scErr;
+            if (scored && scored.length) {
+              const scoredIds = new Set(scored.map(r => r.startlist_entry_id));
+              const catIds = new Set((oldEntries || []).filter(e => scoredIds.has(e.id)).map(e => e.competition_category_id));
+              const names = targets.filter(t => catIds.has(t.id)).map(t => `${t.date} ${catName(t)}`);
+              throw new Error(`Ezekben a kategóriákban már van pontozott eredmény, ezért a startlistát nem cserélem le: ${names.join('; ')}. ` +
+                'Ha mégis cserélni kell, előbb töröld a pontokat, vagy a változást kézzel vezesd át a startlistán.');
+            }
+          }
+          const linkedTeams = [...new Set((oldEntries || []).map(e => e.team_id).filter(Boolean))];
+          if (oldIds.length) {
+            const { error: dErr } = await supabase.from('startlist_entries').delete().in('id', oldIds);
+            if (dErr) throw dErr;
+          }
+          // az importból lett csapatok: a régi sorokhoz kötöttek + a korábbi, félbemaradt importok árva csapatai
+          // (csak az azonos nevűek, helyezés és startlista-sor nélkül — kézi klub-/kombinált csapathoz nem nyúlunk)
+          const { data: compTeams } = await supabase.from('competition_teams')
+            .select('id, name, placement').eq('competition_id', existingCompetition.id);
+          const { data: stillLinked } = await supabase.from('startlist_entries').select('team_id')
+            .in('team_id', (compTeams || []).map(t => t.id).concat(['00000000-0000-0000-0000-000000000000']));
+          const linkedNow = new Set((stillLinked || []).map(r => r.team_id));
+          const orphan = (compTeams || []).filter(t => !linkedNow.has(t.id) && t.placement === null && teamNames.has((t.name || '').trim())).map(t => t.id);
+          const dropTeams = [...new Set([...linkedTeams, ...orphan])];
+          if (dropTeams.length) {
+            await supabase.from('competition_team_members').delete().in('team_id', dropTeams);
+            const { error: tErr } = await supabase.from('competition_teams').delete().in('id', dropTeams);
+            if (tErr) throw tErr;
+          }
+        }
+      }
+
       // 3. minden napra: kategóriák + startlista
       const unmatchedMembers = []; // v1.7.0
       for (const dayData of parsed.days) {
@@ -3429,9 +3489,21 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
             <AlertCircle className="w-4 h-4" /> Meglévő versenyhez fűzöd hozzá
           </div>
           <div>
-            A JSON-ban szereplő napok/kategóriák a már létező <strong>{existingCompetition.name}</strong> versenyhez kerülnek hozzáadásra. 
+            A JSON-ban szereplő napok/kategóriák a már létező <strong>{existingCompetition.name}</strong> versenyhez kerülnek.
             A verseny alapadatai (név, dátum, helyszín) NEM változnak.
-            Az új kategóriák az importálás után a "Napok és kategóriák" fülön szerkeszthetők.
+          </div>
+          {/* v1.9.0: csere vagy hozzáfűzés */}
+          <div className="mt-2 space-y-1.5">
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" checked={replaceMode} onChange={() => setReplaceMode(true)} className="mt-1" />
+              <span><b>Startlista cseréje</b> (javasolt, ha új / javított startlista jött): a JSON-ban szereplő kategóriák régi
+                startlistája törlődik, és a friss kerül a helyére — nem lesz dupla sor. Ha egy kategóriában már van pont, a program
+                semmit nem cserél, hanem szól.</span>
+            </label>
+            <label className="flex items-start gap-2 cursor-pointer">
+              <input type="radio" checked={!replaceMode} onChange={() => setReplaceMode(false)} className="mt-1" />
+              <span><b>Hozzáfűzés</b>: a meglévő startlista megmarad, az új sorok a végére kerülnek (pl. ha csak egy új kategória jött).</span>
+            </label>
           </div>
         </div>
       )}
@@ -3550,7 +3622,7 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
       <div className="flex gap-2">
         <PrimaryButton onClick={doImport} disabled={!parsed || importing}>
           {importing ? <Loader className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Verseny létrehozása
+          {existingCompetition ? (replaceMode ? 'Startlista cseréje' : 'Hozzáadás a versenyhez') : 'Verseny létrehozása'}
         </PrimaryButton>
         <SecondaryButton onClick={onClose}>Mégse</SecondaryButton>
       </div>
