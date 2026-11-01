@@ -147,7 +147,7 @@ export function ResultsTemplateButton({ competitor, compact = false }) {
               disabled={busy}
               className={`${compact ? 'text-xs px-3 py-1.5' : 'text-sm px-4 py-2'} rounded-lg text-white font-semibold flex items-center gap-1.5 shadow-sm disabled:opacity-50`}
               style={{ backgroundColor: PURPLE }}>
-        {busy ? <Loader className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Kitöltő Excel letöltése
+        {busy ? <Loader className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />} Korábbi eredmények Excel letöltése
       </button>
       {err && <span className="text-xs text-red-600 mt-1">{err}</span>}
     </span>
