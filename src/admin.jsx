@@ -18,6 +18,7 @@ import { StoriesPanel } from './stories';
 import { FriendsPanel, GreetingsPanel } from './friends';
 import { MusicPanel } from './music';
 import { PackingCard } from './packing';
+import { ResultsTemplateButton, ResultsExcelImport, useCompetitorBasic } from './resultsExcel';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
@@ -2850,6 +2851,9 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
   const [showList, setShowList] = useState(false); // v0.9.62: a rögzítettek kezelése lenyitva
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(null); // null | 'new' | item
+  const [importing, setImporting] = useState(false); // v1.10.0: kitöltött Excel betöltése (edző / admin)
+  const basic = useCompetitorBasic(supabase, competitorId);
+  const canImport = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
 
   const canEdit = ['admin', 'szulo', 'szulo_admin', 'vezetoedzo', 'edzo', 'segededzo'].includes(userRole);
 
@@ -2909,17 +2913,35 @@ export function CompetitorHistoricalResults({ supabase, competitorId, userRole, 
           <Clock className="w-4 h-4" style={{ color: '#7c3aed' }} />
           <span className="font-semibold text-sm">Korábbi eredmények rögzítése</span>
         </div>
-        <button
-          onClick={() => setEditing('new')}
-          className="text-xs px-3 py-1.5 rounded text-white font-medium"
-          style={{ backgroundColor: '#7c3aed' }}
-        >
-          <Plus className="w-3 h-3 inline mr-1" /> Új eredmény
-        </button>
+        <div className="flex gap-2 flex-wrap">
+          <button
+            onClick={() => setEditing('new')}
+            className="text-xs px-3 py-1.5 rounded text-white font-medium"
+            style={{ backgroundColor: '#7c3aed' }}
+          >
+            <Plus className="w-3 h-3 inline mr-1" /> Új eredmény
+          </button>
+          {/* v1.10.0: sok korábbi eredményhez kitöltő Excel (letöltés: mindenki; betöltés: edző / admin) */}
+          <ResultsTemplateButton competitor={basic} compact />
+          {canImport && (
+            <button onClick={() => setImporting(v => !v)}
+                    className="text-xs px-3 py-1.5 rounded-lg border-2 font-semibold bg-white"
+                    style={{ borderColor: '#7c3aed', color: '#7c3aed' }}>
+              Kitöltött Excel betöltése
+            </button>
+          )}
+        </div>
       </div>
       <div className="text-xs text-gray-500 mt-1">
         A rögzített korábbi eredmények a fenti eredmény-összesítőben látszanak, a többi versennyel együtt.
+        Sok eredményhez töltsd le a kitöltő Excelt, és kitöltve küldd el: <b>sanyaw124@gmail.com</b>.
       </div>
+      {importing && (
+        <div className="mt-2">
+          <ResultsExcelImport supabase={supabase} competitorId={competitorId} onClose={() => setImporting(false)}
+                              onImported={() => { load(); notifyHistoricalChanged(); }} />
+        </div>
+      )}
 
       {error && (
         <div className="text-xs text-red-600 mt-2">{error}</div>
