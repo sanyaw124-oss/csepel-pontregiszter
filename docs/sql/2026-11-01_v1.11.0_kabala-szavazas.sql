@@ -90,7 +90,7 @@ end $$;
 create or replace function public.mascot_reset()
 returns jsonb language plpgsql security definer set search_path = public as $$
 begin
-  if not (current_user_role() = any (array['admin','szulo_admin','vezetoedzo','edzo'])) then
+  if coalesce(current_user_role(), '') <> all (array['admin','szulo_admin','vezetoedzo','edzo']) then
     raise exception 'Nincs jogosultság';
   end if;
   if (select status from mascot_poll where id = 1) <> 'draft' then
