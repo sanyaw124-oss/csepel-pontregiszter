@@ -24,6 +24,7 @@ import { usePridePhotoUrl } from './pridePhoto';
 import { StatsView } from './statsView';
 import { ClubView } from './club';
 import { DocumentsView } from './documents';
+import { MascotPollWidget } from './mascot';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -932,7 +933,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.10.1 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.11.0 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
       </footer>
     </div>
@@ -1155,6 +1156,8 @@ function DashboardView({ setActiveView }) {
       <NextCompetitionHero />
       {/* v0.9.81: a következő 30 nap versenyei → Versenynaptár */}
       <UpcomingCompetitionsWidget supabase={supabase} onOpen={() => setActiveView('calendar')} onOpenCompetitions={() => setActiveView('competitions')} />
+      {/* v1.11.0: kabala-szavazás */}
+      <MascotPollWidget supabase={supabase} role={profile.role} />
       <BirthdayWidget supabase={supabase} />
       <div className="mb-4">
         <UpcomingEventsWidget 
