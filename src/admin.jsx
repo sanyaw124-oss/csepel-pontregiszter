@@ -23,7 +23,7 @@ import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLa
 import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
 import { uploadPridePhoto, removePridePhoto, deletePrideFile, usePridePhotoUrl } from './pridePhoto';
 
-// HELPER: jelszó generálás már az Edge Function-on történik szerveroldalon
+// A jelszót mindig a felhasználó adja meg (v1.12.0)
 
 // ═══════════════════════════════════════════════════════════════════
 // HELPER: versenyző név formázás
@@ -101,7 +101,7 @@ function Input(props) {
     <input
       autoComplete="off"
       {...props}
-      {...(guarded ? { autoComplete: 'new-password', readOnly: props.readOnly || !touched, onMouseDown: unlock, onTouchStart: unlock } : {})}
+      {...(guarded ? { autoComplete: 'off', readOnly: props.readOnly || !touched, onMouseDown: unlock, onTouchStart: unlock } : {})}
       className={`w-full px-3 py-2 border rounded-lg outline-none transition-all ${props.className || ''}`}
       style={{ borderColor: COLORS.gray200, ...props.style }}
       onFocus={(e) => { unlock(); e.target.style.borderColor = COLORS.blue; props.onFocus && props.onFocus(e); }}
@@ -763,7 +763,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
                 type={showPassword ? 'text' : 'password'}
                 value={form.password}
                 onChange={(e) => setForm({...form, password: e.target.value})}
-                placeholder="pl. csepel123"
+                placeholder="Írd be a jelszót"
               />
               <button
                 type="button"
@@ -1346,7 +1346,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
                 type={showPassword ? 'text' : 'password'}
                 value={form.password}
                 onChange={(e) => setForm({...form, password: e.target.value})}
-                placeholder="pl. csepel123"
+                placeholder="Írd be a jelszót"
               />
               <button
                 type="button"
@@ -1771,7 +1771,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
                 type={showPassword ? 'text' : 'password'}
                 value={form.password}
                 onChange={(e) => setForm({...form, password: e.target.value})}
-                placeholder="pl. csepel123"
+                placeholder="Írd be a jelszót"
               />
               <button
                 type="button"
