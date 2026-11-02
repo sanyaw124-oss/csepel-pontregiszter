@@ -1516,11 +1516,11 @@ function AdminStaff({ supabase, userRole, dataReloadKey }) {
 
   const load = useCallback(async () => {
     setError(null);
-    // Edzői fiókok + szulo_admin fiókok (nem a sima admin)
+    // Minden edzői és admin jogú fiók (v1.10.1: a sima admin is, különben az új admin nem látszana)
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .in('role', ['vezetoedzo', 'edzo', 'segededzo', 'szulo_admin'])
+      .in('role', ['vezetoedzo', 'edzo', 'segededzo', 'szulo_admin', 'admin'])
       .order('full_name');
     if (error) setError(error.message);
     else setStaff(data);
