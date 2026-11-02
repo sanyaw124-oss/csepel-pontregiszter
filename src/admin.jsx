@@ -425,6 +425,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
   const [newPassword, setNewPassword] = useState('');
   const [showNewPassword, setShowNewPassword] = useState(false);
   const [passwordChangeMessage, setPasswordChangeMessage] = useState(null);
+  const [changedCreds, setChangedCreds] = useState(null); // v1.12.0: másolható üzenet jelszócsere után
   const [linkedUserId, setLinkedUserId] = useState(null); // a competitor-hez tartozó profile.id (auth fiók)
 
   // Szülők és linkek betöltése
@@ -647,7 +648,8 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         throw new Error(result.error || 'Jelszó módosítása sikertelen');
       }
       
-      setPasswordChangeMessage(`Jelszó sikeresen módosítva. Új jelszó: ${newPassword}`);
+      setPasswordChangeMessage('Jelszó sikeresen módosítva.');
+      setChangedCreds({ name: (form.full_name || '').trim(), email: (form.email || '').trim(), password: newPassword, changed: true });
       setNewPassword('');
       setShowPasswordChange(false);
     } catch (err) {
@@ -830,6 +832,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
                 </div>
               </div>
             )}
+            {changedCreds && <CredentialsPopup creds={changedCreds} onClose={() => setChangedCreds(null)} />}
             {passwordChangeMessage && (
               <div className="mt-2 bg-green-50 border border-green-200 rounded-lg p-2 text-sm text-green-900">
                 {passwordChangeMessage}
@@ -1114,6 +1117,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [passwordChangeMessage, setPasswordChangeMessage] = useState(null); // ÚJ: jelszó módosítás után üzenet
+  const [changedCreds, setChangedCreds] = useState(null); // v1.12.0: másolható üzenet jelszócsere után
 
   // Teljes jogú szerepek (admin, szülő-admin, vezetőedző, edző) adhatnak szülő-admin jogot
   const canSetSzuloAdmin = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
@@ -1284,7 +1288,8 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
         throw new Error(result.error || 'Jelszó módosítása sikertelen');
       }
       
-      setPasswordChangeMessage(`Jelszó sikeresen módosítva. Új jelszó: ${newPassword}`);
+      setPasswordChangeMessage('Jelszó sikeresen módosítva.');
+      setChangedCreds({ name: (form.full_name || '').trim(), email: (form.email || '').trim(), password: newPassword, changed: true });
       setNewPassword('');
       setShowPasswordChange(false);
     } catch (err) {
@@ -1410,6 +1415,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
                 </div>
               </div>
             )}
+            {changedCreds && <CredentialsPopup creds={changedCreds} onClose={() => setChangedCreds(null)} />}
             {passwordChangeMessage && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-2 text-sm text-green-900">
                 <Check className="w-4 h-4 inline mr-1" />
@@ -1465,7 +1471,7 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
 function CredentialsPopup({ creds, onClose }) {
   const [copied, setCopied] = useState(false);
   
-  const copyText = `Csepel RG Klub Pontregiszter — Belépési adatok\n\nNév: ${creds.name}\nEmail: ${creds.email}\nJelszó: ${creds.password}\n\nLink: https://csepel-pontregiszter.vercel.app\n\nA jelszót őrizd meg biztonságos helyen. Ha elfelejted, az edző tud újat adni.`; // v0.9.76: a jelszót a felhasználó maga nem tudja megváltoztatni
+  const copyText = `Csepel RG Klub Pontregiszter — ${creds.changed ? 'Új jelszó' : 'Belépési adatok'}\n\nNév: ${creds.name}\nEmail: ${creds.email}\nJelszó: ${creds.password}\n\nLink: https://csepel-pontregiszter.vercel.app\n\nA jelszót őrizd meg biztonságos helyen. Ha elfelejted, az edző tud újat adni.`; // v0.9.76: a jelszót a felhasználó maga nem tudja megváltoztatni
 
   const copy = () => {
     navigator.clipboard.writeText(copyText);
@@ -1479,7 +1485,7 @@ function CredentialsPopup({ creds, onClose }) {
         <div className="flex items-center gap-2 mb-3">
           <Check className="w-6 h-6 text-green-600" />
           <h3 className="text-lg font-bold" style={{ color: COLORS.blueDark }}>
-            Fiók létrehozva!
+            {creds.changed ? 'Jelszó módosítva!' : 'Fiók létrehozva!'}
           </h3>
         </div>
         
@@ -1606,6 +1612,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [passwordChangeMessage, setPasswordChangeMessage] = useState(null);
+  const [changedCreds, setChangedCreds] = useState(null); // v1.12.0: másolható üzenet jelszócsere után
 
   // Teljes jogú szerepek (admin, szülő-admin, vezetőedző, edző) hozhatnak létre admin/szülő-admin fiókot
   const canCreateSzuloAdmin = ['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole);
@@ -1719,7 +1726,8 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
         throw new Error(result.error || 'Jelszó módosítása sikertelen');
       }
       
-      setPasswordChangeMessage(`Jelszó sikeresen módosítva. Új jelszó: ${newPassword}`);
+      setPasswordChangeMessage('Jelszó sikeresen módosítva.');
+      setChangedCreds({ name: (form.full_name || '').trim(), email: (form.email || '').trim(), password: newPassword, changed: true });
       setNewPassword('');
       setShowPasswordChange(false);
     } catch (err) {
@@ -1828,6 +1836,7 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
                 </div>
               </div>
             )}
+            {changedCreds && <CredentialsPopup creds={changedCreds} onClose={() => setChangedCreds(null)} />}
             {passwordChangeMessage && (
               <div className="bg-green-50 border border-green-200 rounded-lg p-3 mt-2 text-sm text-green-900">
                 <Check className="w-4 h-4 inline mr-1" />
