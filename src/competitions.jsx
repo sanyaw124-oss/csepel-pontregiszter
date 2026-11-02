@@ -4043,7 +4043,8 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
             (cat.entries || []).forEach(entry => {
               // Csepeli rekordnak vesszük csak, ahol van results bejegyzés
               const r = resultsMap[entry.id];
-              if (r && r.score_total !== null && r.score_total !== undefined) {
+              // v1.10.1: a bemutató nem kap számolt helyezést és mást sem told hátrébb
+              if (r && r.score_total !== null && r.score_total !== undefined && !entry.is_exhibition) {
                 allEntriesForRanking.push({
                   catId: cat.id,
                   entryId: entry.id,
@@ -4172,16 +4173,31 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           scoreTotal = Math.round(((scoreD || 0) + (scoreA || 0) + (scoreE || 0) - (scoreP || 0)) * 1000) / 1000;
         }
 
-        // Ha SEMMI nincs megadva, kihagyjuk
-        if (placement === null && scoreTotal === null && scoreD === null && scoreA === null && scoreE === null) {
-          continue;
-        }
-
         // v1.1.4: friss sor az adatbázisból (a pontozó közben menthetett; soronként egy eredmény)
         const { data: freshRows, error: fErr } = await supabase
           .from('results').select('id, modified_at').eq('startlist_entry_id', entry.id);
         if (fErr) throw new Error(`${compName}: ${fErr.message}`);
         const existing = (freshRows || []).sort((a, b) => String(b.modified_at || '').localeCompare(String(a.modified_at || '')))[0] || null;
+
+        // Ha SEMMI nincs megadva: új sort nem hozunk létre, a régit viszont töröljük.
+        // v1.10.1: eddig ilyenkor kihagytuk a mentést, így a kitörölt helyezés visszajött.
+        if (placement === null && scoreTotal === null && scoreD === null && scoreA === null && scoreE === null && scoreP === null) {
+          if (existing) {
+            const { data: gone, error: dErr } = await supabase.from('results').delete().eq('id', existing.id).select('id');
+            if (dErr) throw new Error(`${compName} (${entry.apparatus || 'szer'}): törlés sikertelen — ${dErr.message}`);
+            if (!gone || gone.length === 0) {
+              // Ha a jogosultság a sor törlését nem engedi, az értékeket ürítjük ki
+              const { error: nErr } = await supabase.from('results').update({
+                placement: null, calculated_rank: null, score_db: null, score_da: null, score_d: null,
+                score_a: null, score_e: null, score_p: null, score_total: null,
+                modified_at: new Date().toISOString()
+              }).eq('id', existing.id);
+              if (nErr) throw new Error(`${compName} (${entry.apparatus || 'szer'}): törlés sikertelen — ${nErr.message}`);
+            }
+          }
+          continue;
+        }
+
         const payload = {
           startlist_entry_id: entry.id,
           apparatus: entry.apparatus,
@@ -4209,7 +4225,18 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
 
       // Összetett eredmény mentése
       const aaVals = editAllAround[key];
-      if (aaVals && (aaVals.placement || aaVals.score_total || aaVals.notes)) {
+      const aaEmpty = !aaVals || (!aaVals.placement && !aaVals.score_total && !aaVals.notes);
+      if (aaEmpty && aaVals && allAroundResults[key]) {
+        // v1.10.1: a kitörölt összetett eredmény se jöjjön vissza
+        const aaId = allAroundResults[key].id;
+        const { data: gone, error: dErr } = await supabase.from('all_around_results').delete().eq('id', aaId).select('id');
+        if (dErr) throw new Error(`${compName} összetett: törlés sikertelen — ${dErr.message}`);
+        if (!gone || gone.length === 0) {
+          const { error: nErr } = await supabase.from('all_around_results')
+            .update({ placement: null, score_total: null, notes: null, modified_at: new Date().toISOString() }).eq('id', aaId);
+          if (nErr) throw new Error(`${compName} összetett: törlés sikertelen — ${nErr.message}`);
+        }
+      } else if (!aaEmpty) {
         const aaPayload = {
           competition_category_id: catId,
           competitor_id: compId,
