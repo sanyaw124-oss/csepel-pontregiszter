@@ -92,13 +92,19 @@ function Field({ label, children, hint }) {
 }
 
 function Input(props) {
+  // v1.11.1: a böngésző ne írja be a saját mentett belépését az új fiók mezőibe. Csak olvasható mezőt nem
+  // tölt ki magától, ezért az email és a jelszó mező az első érintésig az marad.
+  const [touched, setTouched] = useState(false);
+  const guarded = props.type === 'email' || props.type === 'password';
+  const unlock = () => setTouched(true);
   return (
     <input
       autoComplete="off"
       {...props}
+      {...(guarded ? { autoComplete: 'new-password', readOnly: props.readOnly || !touched, onMouseDown: unlock, onTouchStart: unlock } : {})}
       className={`w-full px-3 py-2 border rounded-lg outline-none transition-all ${props.className || ''}`}
       style={{ borderColor: COLORS.gray200, ...props.style }}
-      onFocus={(e) => { e.target.style.borderColor = COLORS.blue; props.onFocus && props.onFocus(e); }}
+      onFocus={(e) => { unlock(); e.target.style.borderColor = COLORS.blue; props.onFocus && props.onFocus(e); }}
       onBlur={(e) => { e.target.style.borderColor = COLORS.gray200; props.onBlur && props.onBlur(e); }}
     />
   );
