@@ -14,6 +14,7 @@ import { createPortal } from 'react-dom';
 import { Loader, Edit2, Save, X, Plus, Trash2, ChevronUp, ChevronDown, Users as UsersIcon, Mail, Globe, MapPin,
          Phone, Copy, Check, FileText, Printer, Heart } from 'lucide-react';
 import { CSEPEL_RG_LOGO } from './logos';
+import { DRAFT, RichIntro, plainIntro } from './clubAbout';
 
 export const CLUB_TITLES = [
   { value: 'elnok', hu: 'Elnök', huPl: 'Elnök', en: 'President' },
@@ -67,6 +68,8 @@ function szjaText(info) {
     `Kérjük, hogy személyi jövedelemadója egy százalékát ajánlja fel a ${officialName(info)} számára!`,
     `A kedvezményezett adószáma: ${info.tax_number || '—'}`,
     `A kedvezményezett neve: ${officialName(info).toUpperCase()}`,
+    'A nyilatkozatot minden évben újra meg kell tenni, legkésőbb az szja-bevallás határidejéig (május 20.). A felajánlás Önnek nem kerül pénzébe.',
+    'Online: https://eszja.nav.gov.hu/',
     'Segítségét hálásan köszönjük!'
   ].join('\n');
 }
@@ -121,10 +124,13 @@ function InfoEditor({ supabase, info, onSaved, onCancel }) {
         <label className="text-xs text-gray-600">E-mail<input className={inp} value={form.email} onChange={set('email')} /></label>
         <label className="text-xs text-gray-600 sm:col-span-2">Honlap<input className={inp} value={form.website} onChange={set('website')} /></label>
       </div>
-      <label className="text-xs text-gray-600 block">Rövid bemutatkozás (magyar)
-        <textarea className={inp} rows={5} value={form.intro_hu} onChange={set('intro_hu')} /></label>
+      <div className="text-xs bg-blue-50 border border-blue-200 rounded p-2 text-blue-900">
+        <b>Formázás a bemutatkozásban:</b> <code>! 1987 | óta működünk</code> = kiemelt csempe · <code>## Cím</code> = alcím · <code>- szöveg</code> = lista · <code>- 2004: szöveg</code> = évszámos sor · üres sor nélkül is külön bekezdés minden sor.
+      </div>
+      <label className="text-xs text-gray-600 block">Bemutatkozás (magyar)
+        <textarea className={inp} rows={16} value={form.intro_hu} onChange={set('intro_hu')} /></label>
       <label className="text-xs text-gray-600 block">Short introduction (English — a dokumentumok angol változatához)
-        <textarea className={inp} rows={5} value={form.intro_en} onChange={set('intro_en')} /></label>
+        <textarea className={inp} rows={10} value={form.intro_en} onChange={set('intro_en')} /></label>
       {error && <div className="text-xs text-red-600">{error}</div>}
       <div className="flex gap-2">
         <button onClick={save} disabled={saving} className="px-3 py-1.5 rounded text-white text-sm font-medium flex items-center gap-1.5 disabled:opacity-50" style={{ backgroundColor: BLUE }}>
@@ -223,7 +229,7 @@ function ClubSheet({ info, people, lang }) {
       {intro && (
         <div className="club-block mt-5">
           <div className="text-sm font-bold uppercase tracking-wide mb-2" style={{ color: BLUE }}>{t.about}</div>
-          <div className="text-sm whitespace-pre-wrap leading-relaxed">{intro}</div>
+          <RichIntro text={intro} />
         </div>
       )}
       {people.length > 0 && (
@@ -336,7 +342,18 @@ export function ClubView({ supabase, userRole }) {
   };
 
   if (!club) return <div className="flex justify-center py-12"><Loader className="w-6 h-6 animate-spin text-gray-400" /></div>;
-  const { info, people } = club;
+  const { info: savedInfo, people } = club;
+  // v1.13.0: amíg nincs elmentett bemutatkozás, a kezelők a piszkozatot látják; a többieknek nem változik semmi
+  const isDraft = canEdit && !savedInfo.intro_hu;
+  const info = isDraft
+    ? { ...savedInfo, ...Object.fromEntries(Object.entries(DRAFT).filter(([k]) => !savedInfo[k])) }
+    : savedInfo;
+  const publishDraft = async () => {
+    if (!window.confirm('Közzéteszed a piszkozatot? Ezután minden bejelentkezett felhasználó látja. Később is szerkeszthető.')) return;
+    const payload = Object.fromEntries(Object.entries(DRAFT).filter(([k]) => !savedInfo[k]));
+    const { error: err } = await supabase.from('club_info').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', 1);
+    if (err) setError('Közzététel sikertelen: ' + err.message); else load();
+  };
   const intro = lang === 'en' ? info.intro_en : info.intro_hu;
   const card = 'bg-white rounded-xl border p-4';
   const officialRows = [[MapPin, 'Cím', info.address], [FileText, 'Adószám', info.tax_number], [Phone, 'Telefon', info.phone],
@@ -350,6 +367,7 @@ export function ClubView({ supabase, userRole }) {
         <div className="flex-1 min-w-[200px]">
           <div className="text-2xl font-bold" style={{ color: BLUE }}>{info.name || DEFAULT_NAME}</div>
           {info.official_name && info.official_name !== info.name && <div className="text-sm text-gray-600">{info.official_name}</div>}
+          <div className="text-sm italic mt-1" style={{ color: '#B91C1C' }}>„Ügyesen, Okosan, Mosoly”</div>
         </div>
         <div className="flex gap-2 flex-wrap">
           <ClubPdfButton info={info} people={people} lang={lang} />
@@ -360,12 +378,39 @@ export function ClubView({ supabase, userRole }) {
       </div>
       {error && <div className="text-sm text-red-600 bg-red-50 rounded p-2">{error}</div>}
 
+      {isDraft && !editInfo && (
+        <div className="rounded-xl border-2 border-yellow-400 bg-yellow-50 p-3 flex items-center gap-3 flex-wrap">
+          <div className="flex-1 min-w-[220px] text-sm text-yellow-900">
+            <b>Piszkozat, ellenőrzésre vár.</b> A lenti adatok a netről származnak, és egyelőre csak a kezelők látják őket. Ellenőrzés után tedd közzé, vagy előbb javítsd az „Adatok szerkesztése” gombbal.
+          </div>
+          <button onClick={publishDraft} className="px-4 py-2 rounded-lg text-white text-sm font-semibold shadow" style={{ backgroundColor: BLUE }}>Ellenőriztem, közzéteszem</button>
+        </div>
+      )}
+
       {editInfo ? (
         <div className={card} style={{ borderColor: '#E5E7EB' }}>
           <InfoEditor supabase={supabase} info={info} onCancel={() => setEditInfo(false)} onSaved={() => { setEditInfo(false); load(); }} />
         </div>
       ) : (
         <>
+          {/* Bemutatkozás */}
+          <div className={card} style={{ borderColor: '#E5E7EB' }}>
+            <div className="flex items-center justify-between mb-2 gap-2">
+              <div className="font-semibold" style={{ color: BLUE }}>{lang === 'en' ? 'About the club' : 'Bemutatkozás'}</div>
+              <div className="flex gap-1 text-xs items-center">
+                {intro && <CopyButton text={plainIntro(intro)} small />}
+                {['hu', 'en'].map(l => (
+                  <button key={l} onClick={() => setLang(l)} className="px-2 py-0.5 rounded border"
+                          style={{ borderColor: lang === l ? BLUE : '#E5E7EB', color: lang === l ? BLUE : '#6B7280', fontWeight: lang === l ? 600 : 400 }}>
+                    {l === 'hu' ? 'Magyar' : 'English'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {intro
+              ? <RichIntro text={intro} />
+              : <div className="text-sm text-gray-400 italic">{canEdit ? 'Még nincs bemutatkozás — „Adatok szerkesztése”.' : 'Hamarosan…'}</div>}
+          </div>
           {/* Hivatalos adatok */}
           <div className={card} style={{ borderColor: '#E5E7EB' }}>
             <div className="flex items-center justify-between gap-2 mb-2">
@@ -397,28 +442,17 @@ export function ClubView({ supabase, userRole }) {
                 <CopyButton text={szjaText(info)} label="Felhívás szövegének másolása" />
               </div>
               <div className="text-sm">A kedvezményezett neve: <b>{officialName(info).toUpperCase()}</b></div>
-              <div className="text-sm">A kedvezményezett adószáma: <b>{info.tax_number}</b></div>
+              <div className="text-sm flex items-center gap-2">A kedvezményezett adószáma: <b>{info.tax_number}</b> <CopyButton text={info.tax_number} small /></div>
+              <div className="text-sm text-gray-700 mt-2 leading-relaxed">
+                A felajánlás nem kerül pénzbe: az adója 1%-áról dönt, amit már befizetett. A nyilatkozatot minden évben újra meg kell tenni, legkésőbb az szja-bevallás határidejéig (május 20.).
+              </div>
+              <div className="flex gap-2 flex-wrap mt-3">
+                <a href="https://eszja.nav.gov.hu/" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#B91C1C' }}>Felajánlás online (eSZJA)</a>
+                <a href="https://nav.gov.hu/ado/szja1_1/felajanlasra-jogosultak/regisztralt_civil" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg border-2 border-gray-300 bg-white text-gray-800 text-sm font-semibold hover:bg-gray-50">NAV kedvezményezetti lista</a>
+              </div>
             </div>
           )}
 
-          {/* Bemutatkozás */}
-          <div className={card} style={{ borderColor: '#E5E7EB' }}>
-            <div className="flex items-center justify-between mb-2 gap-2">
-              <div className="font-semibold" style={{ color: BLUE }}>{lang === 'en' ? 'About the club' : 'Bemutatkozás'}</div>
-              <div className="flex gap-1 text-xs items-center">
-                {intro && <CopyButton text={intro} small />}
-                {['hu', 'en'].map(l => (
-                  <button key={l} onClick={() => setLang(l)} className="px-2 py-0.5 rounded border"
-                          style={{ borderColor: lang === l ? BLUE : '#E5E7EB', color: lang === l ? BLUE : '#6B7280', fontWeight: lang === l ? 600 : 400 }}>
-                    {l === 'hu' ? 'Magyar' : 'English'}
-                  </button>
-                ))}
-              </div>
-            </div>
-            {intro
-              ? <div className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">{intro}</div>
-              : <div className="text-sm text-gray-400 italic">{canEdit ? 'Még nincs bemutatkozás — „Adatok szerkesztése”.' : 'Hamarosan…'}</div>}
-          </div>
         </>
       )}
 
