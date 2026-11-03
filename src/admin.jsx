@@ -378,6 +378,70 @@ function CompetitorRow({ competitor, onEdit, hasLogin = null }) {
   );
 }
 
+// v1.13.0: belépési e-mail javítása meglévő fióknál (csak admin jogú felhasználónak)
+function EmailFixButton({ supabase, userRole, userId, currentEmail, onDone }) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
+  if (!userId || !['admin', 'szulo_admin', 'vezetoedzo', 'edzo'].includes(userRole)) return null;
+
+  const save = async () => {
+    const next = value.trim().toLowerCase();
+    setError(null);
+    if (!next) { setError('Írd be az új címet'); return; }
+    if (!window.confirm(`Átírod a belépési címet?
+
+Régi: ${currentEmail || '—'}
+Új: ${next}
+
+A régi címmel ezután nem lehet belépni, a jelszó nem változik.`)) return;
+    setSaving(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error('Nincs aktív session');
+      const response = await fetch(`${supabase.supabaseUrl}/functions/v1/change-email`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: userId, new_email: next })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'A javítás sikertelen');
+      onDone(result.email || next);
+      setDone(`Kész, az új belépési cím: ${result.email || next}. A jelszó nem változott. Szólj a felhasználónak!`);
+      setOpen(false);
+      setValue('');
+    } catch (err) {
+      setError(err.message);
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div className="mt-2">
+      {!open && (
+        <button type="button" onClick={() => { setOpen(true); setDone(null); setError(null); }}
+                className="px-3 py-1.5 rounded-lg bg-white border-2 text-sm font-semibold hover:shadow"
+                style={{ borderColor: COLORS.blue, color: COLORS.blue }}>
+          E-mail javítása
+        </button>
+      )}
+      {open && (
+        <div className="border rounded-lg p-3 space-y-2" style={{ borderColor: COLORS.gray200 }}>
+          <Input type="email" value={value} onChange={(e) => setValue(e.target.value)} placeholder="Az új e-mail cím" />
+          <div className="flex gap-2">
+            <PrimaryButton onClick={save} disabled={saving}>{saving ? 'Mentés…' : 'Új cím mentése'}</PrimaryButton>
+            <SecondaryButton onClick={() => { setOpen(false); setError(null); }}>Mégse</SecondaryButton>
+          </div>
+        </div>
+      )}
+      {error && <div className="text-sm text-red-700 mt-1">{error}</div>}
+      {done && <div className="bg-green-50 border border-green-200 rounded-lg p-2 mt-2 text-sm text-green-900">{done}</div>}
+    </div>
+  );
+}
+
 function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
   const isNew = !competitor;
   // v0.9.37: korosztály normalizálás - ha a meglévő DB rekord nagy betűs vagy NULL,
@@ -748,6 +812,10 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
             disabled={!isNew && linkedUserId}
             placeholder="versenyzo@example.com"
           />
+          {!isNew && linkedUserId && (
+            <EmailFixButton supabase={supabase} userRole={userRole} userId={linkedUserId} currentEmail={form.email}
+                            onDone={(email) => setForm(f => ({ ...f, email }))} />
+          )}
           {isNew && (
             <div className="text-xs text-gray-500 mt-1">
               Ha email + jelszó megadva → a versenyző be tud lépni saját profillal.
@@ -1337,6 +1405,10 @@ function ParentForm({ supabase, parent, userRole, onSaved, onCancel }) {
             disabled={!isNew}
             placeholder="szulo@example.com"
           />
+          {!isNew && (
+            <EmailFixButton supabase={supabase} userRole={userRole} userId={parent.id} currentEmail={form.email}
+                            onDone={(email) => setForm(f => ({ ...f, email }))} />
+          )}
         </Field>
 
         {isNew && (
@@ -1762,6 +1834,10 @@ function StaffForm({ supabase, member, userRole, onSaved, onCancel }) {
         <Field label="Email *">
           <Input type="email" value={form.email} onChange={(e) => setForm({...form, email: e.target.value})} 
                  disabled={!isNew} />
+          {!isNew && (
+            <EmailFixButton supabase={supabase} userRole={userRole} userId={member.id} currentEmail={form.email}
+                            onDone={(email) => setForm(f => ({ ...f, email }))} />
+          )}
         </Field>
         
         {isNew && (
