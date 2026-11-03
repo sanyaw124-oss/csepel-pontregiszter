@@ -50,11 +50,15 @@ export async function loadClub(supabase) {
 }
 
 const officialName = (info) => info.official_name || info.name || DEFAULT_NAME;
+// v1.13.0: a hivatalos papírokon szereplő elnöki név (a programban a Vezetőség listáján Kiss Zsuzsa marad, Sándor kérése)
+const OFFICIAL_PRESIDENT = 'Kiss Imréné';
+const officialPresident = (info) => (info.address ? OFFICIAL_PRESIDENT : null);
 
 // Másolható szövegek
 function officialText(info) {
   return [
     officialName(info),
+    officialPresident(info) && `Elnök: ${officialPresident(info)}`,
     info.address && `Cím: ${info.address}`,
     info.tax_number && `Adószám: ${info.tax_number}`,
     info.phone && `Telefon: ${info.phone}`,
@@ -208,7 +212,7 @@ const L = {
 function ClubSheet({ info, people, lang }) {
   const t = L[lang];
   const intro = lang === 'en' ? info.intro_en : info.intro_hu;
-  const rows = [[t.name, officialName(info)], [t.address, info.address], [t.tax, info.tax_number], [t.phone, info.phone],
+  const rows = [[t.name, officialName(info)], [lang === 'en' ? 'President' : 'Elnök', officialPresident(info)], [t.address, info.address], [t.tax, info.tax_number], [t.phone, info.phone],
                 [t.email, info.email], [t.web, info.website]].filter(r => r[1]);
   return (
     <div className="text-gray-900">
@@ -356,7 +360,7 @@ export function ClubView({ supabase, userRole }) {
   };
   const intro = lang === 'en' ? info.intro_en : info.intro_hu;
   const card = 'bg-white rounded-xl border p-4';
-  const officialRows = [[MapPin, 'Cím', info.address], [FileText, 'Adószám', info.tax_number], [Phone, 'Telefon', info.phone],
+  const officialRows = [[UsersIcon, 'Elnök', officialPresident(info)], [MapPin, 'Cím', info.address], [FileText, 'Adószám', info.tax_number], [Phone, 'Telefon', info.phone],
                         [Mail, 'E-mail', info.email], [Globe, 'Honlap', info.website]].filter(r => r[2]);
 
   return (
