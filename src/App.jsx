@@ -710,6 +710,12 @@ function LoginScreen() {
           <div className="mt-6 text-xs text-center text-gray-500">
             Ha nincs még fiókod, kérd az adminisztrátortól.
           </div>
+          {/* v1.12.1: leírás az ikon kitételéhez */}
+          <a href="/telefonra.html" target="_blank" rel="noopener noreferrer"
+             className="mt-3 block w-full py-3 rounded-lg font-semibold text-center bg-white border-2 hover:shadow transition-all"
+             style={{ borderColor: COLORS.blue, color: COLORS.blue }}>
+            📱 Tedd ki a telefonodra
+          </a>
         </div>
         <div className="mt-6 text-center">
           <div 
@@ -935,6 +941,11 @@ function AppShell() {
         <div className="text-xs text-gray-500 mt-1">
           Pontregiszter v1.12.1 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
+        <a href="/telefonra.html" target="_blank" rel="noopener noreferrer"
+           className="inline-block mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border-2"
+           style={{ borderColor: COLORS.blue, color: COLORS.blue }}>
+          📱 Tedd ki a telefonodra
+        </a>
       </footer>
     </div>
   );
