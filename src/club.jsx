@@ -13,7 +13,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Loader, Edit2, Save, X, Plus, Trash2, ChevronUp, ChevronDown, Users as UsersIcon, Mail, Globe, MapPin,
          Phone, Copy, Check, FileText, Printer, Heart } from 'lucide-react';
-import { CSEPEL_RG_LOGO } from './logos';
+import { CSEPEL_RG_LOGO, CSEPEL_SC_LOGO } from './logos';
 import { DRAFT, RichIntro, plainIntro } from './clubAbout';
 
 export const CLUB_TITLES = [
@@ -51,7 +51,7 @@ export async function loadClub(supabase) {
 
 const officialName = (info) => info.official_name || info.name || DEFAULT_NAME;
 // v1.13.0: a hivatalos papírokon szereplő elnöki név (a programban a Vezetőség listáján Kiss Zsuzsa marad, Sándor kérése)
-const OFFICIAL_PRESIDENT = 'Kiss Imréné';
+export const OFFICIAL_PRESIDENT = 'Kiss Imréné';
 const officialPresident = (info) => (info.address ? OFFICIAL_PRESIDENT : null);
 
 // Másolható szövegek
@@ -198,15 +198,20 @@ const PRINT_CSS = `
   .club-no-print { display: none !important; }
   .club-sheet { box-shadow: none !important; margin: 0 !important; max-width: none !important; }
   .club-block { break-inside: avoid; }
+  .club-sheet, .club-sheet * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @page { size: A4; margin: 14mm; }
 }`;
 const L = {
   hu: { sheet: 'Egyesületi adatlap', official: 'Hivatalos adatok', name: 'Név', address: 'Cím', tax: 'Adószám', phone: 'Telefon',
         email: 'E-mail', web: 'Honlap', about: 'Bemutatkozás', people: 'Vezetőség és edzők', szja: 'SZJA 1% felajánlás',
-        szjaName: 'A kedvezményezett neve', szjaTax: 'A kedvezményezett adószáma', made: 'Készült' },
+        szjaName: 'A kedvezményezett neve', szjaTax: 'A kedvezményezett adószáma', made: 'Készült',
+        intro: 'Bemutatkozó lap', contact: 'Elérhetőség', president: 'Elnök', motto: '„Ügyesen, Okosan, Mosoly”',
+        szjaNote: 'Köszönjük, ha adója 1%-ával támogatja a klubot! A felajánlás nem kerül pénzbe.' },
   en: { sheet: 'Club information', official: 'Official details', name: 'Name', address: 'Address', tax: 'Tax number', phone: 'Phone',
         email: 'E-mail', web: 'Website', about: 'About the club', people: 'Board and coaches', szja: '1% personal income tax donation',
-        szjaName: 'Beneficiary name', szjaTax: 'Beneficiary tax number', made: 'Created' }
+        szjaName: 'Beneficiary name', szjaTax: 'Beneficiary tax number', made: 'Created',
+        intro: 'Club introduction', contact: 'Contact', president: 'President', motto: '"Skilfully, Smartly, with a Smile"',
+        szjaNote: 'Hungarian taxpayers can support the club with 1% of their personal income tax, at no cost to them.' }
 };
 
 function ClubSheet({ info, people, lang }) {
@@ -256,26 +261,65 @@ function ClubSheet({ info, people, lang }) {
   );
 }
 
-function ClubPdfButton({ info, people, lang }) {
+// v1.13.0: színes bemutatkozó lap (nyomtatható, PDF-be menthető)
+function ClubIntroSheet({ info, lang }) {
+  const t = L[lang];
+  const intro = lang === 'en' ? info.intro_en : info.intro_hu;
+  const contact = [[t.president, officialPresident(info)], [t.address, info.address], [t.phone, info.phone],
+                   [t.email, info.email], [t.web, info.website]].filter(r => r[1]);
+  return (
+    <div className="text-gray-900">
+      <div className="rounded-xl overflow-hidden text-white text-center relative" style={{ background: `linear-gradient(180deg, ${BLUE} 0%, ${BLUE} 62%, #B91C1C 62%, #B91C1C 100%)` }}>
+        <div className="flex items-center gap-3 p-4">
+          <div className="bg-white rounded-lg p-1.5 flex-shrink-0"><img src={CSEPEL_SC_LOGO} alt="" className="w-16 h-16 object-contain" /></div>
+          <div className="flex-1 min-w-0">
+            <div className="text-2xl font-bold leading-tight">{officialName(info)}</div>
+            <div className="text-sm mt-1">{t.intro}</div>
+            <div className="italic text-base mt-4">{t.motto}</div>
+          </div>
+          <div className="bg-white rounded-lg p-1.5 flex-shrink-0"><img src={CSEPEL_RG_LOGO} alt="" className="w-16 h-16 object-contain" /></div>
+        </div>
+      </div>
+      <div className="mt-4">{intro && <RichIntro text={intro} />}</div>
+      <div className="club-block grid sm:grid-cols-2 gap-3 mt-5">
+        <div className="rounded-xl border-2 p-3" style={{ borderColor: BLUE }}>
+          <div className="text-sm font-bold mb-1" style={{ color: BLUE }}>{t.contact}</div>
+          {contact.map(([k, v]) => <div key={k} className="text-xs py-0.5 break-all"><span className="text-gray-500">{k}: </span><b>{v}</b></div>)}
+        </div>
+        {info.tax_number && (
+          <div className="rounded-xl border-2 p-3" style={{ borderColor: '#B91C1C' }}>
+            <div className="text-sm font-bold mb-1" style={{ color: '#B91C1C' }}>{t.szja}</div>
+            <div className="text-xs py-0.5">{t.szjaName}: <b>{officialName(info).toUpperCase()}</b></div>
+            <div className="text-xs py-0.5">{t.szjaTax}: <b>{info.tax_number}</b></div>
+            <div className="text-xs text-gray-600 mt-1">{t.szjaNote}</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ClubPdfButton({ info, people, lang, kind = 'sheet' }) {
+  const isIntro = kind === 'intro';
   const [open, setOpen] = useState(false);
   const [pdfLang, setPdfLang] = useState(lang);
   useEffect(() => { setPdfLang(lang); }, [lang]);
   useEffect(() => {
     if (!open) return undefined;
     const prev = document.title;
-    document.title = `${info.name || DEFAULT_NAME} ${L[pdfLang].sheet}`;
+    document.title = `${info.name || DEFAULT_NAME} ${isIntro ? L[pdfLang].intro : L[pdfLang].sheet}`;
     return () => { document.title = prev; };
-  }, [open, pdfLang, info.name]);
+  }, [open, pdfLang, info.name, isIntro]);
   return (
     <>
       <button onClick={() => setOpen(true)} className="px-3 py-1.5 rounded text-white text-xs font-medium flex items-center gap-1.5" style={{ backgroundColor: BLUE }}>
-        <FileText className="w-3.5 h-3.5" /> Adatlap PDF
+        <FileText className="w-3.5 h-3.5" /> {isIntro ? 'Bemutatkozó lap' : 'Adatlap PDF'}
       </button>
       {open && createPortal(
         <div className="club-print-root fixed inset-0 z-[100] overflow-y-auto" style={{ backgroundColor: '#F3F4F6' }}>
           <style>{PRINT_CSS}</style>
           <div className="club-no-print sticky top-0 bg-white border-b px-3 py-2 flex items-center gap-2 flex-wrap shadow-sm" style={{ borderColor: '#E5E7EB' }}>
-            <span className="font-semibold text-sm flex-1">Egyesületi adatlap</span>
+            <span className="font-semibold text-sm flex-1">{isIntro ? 'Bemutatkozó lap' : 'Egyesületi adatlap'}</span>
             <select value={pdfLang} onChange={e => setPdfLang(e.target.value)} className="text-sm px-2 py-1 border border-gray-300 rounded bg-white">
               <option value="hu">Magyar</option><option value="en">English</option>
             </select>
@@ -285,7 +329,7 @@ function ClubPdfButton({ info, people, lang }) {
             <button onClick={() => setOpen(false)} className="p-1.5 rounded hover:bg-gray-100" title="Bezárás"><X className="w-5 h-5" /></button>
           </div>
           <div className="club-sheet bg-white max-w-3xl mx-auto my-4 p-8 shadow-lg rounded">
-            <ClubSheet info={info} people={people} lang={pdfLang} />
+            {isIntro ? <ClubIntroSheet info={info} lang={pdfLang} /> : <ClubSheet info={info} people={people} lang={pdfLang} />}
           </div>
         </div>,
         document.body
@@ -374,6 +418,7 @@ export function ClubView({ supabase, userRole }) {
           <div className="text-sm italic mt-1" style={{ color: '#B91C1C' }}>„Ügyesen, Okosan, Mosoly”</div>
         </div>
         <div className="flex gap-2 flex-wrap">
+          {info.intro_hu && <ClubPdfButton info={info} people={people} lang={lang} kind="intro" />}
           <ClubPdfButton info={info} people={people} lang={lang} />
           {canEdit && !editInfo && (
             <button onClick={() => setEditInfo(true)} className="px-3 py-1.5 rounded border border-gray-300 text-xs bg-white hover:bg-gray-50 flex items-center gap-1.5"><Edit2 className="w-3.5 h-3.5" /> Adatok szerkesztése</button>

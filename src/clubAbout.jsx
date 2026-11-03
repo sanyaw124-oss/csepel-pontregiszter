@@ -23,7 +23,7 @@ export const DRAFT = {
 ! 6 éves | kortól versenyzés
 ! 3. hely | az MRGSZ 2023-as összevont egyesületi rangsorában
 
-A Csepeli Ritmikus Gimnasztika Club 1987 óta várja Csepelen a ritmikus gimnasztikát szerető lányokat. A kezdeti húszfős csoportból mára az ország egyik meghatározó egyesülete lett. Mottónk: „Ügyesen, Okosan, Mosoly”.
+A Csepeli Ritmikus Gimnasztika Club 1987 óta várja Csepelen a ritmikus gimnasztikát szerető lányokat. A kezdeti húszfős csoportból mára az ország egyik meghatározó egyesülete lett: a szövetség nyilvántartása szerint 44 versenyengedélyes sportolónk van. Mottónk: „Ügyesen, Okosan, Mosoly”.
 
 ## Kiket várunk?
 - Hároméves kortól ovis tornára
@@ -43,6 +43,7 @@ Kiss Kata vezetőedző 15-szörös országos bajnok, 1993 és 2008 között a v�
 - 2004: Kiss Katalin megnyeri a Magyar Kupát és a mesterfokú bajnokság egyéni összetettjét. A klub a mesterfokún négy aranyat, egy ezüstöt és két bronzot szerez.
 - 2019: Egy athéni nemzetközi versenyen minden indulónk dobogóra áll: két egyéni arany és csapatgyőzelem.
 - 2023: 3. hely az MRGSZ összevont egyesületi rangsorában.
+- 2025: Magyar Kupa, Törökbálint: 2. hely a felnőtt csapatversenyben.
 - 2026: Magyar Kupa, Törökbálint: 2. hely együttes kéziszer-csapatban és kombinált csapatban, 3. hely egyéni csapatban.
 
 ## Csepelhez tartozunk
@@ -52,7 +53,7 @@ A Csepel SC Alapítvánnyal együttműködő sportszervezetként Csepel sportél
 ! Age 6 | competing
 ! 3rd place | in the 2023 combined club ranking of the Hungarian federation
 
-Csepeli Ritmikus Gimnasztika Club has welcomed girls who love rhythmic gymnastics in Csepel, Budapest, since 1987. From an initial group of twenty, it has grown into one of Hungary's leading clubs. Our motto: "Skilfully, Smartly, with a Smile".
+Csepeli Ritmikus Gimnasztika Club has welcomed girls who love rhythmic gymnastics in Csepel, Budapest, since 1987. From an initial group of twenty, it has grown into one of Hungary's leading clubs, with 44 licensed competitors according to the federation's register. Our motto: "Skilfully, Smartly, with a Smile".
 
 ## Who we welcome
 - Pre-school gymnastics from age three
@@ -72,6 +73,7 @@ Head coach Kata Kiss is a 15-time national champion, was a member of the nationa
 - 2004: Katalin Kiss wins the Hungarian Cup and the all-around at the master-level championship. The club takes four golds, a silver and two bronzes there.
 - 2019: At an international competition in Athens, all our gymnasts reach the podium: two individual golds and a team win.
 - 2023: 3rd place in the combined club ranking of the Hungarian federation.
+- 2025: Hungarian Cup, Törökbálint: 2nd in the senior team event.
 - 2026: Hungarian Cup, Törökbálint: 2nd in the group team and combined team events, 3rd in the individual team event.
 
 ## Part of Csepel
