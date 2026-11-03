@@ -495,10 +495,6 @@ export function ClubView({ supabase, userRole }) {
               <div className="text-sm text-gray-700 mt-2 leading-relaxed">
                 A felajánlás nem kerül pénzbe: az adója 1%-áról dönt, amit már befizetett. A nyilatkozatot minden évben újra meg kell tenni, legkésőbb az szja-bevallás határidejéig (május 20.).
               </div>
-              <div className="flex gap-2 flex-wrap mt-3">
-                <a href="https://eszja.nav.gov.hu/" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg text-white text-sm font-semibold" style={{ backgroundColor: '#B91C1C' }}>Felajánlás online (eSZJA)</a>
-                <a href="https://nav.gov.hu/ado/szja1_1/felajanlasra-jogosultak/regisztralt_civil" target="_blank" rel="noopener noreferrer" className="px-3 py-1.5 rounded-lg border-2 border-gray-300 bg-white text-gray-800 text-sm font-semibold hover:bg-gray-50">NAV kedvezményezetti lista</a>
-              </div>
             </div>
           )}
 
