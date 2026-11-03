@@ -21,7 +21,7 @@ import { FileText, Plus, Loader, Save, Trash2, X, Printer, Image as ImageIcon, A
 import { CSEPEL_RG_LOGO } from './logos';
 import { formatCompetitorName, huSortByNickname } from './names';
 import { loadBadgeData } from './badges';
-import { loadClub, personTitle } from './club';
+import { loadClub, personTitle, OFFICIAL_PRESIDENT } from './club';
 import { resizeImage } from './avatar';
 
 const BLUE = '#1e3a8a';
@@ -169,7 +169,7 @@ function DocSheet({ doc, competitor, club, extras, data, photoUrl }) {
 
   const signer = (person, fallbackTitle) => (
     <div className="text-center w-56">
-      <div className="border-t border-gray-500 pt-1 mt-12 text-sm font-semibold">{person ? person.name : ' '}</div>
+      <div className="border-t border-gray-500 pt-1 mt-12 text-sm font-semibold">{person ? (person.title === 'elnok' ? OFFICIAL_PRESIDENT : person.name) : ' '}</div>
       <div className="text-xs text-gray-600">{person ? personTitle(person, lang) : fallbackTitle}</div>
     </div>
   );
