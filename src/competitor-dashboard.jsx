@@ -25,6 +25,7 @@ import { useAvatarUrl, AvatarImage } from './avatar';
 import { loadBadgeData } from './badges';
 import { GreetingsPanel } from './friends';
 import { PackingCard } from './packing';
+import { isPreschool } from './preschool';
 
 // HELPER
 function getGreeting(name) {
@@ -104,7 +105,7 @@ function MySelfBlock({ supabase, profile }) {
 
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path')
+            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path, status')
             .eq('id', competitorId).maybeSingle()
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
@@ -283,7 +284,7 @@ function MySelfBlock({ supabase, profile }) {
       )}
 
       {/* v1.1.0: versenyre készülés — visszaszámláló + pakolólista a következő versenyhez */}
-      {competitor?.id && <div className="mb-3"><PackingCard supabase={supabase} competitorId={competitor.id} /></div>}
+      {competitor?.id && !isPreschool(competitor) && <div className="mb-3"><PackingCard supabase={supabase} competitorId={competitor.id} /></div>}
 
       {/* Saját éremfal */}
       {stats && stats.osszes > 0 && (

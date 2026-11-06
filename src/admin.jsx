@@ -18,6 +18,7 @@ import { StoriesPanel } from './stories';
 import { FriendsPanel, GreetingsPanel } from './friends';
 import { MusicPanel } from './music';
 import { PackingCard } from './packing';
+import { isPreschool, notPreschool, PreschoolTag, PRESCHOOL } from './preschool';
 import { ResultsTemplateButton, ResultsExcelImport, useCompetitorBasic } from './resultsExcel';
 import { useOwnCompetitors, loadTeamScoreSums, loadTeamPerformances, apparatusLabel } from './privacy';
 import { useAvatarUrl, useAvatarUrls, AvatarImage, MiniAvatar, rejectAvatar, canModerate } from './avatar';
@@ -217,7 +218,7 @@ export function AdminView({ supabase, userRole, dataReloadKey }) {
 function AdminCompetitors({ supabase, dataReloadKey }) {
   const [competitors, setCompetitors] = useState(null);
   const [editing, setEditing] = useState(null);
-  const [filter, setFilter] = useState({ search: '', kategoria: 'all', showInactive: false });
+  const [filter, setFilter] = useState({ search: '', kategoria: 'all', status: 'all', showInactive: false });
   const [error, setError] = useState(null);
   const [generatedCreds, setGeneratedCreds] = useState(null); // v0.9.44: új versenyzői fiók credentials
   const [loginIds, setLoginIds] = useState(null); // v1.6.0: versenyzők, akiknek van saját belépése
@@ -249,6 +250,9 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
   const filtered = (competitors || []).filter(c => {
     if (!filter.showInactive && !c.is_active) return false;
     if (filter.kategoria !== 'all' && c.kategoria !== filter.kategoria) return false;
+    // v1.14.0: versenyzők / előkészítősök
+    if (filter.status === 'versenyzo' && isPreschool(c)) return false;
+    if (filter.status === PRESCHOOL && !isPreschool(c)) return false;
     if (filter.search) {
       const q = filter.search.toLowerCase();
       if (!c.full_name.toLowerCase().includes(q) && 
@@ -301,6 +305,15 @@ function AdminCompetitors({ supabase, dataReloadKey }) {
           >
             <option value="all">Minden kat.</option>
             {KATEGORIAK.map(k => <option key={k} value={k}>{k}</option>)}
+          </Select>
+          <Select
+            value={filter.status}
+            onChange={(e) => setFilter({...filter, status: e.target.value})}
+            style={{ width: 'auto' }}
+          >
+            <option value="all">Mindenki</option>
+            <option value="versenyzo">Versenyzők</option>
+            <option value={PRESCHOOL}>Előkészítősök</option>
           </Select>
         </div>
         <PrimaryButton onClick={() => setEditing('new')}>
@@ -355,6 +368,7 @@ function CompetitorRow({ competitor, onEdit, hasLogin = null }) {
           {!competitor.is_active && (
             <span className="text-xs px-2 py-0.5 rounded bg-gray-200 text-gray-600">Inaktív</span>
           )}
+          {isPreschool(competitor) && <PreschoolTag />}
           {competitor.is_provisional && (
             <span className="text-xs px-2 py-0.5 rounded font-medium" style={{ backgroundColor: '#f59e0b', color: 'white' }}>
               ⚠ Ideiglenes
@@ -442,6 +456,57 @@ A régi címmel ezután nem lehet belépni, a jelszó nem változik.`)) return;
   );
 }
 
+// v1.14.0: előkészítős ↔ versenyző váltás egy gombbal (azonnal ment; a szülői nézet is vele vált)
+function PreschoolSwitch({ supabase, competitor, form, setForm }) {
+  const [asking, setAsking] = useState(false);
+  const [since, setSince] = useState(new Date().toISOString().split('T')[0]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const preschool = isPreschool(form);
+
+  const apply = async (patch, text) => {
+    setBusy(true);
+    setMsg(null);
+    const { error } = await supabase.from('competitors').update(patch).eq('id', competitor.id);
+    setBusy(false);
+    if (error) { setMsg('Nem sikerült: ' + error.message); return; }
+    setForm(f => ({ ...f, ...patch }));
+    setAsking(false);
+    setMsg(text);
+  };
+
+  return (
+    <div className="rounded-lg border-2 p-3" style={{ borderColor: preschool ? '#93C5FD' : COLORS.gray200, backgroundColor: preschool ? '#EFF6FF' : undefined }}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <span className="text-sm font-semibold" style={{ color: COLORS.blueDark }}>
+          Csoport: {preschool ? 'előkészítős' : 'versenyző'}
+        </span>
+        {preschool && !asking && (
+          <PrimaryButton onClick={() => setAsking(true)} disabled={busy}>Versenyzővé teszem</PrimaryButton>
+        )}
+        {!preschool && (
+          <SecondaryButton disabled={busy} onClick={() => {
+            if (window.confirm('Visszateszed előkészítősbe? A gyerek és a szülei ezután az előkészítős nézetet látják.')) {
+              apply({ status: PRESCHOOL }, 'Visszakerült az előkészítősök közé.');
+            }
+          }}>Vissza előkészítősbe</SecondaryButton>
+        )}
+      </div>
+      {asking && (
+        <div className="mt-2 flex items-end gap-2 flex-wrap">
+          <label className="text-sm text-gray-700">Mióta versenyez?
+            <Input type="date" value={since} onChange={(e) => setSince(e.target.value)} max={new Date().toISOString().split('T')[0]} />
+          </label>
+          <PrimaryButton disabled={busy || !since} onClick={() => apply({ status: 'versenyzo', competing_since: since },
+            'Versenyző lett. Ő és a szülei mostantól a teljes Pontregisztert látják.')}>Mentés</PrimaryButton>
+          <SecondaryButton onClick={() => setAsking(false)}>Mégse</SecondaryButton>
+        </div>
+      )}
+      {msg && <div className="text-sm mt-2" style={{ color: COLORS.blueDark }}>{msg}</div>}
+    </div>
+  );
+}
+
 function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
   const isNew = !competitor;
   // v0.9.37: korosztály normalizálás - ha a meglévő DB rekord nagy betűs vagy NULL,
@@ -471,6 +536,8 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
       nickname: '',
       birth_date: '',
       competing_since: '',
+      status: 'versenyzo',
+      training_since: '',
       kategoria: 'VSK II',
       korosztaly: 'serdülő', // v0.9.37: DB constraint kompatibilis kis betűs érték
       email: '',
@@ -573,6 +640,8 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
         birth_date: form.birth_date,
         birth_year: birthYear,
         competing_since: form.competing_since || null,
+        status: form.status || 'versenyzo',           // v1.14.0
+        training_since: form.training_since || null,  // v1.14.0
         license_number: (form.license_number || '').trim().toUpperCase() || null, // v0.9.75
         kategoria: form.kategoria,
         korosztaly: form.korosztaly,
@@ -776,6 +845,29 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
           />
         </Field>
 
+        {/* v1.14.0: előkészítős / versenyző */}
+        {isNew ? (
+          <Field label="Csoport">
+            <Select value={form.status || 'versenyzo'} onChange={(e) => setForm({...form, status: e.target.value})}>
+              <option value="versenyzo">Versenyző</option>
+              <option value={PRESCHOOL}>Előkészítős</option>
+            </Select>
+          </Field>
+        ) : (
+          <PreschoolSwitch supabase={supabase} competitor={competitor} form={form} setForm={setForm} />
+        )}
+
+        <Field label="Edzésre jár óta (opcionális)">
+          <Input
+            type="date"
+            value={form.training_since || ''}
+            onChange={(e) => setForm({...form, training_since: e.target.value})}
+            max={new Date().toISOString().split('T')[0]}
+            min={form.birth_date || '2000-01-01'}
+          />
+        </Field>
+
+        {!isPreschool(form) && (
         <Field label="Versenyez óta (opcionális)">
           <Input
             type="date"
@@ -788,6 +880,7 @@ function CompetitorForm({ supabase, competitor, onSaved, onCancel, userRole }) {
             Mióta versenyez aktívan (statisztikákhoz, edzői áttekintéshez)
           </div>
         </Field>
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Kategória">
@@ -2063,7 +2156,9 @@ export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) 
         .eq('is_active', true);
 
       // Magyar abc rendezés (becenév-elsődleges) - PG byte-alap helyett JS-ben
-      const sorted = (data || []).sort((a, b) => {
+      // v1.14.0: gyerek / szülő nézetben az előkészítősök nem látszanak
+      const visible = STAFF_VIEW_ROLES.includes(userRole) ? (data || []) : (data || []).filter(notPreschool);
+      const sorted = visible.sort((a, b) => {
         const aKey = (a.nickname || a.full_name || '').trim();
         const bKey = (b.nickname || b.full_name || '').trim();
         return aKey.localeCompare(bKey, 'hu', { sensitivity: 'base', numeric: true });
@@ -2072,7 +2167,7 @@ export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) 
       if (!cancelled) setCompetitors(sorted);
     })();
     return () => { cancelled = true; };
-  }, [supabase, dataReloadKey]);
+  }, [supabase, dataReloadKey, userRole]);
 
   const avatarUrls = useAvatarUrls(supabase, competitors); // v0.9.80: kép a név mellett
 
@@ -2095,6 +2190,9 @@ export function CompetitorsView({ supabase, userRole, profile, dataReloadKey }) 
 
   const filtered = competitors.filter(c => {
     if (filter.kategoria !== 'all' && c.kategoria !== filter.kategoria) return false;
+    // v1.14.0: versenyzők / előkészítősök
+    if (filter.status === 'versenyzo' && isPreschool(c)) return false;
+    if (filter.status === PRESCHOOL && !isPreschool(c)) return false;
     if (filter.search) {
       const q = filter.search.toLowerCase();
       if (!c.full_name.toLowerCase().includes(q) && 
@@ -2584,7 +2682,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* === FELÜL: ÉRDEKES RÉSZEK === */}
 
         {/* v1.1.0: versenyre készülés — a gyerekkel közös pakolólista */}
-        {competitor?.id && <PackingCard supabase={supabase} competitorId={competitor.id} forParent />}
+        {competitor?.id && !isPreschool(competitor) && <PackingCard supabase={supabase} competitorId={competitor.id} forParent />}
 
         {/* Évvégi statisztika - érmek évre bontva */}
         {competitor?.id && (
@@ -2641,7 +2739,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* v0.9.83: gyakorlatzenék (az edző tölti fel; a szülő meghallgatja, letölti) */}
         {competitor?.id && <MusicPanel supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} userRole="szulo" />}
         {/* v0.9.82: barátnők + köszöntések — a szülő látja, jelölni a gyerek tud */}
-        {competitor?.id && <FriendsPanel supabase={supabase} competitorId={competitor.id} />}
+        {competitor?.id && !isPreschool(competitor) && <FriendsPanel supabase={supabase} competitorId={competitor.id} />}
         {competitor?.id && <GreetingsPanel supabase={supabase} competitorId={competitor.id} />}
 
         {/* Edzői privát megjegyzések - szülő csak olvashat */}
@@ -2682,6 +2780,11 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
             />
           </Field>
 
+          {isPreschool(competitor) ? (
+            <Field label="Edzésre jár óta">
+              <div className="text-sm text-gray-800 py-2">{competitor.training_since ? competitor.training_since.replace(/-/g, '.') + '.' : '—'}</div>
+            </Field>
+          ) : (
           <Field label="Versenyez óta (opcionális)">
             <Input
               type="date"
@@ -2694,6 +2797,7 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
               Mióta versenyez aktívan
             </div>
           </Field>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <Field label="Kategória">
@@ -3264,10 +3368,10 @@ function HistoricalResultForm({ supabase, competitorId, item, existingItems, onS
   const [dupMatches, setDupMatches] = useState(null); // ismétlés gyanú: a meglévő csapat-bejegyzések
   const [allowNew, setAllowNew] = useState(false);
   useEffect(() => {
-    supabase.from('competitors').select('id, full_name, nickname, is_active')
+    supabase.from('competitors').select('id, full_name, nickname, is_active, status')
       .eq('is_club_member', true)
       .then(({ data }) => {
-        const list = [...(data || [])].sort((a, b) => (a.is_active === false) - (b.is_active === false) || huSortByNickname(a, b));
+        const list = [...(data || [])].filter(notPreschool).sort((a, b) => (a.is_active === false) - (b.is_active === false) || huSortByNickname(a, b));
         setAllCompetitors(list);
         const self = list.find(c => c.id === competitorId);
         if (self) setMembers(prev => prev.some(m => m.competitor_id === competitorId)
@@ -3841,6 +3945,7 @@ export function AdminClubPride({ supabase }) {
         .from('competitors')
         .select('id, full_name, nickname')
         .eq('is_active', true)
+        .neq('status', PRESCHOOL)
         .order('full_name');
       
       setItems(prides || []);

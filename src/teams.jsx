@@ -9,6 +9,7 @@
 //   - Manuális helyezés-bevitel (nem auto-számolt)
 // ═══════════════════════════════════════════════════════════════════
 
+import { notPreschool } from './preschool';
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   Plus, Save, Loader, AlertCircle, Check, X, Edit2, 
@@ -95,13 +96,13 @@ export function CompetitionTeamsView({ supabase, userRole, competitionId, onChan
       // Csepeli versenyzők (csak klubtagok)
       const { data: compsData, error: cErr } = await supabase
         .from('competitors')
-        .select('id, full_name, nickname, kategoria, korosztaly, birth_year, is_active, is_club_member')
+        .select('id, full_name, nickname, kategoria, korosztaly, birth_year, is_active, is_club_member, status')
         .eq('is_club_member', true)
         .order('full_name');
       if (cErr) throw cErr;
 
       setTeams(clubTeams);
-      setCsepeliCompetitors((compsData || []).slice().sort(huSortByNickname));
+      setCsepeliCompetitors((compsData || []).filter(notPreschool).slice().sort(huSortByNickname));
     } catch (err) {
       console.error('CompetitionTeamsView load error:', err);
       setError(err.message);

@@ -12,6 +12,7 @@ import {
   ChevronUp, ChevronDown, UserX, UserCheck, Lock, Unlock
 } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname, formatStartTime } from './names';
+import { notPreschool } from './preschool';
 import { fillAutoPlacements, clearAutoPlacements, fillTeamPlacements, clearTeamPlacements } from './placements';
 import { ScoringView } from './scoring';
 import { ApparatusMark } from './apparatusIcons';
@@ -268,7 +269,7 @@ function ErrorBox({ children }) {
 // COMPETITIONS VIEW (fő komponens)
 // ═══════════════════════════════════════════════════════════════════
 
-export function CompetitionsView({ supabase, userRole, dataReloadKey }) {
+export function CompetitionsView({ supabase, userRole, dataReloadKey, liveOnly = false }) {
   const [editing, setEditing] = useState(null);  // null | 'new' | competition object
   const [showImport, setShowImport] = useState(false);
   
@@ -304,6 +305,7 @@ export function CompetitionsView({ supabase, userRole, dataReloadKey }) {
       supabase={supabase}
       canManage={canManage}
       dataReloadKey={dataReloadKey}
+      liveOnly={liveOnly}
       onSelect={(c) => setEditing(c)}
       onCreate={() => setEditing('new')}
       onImport={() => setShowImport(true)}
@@ -315,7 +317,7 @@ export function CompetitionsView({ supabase, userRole, dataReloadKey }) {
 // COMPETITIONS LIST
 // ═══════════════════════════════════════════════════════════════════
 
-function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCreate, onImport }) {
+function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCreate, onImport, liveOnly = false }) {
   const [competitions, setCompetitions] = useState(null);
   const [search, setSearch] = useState('');
   const [filterImportance, setFilterImportance] = useState('all');
@@ -355,9 +357,10 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
   const today = new Date().toISOString().split('T')[0];
   // v0.9.63 (Sándor): „nem élő csak az a verseny, amiben minden le van zárva”
   // v1.8.0 (Sándor): a közelgő versenyek időrendben (a legközelebbi felül); az elmúltak maradnak a legfrissebbel felül
-  const upcoming = filtered.filter(c => c.start_date > today && !isCompetitionClosed(c)).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const live = filtered.filter(c => c.start_date <= today && c.end_date >= today && !isCompetitionClosed(c));
-  const past = filtered.filter(c => !upcoming.includes(c) && !live.includes(c));
+  // v1.14.0: előkészítős nézetben csak az élő versenyek (élő pontozás)
+  const upcoming = liveOnly ? [] : filtered.filter(c => c.start_date > today && !isCompetitionClosed(c)).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  const past = liveOnly ? [] : filtered.filter(c => !upcoming.includes(c) && !live.includes(c));
 
   return (
     <div>
@@ -407,6 +410,10 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
       {competitions === null ? (
         <div className="text-center py-8">
           <Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" />
+        </div>
+      ) : liveOnly && live.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
+          Most nincs élő verseny. Verseny napján itt követheted élőben a pontozást.
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
@@ -1819,11 +1826,11 @@ function StartlistView({ supabase, category, competitionId, canManage, userRole,
       // Klubtagok listája (válaszható csepeli versenyzők)
       const { data: comps } = await supabase
         .from('competitors')
-        .select('id, full_name, nickname, kategoria, korosztaly, birth_year')
+        .select('id, full_name, nickname, kategoria, korosztaly, birth_year, status')
         .eq('is_active', true)
         .eq('is_club_member', true)
         .order('full_name');
-      setCompetitors((comps || []).slice().sort(huSortByNickname));
+      setCompetitors((comps || []).filter(notPreschool).slice().sort(huSortByNickname));
     } catch (err) {
       setError('Startlista betöltése sikertelen: ' + err.message);
       setEntries([]);
@@ -2971,9 +2978,9 @@ function JsonImportView({ supabase, onClose, onImported, existingCompetition = n
   useEffect(() => {
     supabase
       .from('competitors')
-      .select('id, full_name, nickname, kategoria, korosztaly, is_active, is_club_member')
+      .select('id, full_name, nickname, kategoria, korosztaly, is_active, is_club_member, status')
       .eq('is_club_member', true)
-      .then(({ data }) => setAllCompetitors(data || []));
+      .then(({ data }) => setAllCompetitors((data || []).filter(notPreschool)));
   }, [supabase]);
   
   // Fájl beolvasás

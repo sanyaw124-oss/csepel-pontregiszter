@@ -25,6 +25,7 @@ import { StatsView } from './statsView';
 import { ClubView } from './club';
 import { DocumentsView } from './documents';
 import { MascotPollWidget } from './mascot';
+import { usePreschoolMode, PreschoolBanner } from './preschool';
 
 // ═══════════════════════════════════════════════════════════════════
 // SUPABASE KLIENS
@@ -812,8 +813,11 @@ function AppShell() {
     setTimeout(() => setRefreshing(false), 800);
   };
 
+  // v1.14.0: előkészítős gyerek / szülő — a Versenyzők lista és a Dokumentumok rejtve
+  const limited = usePreschoolMode(supabase, profile);
+  const PRESCHOOL_HIDDEN = ['competitors', 'documents'];
   const visibleNavItems = NAV_ITEMS.filter(item =>
-    item.roles === 'all' || item.roles.includes(profile.role)
+    (item.roles === 'all' || item.roles.includes(profile.role)) && !(limited && PRESCHOOL_HIDDEN.includes(item.id))
   );
 
   const RoleIcon = ROLE_ICONS[profile.role];
@@ -894,10 +898,11 @@ function AppShell() {
       <main key={manualReloadKey} className="flex-1 max-w-7xl w-full mx-auto px-4 py-6">
         {/* v0.9.80: „Mit tehetek itt?” — szerepkör szerinti rövid leírás */}
         <PageInfo view={activeView} role={profile.role} />
+        {limited && <PreschoolBanner role={profile.role} />}
         {/* Áttekintés: VERSENYZŐ → saját vidám, MÁS → klubos áttekintés */}
         {/* Áttekintés: MINDENKINEK ugyanaz (versenyzőnek is - személyes blokk felül) */}
         {activeView === 'dashboard' && (
-          <DashboardView setActiveView={setActiveView} />
+          <DashboardView setActiveView={setActiveView} limited={!!limited} />
         )}
 
         {/* Profil: szülő → ParentProfileView, versenyző → CompetitorProfileView (Én vagyok!) */}
@@ -913,14 +918,14 @@ function AppShell() {
           <CompetitorTreasureView supabase={supabase} profile={profile} />
         )}
 
-        {activeView === 'competitors' && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
+        {activeView === 'competitors' && !limited && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'calendar' && <CalendarView supabase={supabase} onOpenCompetitions={() => setActiveView('competitions')} />}
-        {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
+        {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} liveOnly={!!limited} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'stats' && <StatsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'club' && <ClubView supabase={supabase} userRole={profile.role} />}
-        {activeView === 'documents' && <DocumentsView supabase={supabase} profile={profile} />}
+        {activeView === 'documents' && !limited && <DocumentsView supabase={supabase} profile={profile} />}
         {activeView === 'coach-notes' && <CoachNotesView supabase={supabase} userRole={profile.role} profile={profile} />}
         {activeView === 'coach-posts' && <CoachPostsView supabase={supabase} userRole={profile.role} profile={profile} />}
         {activeView === 'admin' && <AdminView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} />}
@@ -939,7 +944,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.13.0 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.14.0 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
         <a href="/telefonra.html" target="_blank" rel="noopener noreferrer"
            className="inline-block mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border-2"
@@ -955,7 +960,7 @@ function AppShell() {
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════════
 
-function DashboardView({ setActiveView }) {
+function DashboardView({ setActiveView, limited = false }) {
   const { profile } = useAuthContext();
   const { key: dataReloadKey } = useDataReload();
   const [stats, setStats] = useState({ competitors: null, competitions: null, parents: null, provisional: null });
@@ -1169,7 +1174,7 @@ function DashboardView({ setActiveView }) {
       <UpcomingCompetitionsWidget supabase={supabase} onOpen={() => setActiveView('calendar')} onOpenCompetitions={() => setActiveView('competitions')} />
       {/* v1.11.0: kabala-szavazás */}
       <MascotPollWidget supabase={supabase} role={profile.role} />
-      <BirthdayWidget supabase={supabase} />
+      <BirthdayWidget supabase={supabase} canGreet={!limited} />
       <div className="mb-4">
         <UpcomingEventsWidget 
           supabase={supabase}
@@ -1332,7 +1337,7 @@ function DashboardView({ setActiveView }) {
 // BIRTHDAY WIDGET — születésnapok 8 nap előtte + 8 nap utána
 // ═══════════════════════════════════════════════════════════════════
 
-function BirthdayWidget({ supabase }) {
+function BirthdayWidget({ supabase, canGreet = true }) {
   const [birthdays, setBirthdays] = useState(null);
   const [loading, setLoading] = useState(true);
   // v0.9.82: a gyerek köszöntheti a szülinapost (a napján és utána 7 napig)
@@ -1502,7 +1507,7 @@ function BirthdayWidget({ supabase }) {
                     — {diffLabel(b)}
                   </span>
                   <span className="text-xs opacity-50 ml-auto">{b.dateStr}</span>
-                  {myId && b.id !== myId && b.diff <= 0 && b.diff >= -7 && (
+                  {canGreet && myId && b.id !== myId && b.diff <= 0 && b.diff >= -7 && (
                     greeted.has(b.id) ? (
                       <span className="text-xs font-semibold px-2 py-1 rounded-full" style={{ backgroundColor: '#D1FAE5', color: '#065F46' }}>✓ Köszöntötted</span>
                     ) : (

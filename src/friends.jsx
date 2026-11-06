@@ -7,6 +7,7 @@
 // Adatbázis: docs/sql/2026-10-15_v0.9.82_baratnok-szulinap.sql
 // ═══════════════════════════════════════════════════════════════════
 
+import { notPreschool } from './preschool';
 import React, { useCallback, useEffect, useState } from 'react';
 import { Heart, X, Loader, Gift, Plus } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
@@ -56,8 +57,8 @@ export function FriendsPanel({ supabase, competitorId, canWrite = false }) {
   }, [supabase, competitorId]);
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
-    supabase.from('competitors').select('id, full_name, nickname, avatar_emoji').eq('is_active', true).eq('is_club_member', true)
-      .then(({ data: d }) => setAll([...(d || [])].sort(huSortByNickname)));
+    supabase.from('competitors').select('id, full_name, nickname, avatar_emoji, status').eq('is_active', true).eq('is_club_member', true)
+      .then(({ data: d }) => setAll([...(d || [])].filter(notPreschool).sort(huSortByNickname)));
   }, [supabase]);
 
   const byId = Object.fromEntries(all.map(c => [c.id, c]));

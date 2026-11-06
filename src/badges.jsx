@@ -23,6 +23,9 @@ const MILESTONE_TYPES = ['edzes', 'egesznapos', 'tabor'];
 const MONTHLY_TYPES = ['edzes', 'egesznapos'];
 const PRAISE_MIN = 12;      // ennél TÖBB → dicséret
 const BIG_PRAISE_MIN = 20;  // ennél TÖBB → nagy dicséret
+// v1.14.0: előkészítősöknek már havi 8 edzéstől dicséret, 12-től nagy dicséret
+const PRESCHOOL_PRAISE_FROM = 8;
+const PRESCHOOL_BIG_PRAISE_FROM = 12;
 const STREAK = 3;
 
 const num = (v) => { const n = parseFloat(v); return isNaN(n) ? null : n; };
@@ -31,7 +34,7 @@ const huDate = (d) => (d ? d.replace(/-/g, '.') + '.' : '');
 
 // ─── Adatok: edzések, szer-pontok, versenyenkénti legjobb helyezés ─────
 export async function loadBadgeData(supabase, competitorId) {
-  const [att, res, aa, members, hist] = await Promise.all([
+  const [att, res, aa, members, hist, me] = await Promise.all([
     supabase.from('training_attendance')
       .select('training_sessions!inner(date, session_type)')
       .eq('competitor_id', competitorId),
@@ -47,9 +50,11 @@ export async function loadBadgeData(supabase, competitorId) {
           competition_day:competition_days!inner(competition:competitions!inner(id, name, start_date, is_finalized, importance)))`)
       .eq('competitor_id', competitorId),
     supabase.from('competition_team_members').select('team_id').eq('competitor_id', competitorId),
-    supabase.from('historical_results').select('*').eq('competitor_id', competitorId)
+    supabase.from('historical_results').select('*').eq('competitor_id', competitorId),
+    supabase.from('competitors').select('status').eq('id', competitorId).maybeSingle()
   ]);
   for (const r of [att, res, aa, members, hist]) if (r.error) throw r.error;
+  const preschool = me?.data?.status === 'elokeszitos';
 
   const sessions = (att.data || [])
     .map(a => a.training_sessions)
@@ -109,7 +114,7 @@ export async function loadBadgeData(supabase, competitorId) {
     });
   });
 
-  return { sessions, perf, comps: Array.from(comps.values()) };
+  return { sessions, perf, comps: Array.from(comps.values()), preschool };
 }
 
 // ─── Kitűzők számítása egy évre ────────────────────────────────────────
@@ -135,10 +140,12 @@ export function computeBadges(data, year) {
   });
   Object.keys(byMonth).map(Number).sort((a, b) => a - b).forEach(m => {
     const c = byMonth[m];
-    if (c > BIG_PRAISE_MIN) {
+    const big = data.preschool ? c >= PRESCHOOL_BIG_PRAISE_FROM : c > BIG_PRAISE_MIN;
+    const praise = data.preschool ? c >= PRESCHOOL_PRAISE_FROM : c > PRAISE_MIN;
+    if (big) {
       badges.push({ key: `p${m}`, kind: 'bigpraise', month: m, date: `${year}-${String(m).padStart(2, '0')}-28`,
         title: 'Nagy dicséret', detail: `${HU_MONTHS[m - 1]}: ${c} edzés` });
-    } else if (c > PRAISE_MIN) {
+    } else if (praise) {
       badges.push({ key: `p${m}`, kind: 'praise', month: m, date: `${year}-${String(m).padStart(2, '0')}-28`,
         title: 'Dicséret', detail: `${HU_MONTHS[m - 1]}: ${c} edzés` });
     }

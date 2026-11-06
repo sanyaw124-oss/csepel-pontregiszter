@@ -16,6 +16,7 @@ import { Loader, AlertCircle } from 'lucide-react';
 import { safeQuery } from './competitor-dashboard';
 import { CompetitorProgressChart } from './progress-chart';
 import { FriendsPanel } from './friends';
+import { isPreschool } from './preschool';
 import { MusicPanel } from './music';
 import { ResultsTemplateButton } from './resultsExcel';
 import { useAvatarUrl, uploadAvatar, AvatarImage, AVATAR_RULES_TEXT } from './avatar';
@@ -122,7 +123,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
         // 2) Saját competitor
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path')
+            .select('id, full_name, nickname, kategoria, korosztaly, birth_year, birth_date, avatar_emoji, avatar_path, status, training_since')
             .eq('id', competitorId).maybeSingle()
         );
         if (!compRes.data || !mounted) { setLoading(false); return; }
@@ -356,16 +357,16 @@ export default function CompetitorProfileView({ supabase, profile }) {
       )}
 
       {/* 3. LEGJOBB BARÁTNŐK — v0.9.82: legfeljebb 3, csak ti ketten + a szülők látjátok */}
-      <FriendsPanel supabase={supabase} competitorId={competitor.id} canWrite />
+      {!isPreschool(competitor) && <FriendsPanel supabase={supabase} competitorId={competitor.id} canWrite />}
 
       {/* v1.10.0: korábbi eredmények kitöltő Excelben — kitöltve e-mailben elküldeni */}
-      <div className="rounded-2xl p-4 bg-white border-2" style={{ borderColor: '#DDD6FE' }}>
+      {!isPreschool(competitor) && <div className="rounded-2xl p-4 bg-white border-2" style={{ borderColor: '#DDD6FE' }}>
         <div className="text-sm font-bold mb-1" style={{ color: '#7c3aed' }}>🏅 Korábbi versenyeredményeid</div>
         <div className="text-xs text-gray-600 mb-2">
           Töltsd le, írd be a régebbi versenyeid eredményeit (a szüleiddel), és küldd el ide: <b>sanyaw124@gmail.com</b>
         </div>
         <ResultsTemplateButton competitor={competitor} />
-      </div>
+      </div>}
 
       {/* v0.9.83: gyakorlatzenék (az edző tölti fel) */}
       <MusicPanel supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} userRole="versenyzo" />

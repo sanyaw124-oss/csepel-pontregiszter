@@ -40,7 +40,7 @@ export function ClubStatsWidget({ supabase }) {
         const from = `${year - 1}-01-01`, to = `${year}-12-31`;
         const [comps, att, res, aa, hist] = await Promise.all([
           supabase.from('competitors').select('id, full_name, nickname, korosztaly, kategoria')
-            .eq('is_active', true).eq('is_club_member', true),
+            .eq('is_active', true).eq('is_club_member', true).neq('status', 'elokeszitos'),
           supabase.from('training_attendance')
             .select('competitor_id, training_sessions!inner(date, session_type)')
             .gte('training_sessions.date', `${year}-01-01`).lte('training_sessions.date', `${year}-12-31`),

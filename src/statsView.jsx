@@ -8,6 +8,7 @@
 //     korosztály / kategória szerint szűrve
 // ═══════════════════════════════════════════════════════════════════
 
+import { notPreschool } from './preschool';
 import React, { useEffect, useMemo, useState } from 'react';
 import { BarChart3, Search, User, Users } from 'lucide-react';
 import { formatCompetitorName, huSortByNickname } from './names';
@@ -31,9 +32,9 @@ export function StatsView({ supabase, userRole }) {
 
   useEffect(() => {
     supabase.from('competitors')
-      .select('id, full_name, nickname, kategoria, korosztaly, birth_year')
+      .select('id, full_name, nickname, kategoria, korosztaly, birth_year, status')
       .eq('is_active', true).eq('is_club_member', true)
-      .then(({ data }) => setCompetitors([...(data || [])].sort(huSortByNickname)));
+      .then(({ data }) => setCompetitors([...(data || [])].filter(notPreschool).sort(huSortByNickname)));
   }, [supabase]);
 
   const filtered = useMemo(() => {
