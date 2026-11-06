@@ -21,6 +21,7 @@ import { EvaluationsView } from './evaluation';
 import { StoriesPanel } from './stories';
 import { GreetingsPanel } from './friends';
 import { useAvatarUrl, AvatarImage } from './avatar';
+import { isPreschool } from './preschool';
 
 const COLORS = {
   purpleDeep: '#831843',
@@ -56,7 +57,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         // 2) Saját competitor
         const compRes = await safeQuery(() =>
           supabase.from('competitors')
-            .select('id, full_name, nickname, kategoria, korosztaly, avatar_emoji, avatar_path, birth_year')
+            .select('id, full_name, nickname, kategoria, korosztaly, avatar_emoji, avatar_path, birth_year, status')
             .eq('id', competitorId).maybeSingle()
         );
         if (compRes.data && mounted) setCompetitor(compRes.data);
@@ -148,11 +149,15 @@ export default function CompetitorTreasureView({ supabase, profile }) {
 
         <div className="text-right text-xs leading-relaxed flex-shrink-0" style={{ color: COLORS.amberDark }}>
           <div className="font-bold">{competitor.kategoria}</div>
-          <div>{competitor.korosztaly || 'versenyző'}</div>
+          <div>{isPreschool(competitor) ? 'előkészítős' : (competitor.korosztaly || 'versenyző')}</div>
           {age && <div style={{ color: '#B45309' }}>{age} éves</div>}
         </div>
       </div>
 
+      {/* v1.14.0: előkészítős csak a kitűzőket gyűjti */}
+      {isPreschool(competitor) ? (
+        <BadgesPanel supabase={supabase} competitorId={competitor.id} title="Kitűzőim" />
+      ) : (<>
       {/* ─── SAJÁT ÉREMFALAD ─── */}
       <div className="rounded-2xl p-5 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
         <div className="text-sm font-bold mb-4 text-center" style={{ color: COLORS.amberDark }}>
@@ -229,6 +234,7 @@ export default function CompetitorTreasureView({ supabase, profile }) {
         competitorId={competitor.id}
         userRole="versenyzo"
       />
+      </>)}
 
     </div>
   );

@@ -2684,33 +2684,24 @@ function ParentChildEditForm({ supabase, competitor, onSaved, onCancel }) {
         {/* v1.1.0: versenyre készülés — a gyerekkel közös pakolólista */}
         {competitor?.id && !isPreschool(competitor) && <PackingCard supabase={supabase} competitorId={competitor.id} forParent />}
 
+        {/* v1.14.0: előkészítősnél nincs statisztika és eredmény */}
+        {competitor?.id && !isPreschool(competitor) && (<>
         {/* Évvégi statisztika - érmek évre bontva */}
-        {competitor?.id && (
           <CompetitorYearlyStats supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} />
-        )}
 
         {/* Fejlődési grafikon - v0.9.37: korábban hiányzott szülőnél */}
-        {competitor?.id && (
           <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
-        )}
 
         {/* v0.9.65: statisztika */}
-        {competitor?.id && (
           <CompetitorStatsPanel supabase={supabase} competitorId={competitor.id} />
-        )}
-        {competitor?.id && (
           <SeasonSummaryButton supabase={supabase} competitor={competitor} variant="parent" />
-        )}
 
         {/* Csapat-eredmények */}
-        {competitor?.id && (
           <CompetitorTeamResults supabase={supabase} competitorId={competitor.id} />
-        )}
 
         {/* Korábbi eredmények */}
-        {competitor?.id && (
           <CompetitorHistoricalResults supabase={supabase} competitorId={competitor.id} userRole="szulo" />
-        )}
+        </>)}
 
         {/* v0.9.53: a szülő rögzítheti a gyereke edzését (ma + elmúlt 7 nap) */}
         {competitor?.id && (

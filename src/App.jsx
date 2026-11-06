@@ -920,7 +920,7 @@ function AppShell() {
 
         {activeView === 'competitors' && !limited && <CompetitorsViewComponent supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'calendar' && <CalendarView supabase={supabase} onOpenCompetitions={() => setActiveView('competitions')} />}
-        {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={profile.role} dataReloadKey={dataReloadKey} liveOnly={!!limited} />}
+        {activeView === 'competitions' && <CompetitionsView supabase={supabase} userRole={limited ? 'versenyzo' : profile.role} dataReloadKey={dataReloadKey} liveOnly={!!limited} />}
         {activeView === 'training' && <TrainingView supabase={supabase} userRole={profile.role} profile={profile} dataReloadKey={dataReloadKey} />}
         {activeView === 'events' && <EventsView supabase={supabase} userRole={profile.role} />}
         {activeView === 'stats' && <StatsView supabase={supabase} userRole={profile.role} />}

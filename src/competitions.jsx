@@ -359,7 +359,8 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
   // v1.8.0 (Sándor): a közelgő versenyek időrendben (a legközelebbi felül); az elmúltak maradnak a legfrissebbel felül
   const live = filtered.filter(c => c.start_date <= today && c.end_date >= today && !isCompetitionClosed(c));
   // v1.14.0: előkészítős nézetben csak az élő versenyek (élő pontozás)
-  const upcoming = liveOnly ? [] : filtered.filter(c => c.start_date > today && !isCompetitionClosed(c)).sort((a, b) => a.start_date.localeCompare(b.start_date));
+  // v1.14.0: előkészítős nézetben a közelgő és az élő versenyek (startlistával) látszanak, az elmúltak nem
+  const upcoming = filtered.filter(c => c.start_date > today && !isCompetitionClosed(c)).sort((a, b) => a.start_date.localeCompare(b.start_date));
   const past = liveOnly ? [] : filtered.filter(c => !upcoming.includes(c) && !live.includes(c));
 
   return (
@@ -411,9 +412,9 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
         <div className="text-center py-8">
           <Loader className="w-6 h-6 animate-spin mx-auto text-gray-400" />
         </div>
-      ) : liveOnly && live.length === 0 ? (
+      ) : liveOnly && live.length === 0 && upcoming.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">
-          Most nincs élő verseny. Verseny napján itt követheted élőben a pontozást.
+          Most nincs közelgő verseny. Verseny napján itt követheted élőben az eredményeket.
         </div>
       ) : filtered.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 p-8 text-center text-gray-500">

@@ -372,6 +372,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
       <MusicPanel supabase={supabase} competitorId={competitor.id} competitorName={competitor.full_name} userRole="versenyzo" />
 
       {/* 4. FEJLŐDÉSI GRAFIKON */}
+      {!isPreschool(competitor) && <>
       <CompetitorProgressChart supabase={supabase} competitorId={competitor.id} />
 
       {/* 5. VERSENYEK + ÉRMEK IDÉN */}
@@ -392,6 +393,7 @@ export default function CompetitorProfileView({ supabase, profile }) {
         </div>
       </div>
       <div className="text-[11px] text-gray-500 text-center -mt-2">Érem = minden 1–3. hely (egyéni szer, összetett, csapat); lezárt versenyekből és a korábbi eredményekből.</div>
+      </>}
 
       {/* 6. EDZÉSEIM IDÉN + CSILLAGOK */}
       <div className="rounded-2xl p-5 bg-white border-2" style={{ borderColor: '#FBCFE8' }}>
