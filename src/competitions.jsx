@@ -3944,6 +3944,7 @@ function CsepeliResultsTab({ supabase, userRole, competition, onCompetitionChang
 function CsepeliIndividualSection({ supabase, userRole, competition, onCompetitionChange }) {
   const [groupedByCategoryAndCompetitor, setGroupedByCategoryAndCompetitor] = useState({});
   const [results, setResults] = useState({}); // entryId → result
+  const [calcPlacements, setCalcPlacements] = useState({}); // v1.14.1: entryId → pontokból számolt helyezés
   const [allAroundResults, setAllAroundResults] = useState({}); // catId__compId → all_around result
   const [editValues, setEditValues] = useState({}); // entryId → {placement, scores, notes}
   const [editAllAround, setEditAllAround] = useState({}); // catId__compId → {placement, notes}
@@ -3968,7 +3969,7 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
           categories:competition_categories (
             id, kategoria, korosztaly, type, apparatuses, time_range, age_group,
             entries:startlist_entries (
-              id, start_order, competitor_id, apparatus, is_exhibition,
+              id, start_order, competitor_id, apparatus, is_exhibition, did_not_start, team_id,
               competitor:competitor_id (id, full_name, nickname, kategoria, korosztaly, birth_year)
             )
           )
@@ -4004,19 +4005,18 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       });
 
       // Eredmények
-      const allEntryIds = [];
-      Object.values(grouped).forEach(g => {
-        Object.values(g.competitors).forEach(c => {
-          c.entries.forEach(e => allEntryIds.push(e.id));
-        });
-      });
-
+      // v1.14.1: a helyezéshez a kategória MINDEN indulójának pontja kell (a külsősöké is) —
+      // eddig csak a csepeliek között rangsorolt (Enci karikán 3. helyett 1. lett)
+      const rankEntryIds = [];
+      (days || []).forEach(day => (day.categories || []).filter(c => c.type !== 'csapat')
+        .forEach(cat => (cat.entries || []).forEach(e => rankEntryIds.push(e.id))));
       let resultsMap = {};
-      if (allEntryIds.length > 0) {
-        const { data: resData } = await supabase
+      for (let i = 0; i < rankEntryIds.length; i += 150) {
+        const { data: resData, error: rErr } = await supabase
           .from('results')
           .select('*')
-          .in('startlist_entry_id', allEntryIds);
+          .in('startlist_entry_id', rankEntryIds.slice(i, i + 150));
+        if (rErr) throw rErr;
         (resData || []).forEach(r => { resultsMap[r.startlist_entry_id] = r; });
       }
 
@@ -4052,7 +4052,9 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
               // Csepeli rekordnak vesszük csak, ahol van results bejegyzés
               const r = resultsMap[entry.id];
               // v1.10.1: a bemutató nem kap számolt helyezést és mást sem told hátrébb
-              if (r && r.score_total !== null && r.score_total !== undefined && !entry.is_exhibition) {
+              // v1.14.1: mint a pontozó és a lezárás (placements.js): nem indult / csapatsor / bemutató kimarad
+              if (r && r.score_total !== null && r.score_total !== undefined && r.score_total !== ''
+                  && !entry.is_exhibition && !entry.did_not_start && !entry.team_id) {
                 allEntriesForRanking.push({
                   catId: cat.id,
                   entryId: entry.id,
@@ -4082,17 +4084,19 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       });
       Object.values(groups).forEach(arr => {
         // Rendezés: total DESC → e DESC → d DESC → a DESC
+        const n = (v) => { const x = parseFloat(v); return isNaN(x) ? 0 : x; };
         arr.sort((a, b) => {
-          if (b.score_total !== a.score_total) return b.score_total - a.score_total;
-          if ((b.score_e || 0) !== (a.score_e || 0)) return (b.score_e || 0) - (a.score_e || 0);
-          if ((b.score_d || 0) !== (a.score_d || 0)) return (b.score_d || 0) - (a.score_d || 0);
-          return (b.score_a || 0) - (a.score_a || 0);
+          if (Math.abs(n(b.score_total) - n(a.score_total)) > 0.0005) return n(b.score_total) - n(a.score_total);
+          if (Math.abs(n(b.score_e) - n(a.score_e)) > 0.0005) return n(b.score_e) - n(a.score_e);
+          if (Math.abs(n(b.score_d) - n(a.score_d)) > 0.0005) return n(b.score_d) - n(a.score_d);
+          return n(b.score_a) - n(a.score_a);
         });
         arr.forEach((e, idx) => { calculatedPlacement[e.entryId] = idx + 1; });
       });
 
       setGroupedByCategoryAndCompetitor(grouped);
       setResults(resultsMap);
+      setCalcPlacements(calculatedPlacement);
       setAllAroundResults(aaMap);
 
       // Init edit values - a placement-nél: DB-érték elsőbbség, különben számolt érték
@@ -4165,7 +4169,12 @@ function CsepeliIndividualSection({ supabase, userRole, competition, onCompetiti
       // Minden szer mentése
       for (const entry of compData.entries) {
         const vals = editValues[entry.id];
-        const placement = parseInt2(vals.placement, 'helyezés');
+        // v1.14.1: a kiírt SZÁMOLT helyezés mentéskor nem válik kézivé (különben a később
+        // pontozott lányok után is befagyna) — csak az eltérő / már kézi helyezés kézi
+        const typed = parseInt2(vals.placement, 'helyezés');
+        const prevManual = results[entry.id]?.placement;
+        const placement = (typed !== null && typed === calcPlacements[entry.id]
+          && (prevManual === null || prevManual === undefined)) ? null : typed;
         
         const scoreDb = parseOpt(vals.score_db, 'DB', null);
         const scoreDa = parseOpt(vals.score_da, 'DA', null);
