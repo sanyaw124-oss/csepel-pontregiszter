@@ -15,6 +15,7 @@ import { CoachNotesView } from './coach-notes';
 import { CoachPostsView } from './coachPosts';
 import { PageInfo } from './pageInfo';
 import { CalendarView, UpcomingCompetitionsWidget } from './calendar';
+import { CLOSED_SELECT, isCompetitionClosed } from './closed';
 import { GreetDialog } from './friends';
 import MySelfBlock from './competitor-dashboard';
 import CompetitorProfileView from './competitor-profile';
@@ -944,7 +945,7 @@ function AppShell() {
           „Ügyesen, Okosan, Mosoly"
         </div>
         <div className="text-xs text-gray-500 mt-1">
-          Pontregiszter v1.14.1 · Csepel RG Klub · MRGSZ 2025–2028
+          Pontregiszter v1.14.2 · Csepel RG Klub · MRGSZ 2025–2028
         </div>
         <a href="/telefonra.html" target="_blank" rel="noopener noreferrer"
            className="inline-block mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold bg-white border-2"
@@ -1538,12 +1539,13 @@ function NextCompetitionHero() {
         const today = new Date().toISOString().split('T')[0];
         const { data, error } = await supabase
           .from('competitions')
-          .select('id, name, importance, start_date, end_date, arrival_info, arrival_time, venue:venues(name, city)')
+          .select(`id, name, importance, start_date, end_date, arrival_info, arrival_time, venue:venues(name, city), ${CLOSED_SELECT}`)
           .gte('end_date', today)
           .order('start_date', { ascending: true })
-          .limit(1);
+          .limit(10);
         if (error) throw error;
-        if (active) setComp((data && data[0]) || null);
+        // v1.14.2: a lezárt verseny már nem „soron következő” (és nem „élő”), akkor sem, ha a dátuma még tart
+        if (active) setComp((data || []).find(c => !isCompetitionClosed(c)) || null);
       } catch (err) {
         console.error('NextCompetitionHero:', err);
       } finally {

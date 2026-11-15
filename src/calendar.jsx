@@ -7,6 +7,7 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, MapPin, Clock, X, Loader } from 'lucide-react';
+import { CLOSED_SELECT, isCompetitionClosed } from './closed';
 
 const IMP = {
   fig: { bg: '#fef3c7', text: '#92400e', label: 'FIG nemzetközi' },
@@ -179,7 +180,7 @@ export function UpcomingCompetitionsWidget({ supabase, onOpen, onOpenCompetition
     const t = new Date();
     const until = new Date(t.getFullYear(), t.getMonth(), t.getDate() + 30);
     (async () => {
-      const { data } = await supabase.from('competitions').select(SELECT)
+      const { data } = await supabase.from('competitions').select(`${SELECT}, ${CLOSED_SELECT}`)
         .gte('end_date', iso(t)).lte('start_date', iso(until)).order('start_date');
       if (!active) return;
       setComps(data || []);
@@ -205,7 +206,8 @@ export function UpcomingCompetitionsWidget({ supabase, onOpen, onOpenCompetition
     return () => { active = false; };
   }, [supabase]);
   if (!comps) return null;
-  const withList = comps.filter(c => lists[c.id]);
+  // v1.14.2: a lezárt (de dátum szerint még tartó) versenynél már nincs „Megjelent a startlista!”
+  const withList = comps.filter(c => lists[c.id] && !isCompetitionClosed(c));
   const openComps = onOpenCompetitions || onOpen;
   return (
     <div className="bg-white rounded-xl border p-4 mb-4 shadow-sm" style={{ borderColor: '#E5E7EB' }}>
@@ -248,7 +250,9 @@ export function UpcomingCompetitionsWidget({ supabase, onOpen, onOpenCompetition
                 <div className="text-sm font-medium truncate">{c.name}</div>
                 {venueText(c) && <div className="text-xs text-gray-500 truncate">{venueText(c)}</div>}
               </div>
-              {lists[c.id] && <span className="text-[11px] px-2 py-0.5 rounded font-bold text-white whitespace-nowrap" style={{ backgroundColor: '#BE185D' }}>📋 Startlista</span>}
+              {isCompetitionClosed(c)
+                ? <span className="text-[11px] px-2 py-0.5 rounded font-bold whitespace-nowrap" style={{ backgroundColor: '#D1FAE5', color: '#15803D' }}>✓ Lezárt</span>
+                : lists[c.id] && <span className="text-[11px] px-2 py-0.5 rounded font-bold text-white whitespace-nowrap" style={{ backgroundColor: '#BE185D' }}>📋 Startlista</span>}
               <ImpChip value={c.importance} />
             </button>
           ))}

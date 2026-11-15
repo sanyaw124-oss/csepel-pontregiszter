@@ -17,6 +17,7 @@ import { fillAutoPlacements, clearAutoPlacements, fillTeamPlacements, clearTeamP
 import { ScoringView } from './scoring';
 import { ApparatusMark } from './apparatusIcons';
 import { CompetitionTeamsView } from './teams';
+import { isCompetitionClosed } from './closed';
 
 // ═══════════════════════════════════════════════════════════════════
 // COLORS
@@ -142,11 +143,7 @@ function ApparatusList({ apparatuses, empty = '—' }) {
 }
 
 // v0.9.63: lezártnak számít a verseny, ha le van zárva, vagy minden kategóriája lezárt
-function isCompetitionClosed(c) {
-  if (c.is_finalized) return true;
-  const cats = (c.days || []).flatMap(d => d.categories || []);
-  return cats.length > 0 && cats.every(k => k.is_finalized);
-}
+// v1.14.2: a lezártság szabálya közös (closed.js) — a főoldal és a naptár is ezt használja
 
 // v0.9.63: a TELJES verseny lezárása / újranyitása (minden kategória, minden sor):
 // lezáráskor a pontok véglegesek és ahol nincs kézi helyezés, oda a számolt
@@ -330,7 +327,7 @@ function CompetitionsList({ supabase, canManage, dataReloadKey, onSelect, onCrea
         .select(`
           id, name, start_date, end_date, importance, is_finalized,
           venue:venues(id, name, city, country),
-          days:competition_days(id, day_number, date, type, categories:competition_categories(id, is_finalized))
+          days:competition_days(id, day_number, date, type, categories:competition_categories(id, is_finalized, type))
         `)
         .order('start_date', { ascending: false });
       if (error) throw error;
@@ -458,9 +455,14 @@ function CompetitionCard({ competition, onClick }) {
   const venue = competition.venue;
   const days = competition.days || [];
   const dayCount = days.length;
-  const hasIndividual = days.some(d => d.type === 'egyeni');
-  const hasTeam = days.some(d => d.type === 'csapat');
-  
+  // v1.14.2: a típust a kategóriák adják (az importált napok alapból „egyéni”-k, a kategóriáik viszont csapatok);
+  // kategória nélküli napnál marad a nap típusa
+  const types = days.flatMap(d => (d.categories && d.categories.length)
+    ? d.categories.map(k => k.type || d.type || 'egyeni')
+    : [d.type || 'egyeni']);
+  const hasIndividual = types.includes('egyeni');
+  const hasTeam = types.includes('csapat');
+
   return (
     <button
       onClick={onClick}
