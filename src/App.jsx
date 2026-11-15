@@ -25,7 +25,7 @@ import { usePridePhotoUrl } from './pridePhoto';
 import { StatsView } from './statsView';
 import { ClubView } from './club';
 import { DocumentsView } from './documents';
-import { MascotPollWidget } from './mascot';
+// v1.14.2: a kabala-szavazás kikerült a főoldalról (Sándor: nem lesz szavazás); a mascot.jsx és a táblák maradnak
 import { usePreschoolMode, PreschoolBanner } from './preschool';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1173,8 +1173,6 @@ function DashboardView({ setActiveView, limited = false }) {
       <NextCompetitionHero />
       {/* v0.9.81: a következő 30 nap versenyei → Versenynaptár */}
       <UpcomingCompetitionsWidget supabase={supabase} onOpen={() => setActiveView('calendar')} onOpenCompetitions={() => setActiveView('competitions')} />
-      {/* v1.11.0: kabala-szavazás */}
-      <MascotPollWidget supabase={supabase} role={profile.role} />
       <BirthdayWidget supabase={supabase} canGreet={!limited} />
       <div className="mb-4">
         <UpcomingEventsWidget 
